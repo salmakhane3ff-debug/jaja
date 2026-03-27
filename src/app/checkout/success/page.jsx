@@ -1,0 +1,399 @@
+"use client";
+import React, { useState, useEffect, Suspense } from "react";
+import { useSearchParams } from "next/navigation";
+import { CheckCircle, Home, MessageCircle, Printer } from "lucide-react";
+import Link from "next/link";
+import { useLanguage } from "@/context/LanguageContext";
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
+const PAY_LABELS = {
+  ar: {
+    bank_transfer: "تحويل بنكي",
+    cod:           "الدفع عند الاستلام",
+    cod_deposit:   "عربون + الباقي عند الاستلام",
+    prepaid:       "الدفع المسبق",
+  },
+  fr: {
+    bank_transfer: "Virement bancaire",
+    cod:           "Paiement à la livraison",
+    cod_deposit:   "Acompte + reste à la livraison",
+    prepaid:       "Paiement anticipé",
+  },
+};
+
+function payLabel(method, lang) {
+  return PAY_LABELS[lang]?.[method] || PAY_LABELS.ar[method] || method || "—";
+}
+
+function buildWhatsAppMsg(order, lang) {
+  if (!order) return "";
+  const items = order.products?.items || [];
+  const pd    = order.paymentDetails || {};
+  const lines = items
+    .map((i) => `  • ${i.title} × ${i.quantity} — ${(i.price * i.quantity).toFixed(0)} MAD`)
+    .join("\n");
+
+  const isAr = lang === "ar";
+
+  return encodeURIComponent(
+    [
+      isAr ? "🛍️ *طلب جديد*" : "🛍️ *Nouvelle commande*",
+      "",
+      `👤 *${isAr ? "الاسم" : "Nom"}:* ${order.name || ""}`,
+      `📞 *${isAr ? "الهاتف" : "Tél"}:* ${order.phone || ""}`,
+      `📍 *${isAr ? "المدينة" : "Ville"}:* ${order.shipping?.address?.city || ""}`,
+      "",
+      `📦 *${isAr ? "المنتجات" : "Produits"}:*`,
+      lines,
+      "",
+      `🚚 *${isAr ? "التوصيل" : "Livraison"}:* ${pd.shippingCompany || ""} — ${pd.shippingCost || 0} MAD`,
+      `💰 *${isAr ? "المجموع" : "Total"}:* ${(pd.total || 0).toFixed(0)} MAD`,
+      `💳 *${isAr ? "نوع الدفع" : "Paiement"}:* ${payLabel(pd.paymentMethod, lang)}`,
+      "",
+      `🔖 *${isAr ? "رقم الطلب" : "N° commande"}:* ${order._id || ""}`,
+    ].join("\n"),
+  );
+}
+
+// ── Main content ──────────────────────────────────────────────────────────────
+
+function SuccessContent() {
+  const searchParams = useSearchParams();
+  const { t, lang } = useLanguage();
+
+  const [order,         setOrder]         = useState(null);
+  const [storeSettings, setStoreSettings] = useState(null);
+  const [loading,       setLoading]       = useState(true);
+
+  useEffect(() => {
+    const orderId =
+      searchParams.get("orderId") || localStorage.getItem("lastOrderId");
+
+    const fetchAll = async () => {
+      try {
+        const r = await fetch("/api/setting?type=store");
+        if (r.ok) setStoreSettings(await r.json());
+      } catch {}
+
+      if (orderId) {
+        try {
+          const r = await fetch(`/api/order?orderId=${orderId}`);
+          const d = await r.json();
+          if (Array.isArray(d) && d.length > 0) { setOrder(d[0]); setLoading(false); return; }
+          if (d?._id)                            { setOrder(d);    setLoading(false); return; }
+        } catch {}
+      }
+
+      try {
+        const stored = localStorage.getItem("lastOrderData");
+        if (stored) setOrder(JSON.parse(stored));
+      } catch {}
+
+      setLoading(false);
+    };
+
+    fetchAll();
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── Derived values ───────────────────────────────────────────────────────
+  const pd          = order?.paymentDetails || {};
+  const items       = order?.products?.items || [];
+  const subtotal    = pd.subtotal    ?? items.reduce((s, i) => s + i.price * (i.quantity || 1), 0);
+  const shipping    = pd.shippingCost  || 0;
+  const discount    = pd.promoDiscount || 0;
+  const total       = pd.total ?? subtotal;
+  const isDeposit   = pd.paymentMethod === "cod_deposit";
+  const isPrepaid   = pd.paymentMethod === "bank_transfer" || pd.paymentMethod === "prepaid";
+
+  const whatsappNumber = storeSettings?.whatsappNumber || "";
+  const whatsappUrl    = whatsappNumber
+    ? `https://wa.me/${whatsappNumber.replace(/\D/g, "")}?text=${buildWhatsAppMsg(order, lang)}`
+    : null;
+
+  const dateLocale = lang === "fr" ? "fr-MA" : "ar-MA";
+  const orderDate  = order?.createdAt ? new Date(order.createdAt) : null;
+  const fmtDate    = orderDate?.toLocaleDateString(dateLocale, { year: "numeric", month: "long", day: "numeric" }) || "";
+  const fmtTime    = orderDate?.toLocaleTimeString(dateLocale, { hour: "2-digit", minute: "2-digit" }) || "";
+
+  // ── Loading ──────────────────────────────────────────────────────────────
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center min-h-screen bg-gray-50">
+        <div className="w-8 h-8 border-[3px] border-amber-400 border-t-transparent rounded-full animate-spin" />
+      </div>
+    );
+  }
+
+  // ── Page ─────────────────────────────────────────────────────────────────
+  return (
+    <div className="min-h-screen bg-gray-50 py-8 px-4 print:bg-white print:py-0">
+      <div className="max-w-2xl mx-auto">
+
+        {/* ── Action bar (top) ── */}
+        <div className="flex items-center justify-between mb-5 print:hidden">
+          <Link
+            href="/"
+            className="flex items-center gap-2 text-sm text-gray-600 hover:text-gray-900 font-semibold transition-colors"
+          >
+            <Home className="w-4 h-4" />
+            {t("success_back_home")}
+          </Link>
+          <button
+            onClick={() => window.print()}
+            className="flex items-center gap-2 text-sm text-gray-500 hover:text-gray-800 transition-colors"
+          >
+            <Printer className="w-4 h-4" />
+            {t("success_print")}
+          </button>
+        </div>
+
+        {/* ── Success banner ── */}
+        <div className="bg-green-50 border border-green-200 rounded-2xl px-5 py-4 flex items-center gap-4 mb-5 print:hidden">
+          <CheckCircle className="w-9 h-9 text-green-500 flex-shrink-0" />
+          <div>
+            <p className="font-black text-green-800 text-base">{t("success_confirmed")}</p>
+            <p className="text-sm text-green-600 mt-0.5">{t("success_confirmed_sub")}</p>
+          </div>
+        </div>
+
+        {/* ── WhatsApp CTA ── */}
+        {whatsappUrl && (
+          <a
+            href={whatsappUrl}
+            target="_blank"
+            rel="noreferrer"
+            className="w-full flex items-center justify-center gap-3 bg-[#25D366] hover:bg-[#1ebe59] active:scale-[0.98] text-white py-4 rounded-2xl font-black text-base transition-all shadow-lg shadow-green-200 mb-5 print:hidden"
+          >
+            <MessageCircle className="w-5 h-5" />
+            {t("success_whatsapp")}
+          </a>
+        )}
+
+        {/* ── Invoice card ── */}
+        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden print:shadow-none print:border-none">
+
+          {/* Header */}
+          <div className="bg-gray-900 px-6 py-6 text-white">
+            <div className="flex items-start justify-between">
+              <div>
+                <h1 className="text-2xl font-black tracking-tight">{t("success_order_title")}</h1>
+                <p className="text-gray-400 text-sm mt-0.5">{t("success_order_subtitle")}</p>
+              </div>
+              {order?._id && (
+                <div className="text-right">
+                  <p className="text-xs text-gray-400">{t("success_order_number")}</p>
+                  <p className="text-lg font-black">#{order._id.slice(-6).toUpperCase()}</p>
+                </div>
+              )}
+            </div>
+            {orderDate && (
+              <div className="mt-4 pt-4 border-t border-white/10 flex flex-wrap gap-6 text-sm">
+                <div>
+                  <p className="text-gray-400 text-xs">{t("success_date")}</p>
+                  <p className="font-semibold">{fmtDate}</p>
+                </div>
+                <div>
+                  <p className="text-gray-400 text-xs">{t("success_time")}</p>
+                  <p className="font-semibold">{fmtTime}</p>
+                </div>
+                {pd.paymentMethod && (
+                  <div>
+                    <p className="text-gray-400 text-xs">{t("success_payment_method")}</p>
+                    <p className="font-semibold">{payLabel(pd.paymentMethod, lang)}</p>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* Customer info */}
+          {order && (
+            <div className="px-6 py-4 border-b border-gray-50 bg-gray-50/50">
+              <p className="text-xs font-bold text-gray-400 uppercase tracking-wide mb-3">{t("success_customer_info")}</p>
+              <div className="grid grid-cols-2 gap-3 text-sm">
+                {[
+                  { label: t("success_name"),             value: order.name },
+                  { label: t("success_phone"),            value: order.phone },
+                  { label: t("success_city"),             value: order.shipping?.address?.city },
+                  { label: t("success_address"),          value: order.shipping?.address?.address1 },
+                  { label: t("success_shipping_company"), value: pd.shippingCompany },
+                ].map(({ label, value }) =>
+                  value ? (
+                    <div key={label}>
+                      <p className="text-xs text-gray-400">{label}</p>
+                      <p className="font-semibold text-gray-900">{value}</p>
+                    </div>
+                  ) : null,
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* Products */}
+          {items.length > 0 && (
+            <div className="px-6 py-4">
+              <p className="text-xs font-bold text-gray-400 uppercase tracking-wide mb-3">{t("success_products")}</p>
+              <div className="space-y-3">
+                {items.map((item, i) => {
+                  const img = item.image || item.images?.[0];
+                  return (
+                    <div key={i} className="flex items-start gap-3 py-3 border-b border-gray-50 last:border-0">
+                      {img && (
+                        <img
+                          src={img}
+                          alt={item.title}
+                          className="w-12 h-12 object-cover rounded-xl border border-gray-100 flex-shrink-0"
+                        />
+                      )}
+                      <div className="flex-1 min-w-0">
+                        <p className="font-semibold text-gray-900 text-sm">{item.title}</p>
+                        {item.color && <p className="text-xs text-gray-400">{t("success_color")}: {item.color}</p>}
+                        {item.size  && <p className="text-xs text-gray-400">{t("success_size")}: {item.size}</p>}
+                        <div className="flex items-center gap-2 mt-1">
+                          <span className="text-xs text-gray-500">{item.quantity} ×</span>
+                          <span className="text-xs font-bold text-gray-700">{item.price} MAD</span>
+                          {item.originalPrice && item.originalPrice > item.price && (
+                            <span className="text-xs text-gray-400 line-through">{item.originalPrice} MAD</span>
+                          )}
+                        </div>
+                      </div>
+                      <p className="font-black text-gray-900 text-sm flex-shrink-0">
+                        {(item.price * (item.quantity || 1)).toFixed(0)} MAD
+                      </p>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* Totals */}
+          <div className="px-6 py-4 bg-gray-50/50 border-t border-gray-100">
+            <div className="space-y-2 max-w-xs ml-auto text-sm">
+              <div className="flex justify-between">
+                <span className="text-gray-500">{t("success_subtotal")}</span>
+                <span className="font-semibold">{subtotal.toFixed(0)} MAD</span>
+              </div>
+              {shipping > 0 ? (
+                <div className="flex justify-between">
+                  <span className="text-gray-500">
+                    {t("success_shipping")}{pd.shippingCompany ? ` — ${pd.shippingCompany}` : ""}
+                  </span>
+                  <span className="font-semibold">{shipping.toFixed(0)} MAD</span>
+                </div>
+              ) : (
+                <div className="flex justify-between text-green-600">
+                  <span>{t("success_free_shipping")}</span>
+                  <span className="font-semibold">{t("success_free_shipping_val")}</span>
+                </div>
+              )}
+              {discount > 0 && (
+                <div className="flex justify-between text-green-600">
+                  <span>{t("success_discount")}</span>
+                  <span className="font-semibold">−{discount.toFixed(0)} MAD</span>
+                </div>
+              )}
+              <div className="flex justify-between border-t border-gray-200 pt-2 mt-2">
+                <span className="font-black text-gray-900 text-base">{t("success_total")}</span>
+                <span className="font-black text-gray-900 text-base">{total.toFixed(0)} MAD</span>
+              </div>
+              {isDeposit && pd.deposit > 0 && (
+                <>
+                  <div className="flex justify-between text-orange-600">
+                    <span>{t("success_deposit")}</span>
+                    <span className="font-bold">{pd.deposit.toFixed(0)} MAD</span>
+                  </div>
+                  <div className="flex justify-between text-gray-500">
+                    <span>{t("success_remaining")}</span>
+                    <span className="font-bold">{Math.max(0, total - pd.deposit).toFixed(0)} MAD</span>
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
+
+          {/* Payment badge */}
+          {pd.paymentMethod && (
+            <div className="px-6 py-3 border-t border-gray-100 flex justify-end">
+              <span className={`text-xs px-3 py-1.5 rounded-full font-bold
+                ${isPrepaid  ? "bg-blue-50 text-blue-600"
+                : isDeposit  ? "bg-orange-50 text-orange-600"
+                : "bg-gray-100 text-gray-600"}`}>
+                {isPrepaid ? "💳 " : isDeposit ? "💰 " : "💵 "}
+                {payLabel(pd.paymentMethod, lang)}
+              </span>
+            </div>
+          )}
+
+          {/* Footer */}
+          <div className="px-6 py-4 text-center border-t border-gray-100">
+            <p className="text-xs text-gray-400">{t("success_thank_you")}</p>
+            {order?._id && <p className="text-xs text-gray-300 mt-1">{order._id}</p>}
+          </div>
+        </div>
+
+        {/* ── Feedback banner ── */}
+        <Link
+          href="/feedback"
+          className="mt-5 flex items-center gap-4 bg-amber-50 border border-amber-200 rounded-2xl px-5 py-4 hover:bg-amber-100 active:scale-[0.99] transition-all cursor-pointer print:hidden group"
+        >
+          <span className="text-2xl flex-shrink-0">⭐</span>
+          <div className="flex-1 min-w-0">
+            <p className="font-bold text-amber-900 text-sm">{t("success_feedback_title")}</p>
+            <p className="text-xs text-amber-700 mt-0.5">{t("success_feedback_sub")}</p>
+          </div>
+          <span className="text-xs font-bold text-amber-800 bg-amber-200 group-hover:bg-amber-300 px-3 py-1.5 rounded-full transition-colors flex-shrink-0">
+            {t("success_feedback_btn")}
+          </span>
+        </Link>
+
+        {/* ── Bottom actions ── */}
+        <div className="mt-3 flex flex-col sm:flex-row gap-3 print:hidden">
+          <Link
+            href="/"
+            className="flex-1 flex items-center justify-center gap-2 py-3.5 border border-gray-200 text-gray-700 rounded-2xl font-semibold text-sm hover:bg-gray-50 active:scale-[0.98] transition-all"
+          >
+            <Home className="w-4 h-4" />
+            {t("success_back_home")}
+          </Link>
+          {whatsappUrl && (
+            <a
+              href={whatsappUrl}
+              target="_blank"
+              rel="noreferrer"
+              className="flex-1 flex items-center justify-center gap-2 py-3.5 bg-[#25D366] text-white rounded-2xl font-semibold text-sm hover:bg-[#1ebe59] active:scale-[0.98] transition-all"
+            >
+              <MessageCircle className="w-4 h-4" />
+              {t("success_whatsapp_short")}
+            </a>
+          )}
+        </div>
+
+      </div>
+
+      <style>{`
+        @media print {
+          body { background: white; }
+          .print\\:hidden { display: none !important; }
+        }
+      `}</style>
+    </div>
+  );
+}
+
+// ── Page export ───────────────────────────────────────────────────────────────
+
+export default function SuccessPage() {
+  return (
+    <Suspense
+      fallback={
+        <div className="flex items-center justify-center min-h-screen bg-gray-50">
+          <div className="w-8 h-8 border-[3px] border-amber-400 border-t-transparent rounded-full animate-spin" />
+        </div>
+      }
+    >
+      <SuccessContent />
+    </Suspense>
+  );
+}

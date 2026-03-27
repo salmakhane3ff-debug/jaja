@@ -1,0 +1,874 @@
+generator client {
+  provider        = "prisma-client-js"
+  output          = "../src/generated/prisma"
+  previewFeatures = ["partialIndexes"]
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model User {
+  id        String     @id @default(uuid())
+  email     String     @unique
+  password  String
+  name      String
+  role      Role       @default(CUSTOMER)
+  isActive  Boolean    @default(true)
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
+  affiliate Affiliate?
+  feedbacks Feedback[]
+  orders    Order[]
+
+  @@index([email])
+  @@map("users")
+}
+
+model Product {
+  id               String            @id @default(uuid())
+  title            String
+  description      String?
+  shortDescription String?
+  regularPrice     Float?
+  salePrice        Float?
+  costPerItem      Float?
+  images           Json              @default("[]")
+  variants         Json              @default("[]")
+  sku              String?
+  barcode          String?
+  stockQuantity    Int?
+  stockStatus      String            @default("In Stock")
+  brand            String?
+  supplier         String?
+  tags             String?
+  productLabel     String?
+  collections      Json              @default("[]")
+  isActive         Boolean           @default(true)
+  status           String            @default("Active")
+  rating           Float             @default(0)
+  ratingsCount     Int               @default(0)
+  reviewsCount     Int               @default(0)
+  feedbackCount    Int               @default(0)
+  limitedTimeDeal  Json?
+  landingPageId    String?
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+  allowCOD         Boolean           @default(true)
+  allowPrepaid     Boolean           @default(true)
+  redirectMode      String            @default("default")
+  redirectUrl       String?
+  sections          Json              @default("[]")
+  // ── Per-product conversion / scarcity ─────────────────────────────────────
+  conversionEnabled Boolean           @default(false)
+  conversionSold    Int?
+  conversionStock   Int?
+  feedbacks        Feedback[]
+  orderItems       OrderItem[]
+  analytics        ProductAnalytics?
+  landingPage      LandingPage?      @relation(fields: [landingPageId], references: [id])
+  reviews          Review[]
+  scheduledReviews ScheduledReview[]
+
+  @@index([isActive])
+  @@index([status])
+  @@index([landingPageId])
+  @@map("products")
+}
+
+model Collection {
+  id                   String   @id @default(uuid())
+  title                String   @unique
+  slug                 String?  @unique(where: raw("(slug IS NOT NULL)"))
+  description          String?
+  image                String?
+  banner               String?
+  isActive             Boolean  @default(true)
+  showOnHomepage       Boolean  @default(false)
+  homepageOrder        Int      @default(0)
+  homepageProductLimit Int      @default(4)
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+
+  @@index([title])
+  @@index([isActive])
+  @@index([showOnHomepage])
+  @@map("collections")
+}
+
+model Order {
+  id              String          @id @default(uuid())
+  sessionId       String?         @unique
+  status          String          @default("pending")
+  customerName    String
+  customerEmail   String?
+  customerPhone   String?
+  shippingAddress Json
+  paymentMethod   String?
+  paymentStatus   String?         @default("pending")
+  paymentTotal    Float?
+  paymentDetails  Json?
+  campaignSource  CampaignSource?
+  utmSource       String?
+  affiliateId     String?
+  userId          String?
+  createdAt       DateTime        @default(now())
+  updatedAt       DateTime        @updatedAt
+  invoice         Invoice?
+  items           OrderItem[]
+  affiliate       Affiliate?      @relation(fields: [affiliateId], references: [id])
+  user            User?           @relation(fields: [userId], references: [id])
+  spinEvents      SpinEvent[]
+
+  @@index([status])
+  @@index([affiliateId])
+  @@index([customerPhone])
+  @@index([customerEmail])
+  @@index([createdAt])
+  @@map("orders")
+}
+
+model OrderItem {
+  id              String   @id @default(uuid())
+  orderId         String
+  productId       String?
+  quantity        Int
+  price           Float
+  regularPrice    Float?
+  productSnapshot Json?
+  order           Order    @relation(fields: [orderId], references: [id])
+  product         Product? @relation(fields: [productId], references: [id])
+
+  @@index([orderId])
+  @@map("order_items")
+}
+
+model Setting {
+  id        String   @id
+  data      Json
+  updatedAt DateTime @updatedAt
+
+  @@map("settings")
+}
+
+model Feedback {
+  id            String         @id @default(uuid())
+  type          FeedbackType
+  status        FeedbackStatus @default(PENDING)
+  textContent   String?
+  mediaUrl      String?
+  mediaPublicId String?
+  authorName    String?
+  rating        Int            @default(5)
+  isFeatured    Boolean        @default(false)
+  publishAt     DateTime?
+  publishedAt   DateTime?
+  productId     String?
+  userId        String?
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+  images        Json           @default("[]")
+  isVerified    Boolean        @default(false)
+  phone         String?
+  productName   String?
+  voiceUrl      String?
+  product       Product?       @relation(fields: [productId], references: [id])
+  user          User?          @relation(fields: [userId], references: [id])
+
+  @@index([status, publishAt])
+  @@index([productId])
+  @@index([isFeatured])
+  @@map("feedbacks")
+}
+
+model Affiliate {
+  id              String                  @id @default(uuid())
+  username        String                  @unique
+  commissionRate  Float                   @default(0.5)
+  isActive        Boolean                 @default(false)
+  totalClicks     Int                     @default(0)
+  totalOrders     Int                     @default(0)
+  totalCommission Float                   @default(0)
+  userId          String?                 @unique
+  createdAt       DateTime                @default(now())
+  updatedAt       DateTime                @updatedAt
+  accountName     String?
+  bankName        String?
+  name            String                  @default("")
+  phone           String?                 @unique
+  avatarUrl       String?
+  parentId        String?
+  password        String                  @default("")
+  rib             String?
+  clicks          AffiliateClick[]
+  notifications   AffiliateNotification[]
+  affiliateOrders AffiliateOrder[]
+  payouts         AffiliatePayout[]
+  parent          Affiliate?              @relation("AffiliateTeam", fields: [parentId], references: [id])
+  children        Affiliate[]             @relation("AffiliateTeam")
+  user            User?                   @relation(fields: [userId], references: [id])
+  orders          Order[]
+
+  @@index([username])
+  @@index([isActive])
+  @@index([parentId])
+  @@map("affiliates")
+}
+
+model AffiliateOrder {
+  id               String    @id @default(uuid())
+  affiliateId      String
+  orderId          String?
+  clientName       String?
+  clientPhone      String?
+  productTitle     String?
+  total            Float     @default(0)
+  commissionAmount Float     @default(0)
+  status           String    @default("pending")
+  ipAddress        String?
+  isSuspicious     Boolean   @default(false)
+  suspicionReason  String?
+  createdAt        DateTime  @default(now())
+  affiliate        Affiliate @relation(fields: [affiliateId], references: [id])
+
+  @@index([affiliateId])
+  @@index([status])
+  @@index([createdAt])
+  @@index([ipAddress])
+  @@index([isSuspicious])
+  @@map("affiliate_orders")
+}
+
+model AffiliatePayout {
+  id          String    @id @default(uuid())
+  affiliateId String
+  amount      Float
+  status      String    @default("pending")
+  createdAt   DateTime  @default(now())
+  affiliate   Affiliate @relation(fields: [affiliateId], references: [id])
+
+  @@index([affiliateId])
+  @@index([status])
+  @@map("affiliate_payouts")
+}
+
+model AffiliateNotification {
+  id          String    @id @default(uuid())
+  affiliateId String
+  message     String
+  read        Boolean   @default(false)
+  createdAt   DateTime  @default(now())
+  affiliate   Affiliate @relation(fields: [affiliateId], references: [id])
+
+  @@index([affiliateId])
+  @@index([read])
+  @@map("affiliate_notifications")
+}
+
+model AffiliateClick {
+  id          String          @id @default(uuid())
+  affiliateId String
+  ipAddress   String?
+  userAgent   String?
+  source      CampaignSource?
+  landingPage String?
+  referer     String?
+  createdAt   DateTime        @default(now())
+  affiliate   Affiliate       @relation(fields: [affiliateId], references: [id])
+
+  @@index([affiliateId, createdAt])
+  @@map("affiliate_clicks")
+}
+
+model LandingPage {
+  id            String         @id @default(uuid())
+  title         String
+  slug          String         @unique
+  isActive      Boolean        @default(true)
+  sections      Json           @default("[]")
+  views         Int            @default(0)
+  clicks        Int            @default(0)
+  sales         Int            @default(0)
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+  description   String?
+  heroSubtitle  String?
+  heroTitle     String?
+  images        Json           @default("[]")
+  productId     String?
+  templateType  String         @default("classic")
+  landingEvents LandingEvent[]
+  products      Product[]
+
+  @@index([slug])
+  @@index([isActive])
+  @@index([productId])
+  @@map("landing_pages")
+}
+
+model LandingTemplate {
+  id           String   @id @default(uuid())
+  name         String
+  description  String?
+  templateType String   @default("custom")
+  content      Json     @default("[]")
+  previewImage String?
+  isDefault    Boolean  @default(false)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@map("landing_templates")
+}
+
+model LandingEvent {
+  id            String      @id @default(uuid())
+  landingPageId String
+  type          String
+  affiliateId   String?
+  metadata      Json?
+  createdAt     DateTime    @default(now())
+  landingPage   LandingPage @relation(fields: [landingPageId], references: [id], onDelete: Cascade)
+
+  @@index([landingPageId, type])
+  @@index([landingPageId, createdAt])
+  @@map("landing_events")
+}
+
+model Post {
+  id        String   @id @default(uuid())
+  title     String
+  slug      String   @unique
+  category  String
+  status    String   @default("Draft")
+  data      Json?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([category])
+  @@index([slug])
+  @@index([status, category])
+  @@map("posts")
+}
+
+model Image {
+  id        String   @id @default(uuid())
+  name      String
+  url       String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("images")
+}
+
+model Video {
+  id        String   @id @default(uuid())
+  name      String
+  url       String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("videos")
+}
+
+model ContentItem {
+  id         String   @id @default(uuid())
+  collection String
+  data       Json     @default("{}")
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@index([collection])
+  @@index([collection, createdAt])
+  @@map("content_items")
+}
+
+model TrackingEvent {
+  id             String          @id @default(uuid())
+  event          String
+  sessionId      String?
+  affiliateId    String?
+  productId      String?
+  landingPageId  String?
+  orderId        String?
+  campaignSource CampaignSource?
+  utmSource      String?
+  ipAddress      String?
+  userAgent      String?
+  referer        String?
+  extraData      Json?
+  createdAt      DateTime        @default(now())
+
+  @@index([event, createdAt])
+  @@index([affiliateId])
+  @@index([campaignSource])
+  @@index([sessionId])
+  @@map("tracking_events")
+}
+
+model Promo {
+  id        String    @id @default(uuid())
+  code      String    @unique
+  type      PromoType
+  value     Float
+  minOrder  Float     @default(0)
+  maxUses   Int?
+  usedCount Int       @default(0)
+  expiresAt DateTime?
+  isActive  Boolean   @default(true)
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+
+  @@index([code])
+  @@index([isActive])
+  @@map("promos")
+}
+
+model SpinEvent {
+  id        String   @id @default(uuid())
+  sessionId String?
+  prize     String?
+  prizeType String?  @default("none")
+  promoCode String?
+  copied    Boolean  @default(false)
+  ordered   Boolean  @default(false)
+  orderId   String?
+  ipAddress String?
+  userAgent String?
+  createdAt DateTime @default(now())
+  order     Order?   @relation(fields: [orderId], references: [id])
+
+  @@index([sessionId])
+  @@index([promoCode])
+  @@index([orderId])
+  @@index([createdAt])
+  @@map("spin_events")
+}
+
+model SpinWheelConfig {
+  id           String             @id @default(uuid())
+  isEnabled    Boolean            @default(false)
+  deviceTarget String             @default("both")    // desktop | mobile | both
+  pageTarget   String             @default("all")     // homepage | product | cart | checkout | all
+  triggerType  String             @default("seconds") // seconds | exit_intent | add_to_cart | scroll
+  triggerValue Int                @default(10)
+  title        String             @default("Spin & Win!")
+  subtitle     String             @default("Try your luck for a special reward")
+  createdAt    DateTime           @default(now())
+  updatedAt    DateTime           @updatedAt
+  segments     SpinWheelSegment[]
+
+  @@map("spin_wheel_config")
+}
+
+model SpinWheelSegment {
+  id           String          @id @default(uuid())
+  configId     String
+  config       SpinWheelConfig @relation(fields: [configId], references: [id], onDelete: Cascade)
+  label        String
+  color        String          @default("#FF6B6B")
+  image        String?
+  rewardType   String          @default("none")  // coupon | product | free_shipping | none
+  probability  Float           @default(10)
+  couponCode   String?
+  productId    String?
+  minCartValue Float           @default(0)
+  position     Int             @default(0)
+  createdAt    DateTime        @default(now())
+
+  @@index([configId])
+  @@map("spin_wheel_segments")
+}
+
+model SpinWheelEvent {
+  id         String   @id @default(uuid())
+  sessionId  String
+  eventType  String   // spin_view | spin_click | spin_win | reward_unlock | coupon_used | spin_conversion
+  segmentId  String?
+  rewardType String?
+  couponCode String?
+  productId  String?
+  cartValue  Float?
+  orderId    String?
+  clickId    String?
+  ipAddress  String?
+  userAgent  String?
+  createdAt  DateTime @default(now())
+
+  @@index([sessionId])
+  @@index([eventType])
+  @@index([createdAt])
+  @@map("spin_wheel_events")
+}
+
+model ShippingCompany {
+  id           String              @id @default(uuid())
+  name         String
+  logo         String?
+  description  String?
+  deliveryTime String?
+  price        Float               @default(0)
+  isFree       Boolean             @default(false)
+  paymentType  ShippingPaymentType @default(COD)
+  deposit      Float               @default(0)
+  isActive     Boolean             @default(true)
+  sortOrder    Int                 @default(0)
+  createdAt    DateTime            @default(now())
+  updatedAt    DateTime            @updatedAt
+
+  @@index([isActive])
+  @@index([sortOrder])
+  @@map("shipping_companies")
+}
+
+model Review {
+  id           String       @id @default(uuid())
+  name         String
+  phone        String?
+  rating       Int          @default(5)
+  message      String
+  status       ReviewStatus @default(PENDING)
+  productId    String?
+  productTitle String?
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+  product      Product?     @relation(fields: [productId], references: [id])
+
+  @@index([status])
+  @@index([productId])
+  @@map("reviews")
+}
+
+model ScheduledReview {
+  id            String    @id @default(uuid())
+  name          String
+  phone         String?
+  rating        Int       @default(5)
+  message       String
+  images        Json?
+  audio         String?
+  productId     String?
+  productTitle  String?
+  publishAt     DateTime?
+  nextPublishAt DateTime?
+  intervalHours Int       @default(0)
+  published     Boolean   @default(false)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  product       Product?  @relation(fields: [productId], references: [id])
+
+  @@index([publishAt])
+  @@index([published])
+  @@index([productId])
+  @@map("scheduled_reviews")
+}
+
+model Invoice {
+  id              String   @id @default(uuid())
+  invoiceNumber   String   @unique
+  orderId         String?  @unique
+  customerName    String
+  customerPhone   String?
+  customerCity    String?
+  shippingCompany String?
+  paymentMethod   String?
+  items           Json?
+  subtotal        Float    @default(0)
+  shippingCost    Float    @default(0)
+  promoDiscount   Float    @default(0)
+  total           Float    @default(0)
+  deposit         Float    @default(0)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  order           Order?   @relation(fields: [orderId], references: [id])
+
+  @@index([invoiceNumber])
+  @@map("invoices")
+}
+
+model AdCampaign {
+  id            String         @id @default(uuid())
+  campaignId    String         @unique
+  name          String
+  trafficSource CampaignSource @default(OTHER)
+  status        CampaignStatus @default(ACTIVE)
+  cost          Float          @default(0)
+  clicks        Int            @default(0)
+  conversions   Int            @default(0)
+  revenue       Float          @default(0)
+  profit        Float          @default(0)
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+  rotations     AdRotation[]
+  stats         AdStatsDaily[]
+
+  @@index([campaignId])
+  @@index([status])
+  @@map("ad_campaigns")
+}
+
+model AdRotation {
+  id          String     @id @default(uuid())
+  campaignId  String
+  name        String
+  imageUrl    String?
+  headline    String?
+  targetUrl   String?
+  isActive    Boolean    @default(true)
+  impressions Int        @default(0)
+  clicks      Int        @default(0)
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+  campaign    AdCampaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+
+  @@index([campaignId])
+  @@map("ad_rotations")
+}
+
+model AdStatsDaily {
+  id          String     @id @default(uuid())
+  campaignId  String
+  date        DateTime
+  clicks      Int        @default(0)
+  impressions Int        @default(0)
+  conversions Int        @default(0)
+  revenue     Float      @default(0)
+  cost        Float      @default(0)
+  campaign    AdCampaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+
+  @@unique([campaignId, date])
+  @@index([campaignId, date])
+  @@map("ad_stats_daily")
+}
+
+model ProductAnalytics {
+  id                String   @id @default(uuid())
+  productId         String   @unique
+  clicks            Int      @default(0)
+  orders            Int      @default(0)
+  views             Int      @default(0)
+  ctaClicks         Int      @default(0)
+  stickyImpressions Int      @default(0)
+  stickyAddClicks   Int      @default(0)
+  stickyBuyClicks   Int      @default(0)
+  productOrders     Int      @default(0)
+  landingOrders     Int      @default(0)
+  affiliateOrders   Int      @default(0)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+  product           Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@index([productId])
+  @@map("product_analytics")
+}
+
+model ClickEvent {
+  id             String   @id @default(uuid())
+  clickId        String   @unique
+  sourceId       String?
+  campaignId     String?
+  subId          String?
+  zoneId         String?
+  ip             String?
+  userAgent      String?
+  device         String?
+  deviceType     String?
+  os             String?
+  browser        String?
+  country        String?
+  city           String?
+  isp            String?
+  operator       String?
+  connectionType String?
+  isMobile       Boolean  @default(false)
+  isSuspicious   Boolean  @default(false)
+  cpc            Float?
+  cpm            Float?
+  createdAt      DateTime @default(now())
+
+  @@index([clickId])
+  @@index([sourceId])
+  @@index([campaignId])
+  @@index([zoneId])
+  @@index([ip])
+  @@index([country])
+  @@index([createdAt])
+  @@map("click_events")
+}
+
+model ConversionEvent {
+  id        String   @id @default(uuid())
+  clickId   String
+  orderId   String?
+  amount    Float    @default(0)
+  revenue   Float    @default(0)
+  cost      Float    @default(0)
+  profit    Float    @default(0)
+  type      String   @default("main")
+  createdAt DateTime @default(now())
+
+  @@unique([clickId, type])
+  @@index([clickId])
+  @@index([orderId])
+  @@index([createdAt])
+  @@map("conversion_events")
+}
+
+model LandingVisit {
+  id        String   @id @default(uuid())
+  landingId String?
+  clickId   String?
+  createdAt DateTime @default(now())
+
+  @@index([landingId])
+  @@index([clickId])
+  @@index([createdAt])
+  @@map("landing_visits")
+}
+
+model UIControlSetting {
+  key       String   @id
+  value     String   // JSON-encoded: "true" | "false" | '"#111827"'
+  updatedAt DateTime @updatedAt
+
+  @@map("ui_control_settings")
+}
+
+model WatermarkSetting {
+  id           String   @id @default(uuid())
+  isEnabled    Boolean  @default(false)
+  type         String   @default("text")          // text | logo
+  // Text
+  text         String   @default("© My Store")
+  fontFamily   String   @default("sans-serif")
+  fontSize     Int      @default(28)
+  fontColor    String   @default("#ffffff")
+  textRotation Int      @default(-30)
+  // Logo
+  logoUrl      String?
+  logoSize     Int      @default(20)              // % of image width
+  logoMargin   Int      @default(20)              // px
+  // Common
+  opacity      Float    @default(0.5)
+  placement    String   @default("bottom-right")  // top-left|top-right|center|bottom-left|bottom-right|repeat-5|repeat-6|grid
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@map("watermark_settings")
+}
+
+model TrackingCampaign {
+  id          String   @id @default(uuid())
+  name        String
+  slug        String   @unique
+  landingUrl  String
+  source      String   @default("other")
+  costModel   String   @default("cpc")
+  defaultCost Float    @default(0)
+  isActive    Boolean  @default(true)
+  notes       String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([slug])
+  @@index([isActive])
+  @@map("tracking_campaigns")
+}
+
+model FunnelEvent {
+  id        String   @id @default(uuid())
+  clickId   String?
+  sessionId String?
+  eventType String   // landing_view | product_click | add_to_cart | checkout_start | payment_selected | conversion
+  productId String?
+  orderId   String?
+  metadata  Json?
+  ip        String?
+  userAgent String?
+  createdAt DateTime @default(now())
+
+  @@index([clickId])
+  @@index([eventType])
+  @@index([sessionId])
+  @@index([productId])
+  @@index([createdAt])
+  @@map("funnel_events")
+}
+
+enum Role {
+  ADMIN
+  AFFILIATE
+  CUSTOMER
+}
+
+enum FeedbackType {
+  TEXT
+  IMAGE
+  AUDIO
+}
+
+enum FeedbackStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  SCHEDULED
+}
+
+enum CampaignSource {
+  TIKTOK
+  INSTAGRAM
+  PUSH_ADS
+  NATIVE_ADS
+  DIRECT
+  OTHER
+}
+
+enum PromoType {
+  PERCENT
+  FIXED
+}
+
+enum ShippingPaymentType {
+  COD
+  COD_DEPOSIT
+  PREPAID
+}
+
+enum ReviewStatus {
+  PENDING
+  APPROVED
+  REJECTED
+}
+
+enum CampaignStatus {
+  ACTIVE
+  PAUSED
+  ENDED
+}
+
+model Gift {
+  id              String   @id @default(uuid())
+  productId       String
+  thresholdAmount Float
+  active          Boolean  @default(true)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@map("gifts")
+}
+
+model HomepageBanner {
+  id        String   @id @default(uuid())
+  title     String
+  images    Json     @default("[]")
+  links     Json     @default("[]")
+  position  String   @default("top")      // top | between_collections | bottom
+  order     Int      @default(0)
+  type      String   @default("single")   // single | slider
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([position, isActive])
+  @@index([order])
+  @@map("homepage_banners")
+}

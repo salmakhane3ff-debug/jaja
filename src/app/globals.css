@@ -1,0 +1,302 @@
+@import "tailwindcss";
+@plugin './hero.ts';
+@source '../../node_modules/@heroui/theme/dist/**/*.{js,ts,jsx,tsx}';
+
+:root {
+  --font-family-base: var(--font-rubik);
+}
+
+/* ─── Glass card ─────────────────────────────────────────────────────────── */
+.glass-card {
+  backdrop-filter: blur(4px);
+  box-shadow: 0 2px 12px 0 rgba(120, 80, 200, 0.06), 0 1px 3px 0 rgba(0,0,0,0.04);
+  transition: box-shadow 0.2s, transform 0.2s;
+}
+.glass-card:hover {
+  box-shadow: 0 6px 24px 0 rgba(120, 80, 200, 0.12), 0 2px 8px 0 rgba(0,0,0,0.06);
+  transform: translateY(-2px);
+}
+
+/* ─── RTL / LTR global adjustments ───────────────────────────────────────── */
+
+/* Arabic uses Rubik Arabic which has larger line-height needs */
+[dir="rtl"] body {
+  font-family: var(--font-family-base), 'Segoe UI', Tahoma, sans-serif;
+  text-align: right;
+}
+
+[dir="ltr"] body {
+  text-align: left;
+}
+
+/* Flip left/right padding on prose lists for RTL */
+[dir="rtl"] .prose ul,
+[dir="rtl"] .prose ol {
+  padding-right: 1.5rem !important;
+  padding-left: 0 !important;
+}
+
+/* Flip blockquote border for RTL */
+[dir="rtl"] .prose blockquote {
+  border-right: 4px solid #3b82f6 !important;
+  border-left: none !important;
+  padding-right: 1rem !important;
+  border-radius: 0.5rem 0 0 0.5rem !important;
+}
+
+/* Marquee direction flips in RTL */
+[dir="rtl"] .marquee-wrapper {
+  animation-direction: reverse;
+}
+
+/* Input text direction */
+[dir="rtl"] input,
+[dir="rtl"] textarea,
+[dir="rtl"] select {
+  text-align: right;
+  direction: rtl;
+}
+
+/* ─── Prevent mobile browser zoom on input focus ─────────────────────────── */
+/* iOS/Android zoom when font-size < 16px — fix without disabling user zoom   */
+@media (max-width: 768px) {
+  input,
+  textarea,
+  select {
+    font-size: 16px !important;
+  }
+}
+
+/* HeroUI Drawer — keep the close button on the correct side */
+[dir="rtl"] [data-slot="close-button"] {
+  left: 1rem;
+  right: auto;
+}
+
+*{
+  box-sizing: border-box;
+}
+
+::-webkit-scrollbar {
+    display: none;
+}
+
+body {
+  font-family: var(--font-family-base), sans-serif;
+  background-color: #f9fafb;
+}
+
+@keyframes marquee-infinite {
+  0% {
+    transform: translateX(0%);
+  }
+  100% {
+    transform: translateX(-50%);
+  }
+}
+
+.marquee-wrapper {
+  white-space: nowrap;
+  display: flex;
+  gap: 40px;
+  animation: marquee-infinite 50s linear infinite;
+}
+
+.hide-swiper-dots .swiper-pagination {
+  display: none;
+}
+
+.swiper-pagination-bullet {
+  width: 24px;
+  height: 4px;
+  border-radius: 2px;
+  background-color: #d1d5db; /* Tailwind gray-300 */
+  opacity: 0.6;
+  margin: 0 4px !important;
+  transition: all 0.3s ease;
+}
+
+.swiper-pagination-bullet-active {
+  background-color: #facc15; /* Tailwind yellow-400 */
+  opacity: 1;
+  width: 32px;
+}
+
+.sha-one {
+  box-shadow: rgba(0, 0, 0, 0.1) 0px 1px 2px 0px;
+}
+
+/* styles/globals.css or your component CSS */
+.sun-editor {
+  border-radius: 8px;
+  border-bottom: none !important;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+  min-height: 500px;
+}
+
+.sun-editor .se-toolbar {
+  background-color: #f9fafb; /* light gray */
+  border-bottom: none !important;
+  border-radius: 8px 8px 0 0;
+}
+
+.sun-editor .se-wrapper {
+  border-radius: 0 0 8px 8px;
+  min-height: 150px;
+}
+
+.se-resizing-bar {
+  display: none !important;
+}
+.hide-scrollbar {
+  -ms-overflow-style: none; /* IE and Edge */
+  scrollbar-width: none; /* Firefox */
+}
+.hide-scrollbar::-webkit-scrollbar {
+  display: none; /* Chrome, Safari, Opera */
+}
+
+/* Prose Content Styling for Blog Posts and Pages */
+.prose h1 {
+  font-size: 2rem !important;
+  font-weight: 700 !important;
+  margin-top: 2rem !important;
+  margin-bottom: 1.5rem !important;
+  line-height: 1.2 !important;
+  color: #111827 !important;
+}
+
+.prose h2 {
+  font-size: 1.75rem !important;
+  font-weight: 600 !important;
+  margin-top: 1.5rem !important;
+  margin-bottom: 1rem !important;
+  line-height: 1.3 !important;
+  color: #111827 !important;
+}
+
+.prose h3 {
+  font-size: 1.5rem !important;
+  font-weight: 500 !important;
+  margin-top: 1.25rem !important;
+  margin-bottom: 0.75rem !important;
+  line-height: 1.4 !important;
+  color: #111827 !important;
+}
+
+.prose h4 {
+  font-size: 1.25rem !important;
+  font-weight: 500 !important;
+  margin-top: 1rem !important;
+  margin-bottom: 0.5rem !important;
+  line-height: 1.5 !important;
+  color: #111827 !important;
+}
+
+.prose h5 {
+  font-size: 1.125rem !important;
+  font-weight: 500 !important;
+  margin-top: 0.75rem !important;
+  margin-bottom: 0.5rem !important;
+  line-height: 1.5 !important;
+  color: #111827 !important;
+}
+
+.prose h6 {
+  font-size: 1rem !important;
+  font-weight: 500 !important;
+  margin-top: 0.5rem !important;
+  margin-bottom: 0.25rem !important;
+  line-height: 1.6 !important;
+  color: #111827 !important;
+}
+
+.prose p {
+  margin-bottom: 1rem !important;
+  line-height: 1.75 !important;
+  color: #374151 !important;
+}
+
+.prose ul, .prose ol {
+  margin-bottom: 1rem !important;
+  padding-left: 1.5rem !important;
+}
+
+.prose li {
+  margin-bottom: 0.25rem !important;
+}
+
+.prose strong {
+  font-weight: 600 !important;
+}
+
+.prose em {
+  font-style: italic !important;
+}
+
+.prose blockquote {
+  border-left: 4px solid #3b82f6 !important;
+  padding-left: 1rem !important;
+  margin: 1.5rem 0 !important;
+  font-style: italic !important;
+  color: #6b7280 !important;
+  background-color: #f9fafb !important;
+  padding: 1rem !important;
+  border-radius: 0 0.5rem 0.5rem 0 !important;
+}
+
+.prose code {
+  background-color: #f3f4f6 !important;
+  padding: 0.125rem 0.25rem !important;
+  border-radius: 0.25rem !important;
+  font-size: 0.875rem !important;
+  color: #3b82f6 !important;
+}
+
+.prose pre {
+  background-color: #111827 !important;
+  color: white !important;
+  padding: 1rem !important;
+  border-radius: 0.5rem !important;
+  overflow-x: auto !important;
+  margin: 1rem 0 !important;
+}
+
+.prose pre code {
+  background-color: transparent !important;
+  color: inherit !important;
+  padding: 0 !important;
+  border-radius: 0 !important;
+}
+
+.prose a {
+  color: #3b82f6 !important;
+  text-decoration: none !important;
+}
+
+.prose a:hover {
+  text-decoration: underline !important;
+}
+
+.prose img {
+  margin: 1.5rem 0 !important;
+  border-radius: 0.5rem !important;
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1) !important;
+}
+
+.prose table {
+  width: 100% !important;
+  margin: 1.5rem 0 !important;
+  border-collapse: collapse !important;
+}
+
+.prose th, .prose td {
+  border: 1px solid #e5e7eb !important;
+  padding: 0.75rem !important;
+  text-align: left !important;
+}
+
+.prose th {
+  background-color: #f9fafb !important;
+  font-weight: 600 !important;
+}

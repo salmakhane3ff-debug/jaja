@@ -1,0 +1,19 @@
+{
+  "version": "0.0.1",
+  "autoVerify": false,
+  "configurations": [
+    {
+      "name": "architecture-diagram",
+      "runtimeExecutable": "node",
+      "runtimeArgs": [".claude/diagram/server.js"],
+      "port": 4000
+    },
+    {
+      "name": "nextjs-dev",
+      "runtimeExecutable": "node",
+      "runtimeArgs": ["C:/Program Files/nodejs/node_modules/npm/bin/npm-cli.js", "run", "dev"],
+      "port": 3000,
+      "autoPort": true
+    }
+  ]
+}

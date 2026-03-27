@@ -1,0 +1,19 @@
+/** Canonical UI Control defaults — shared between API route and Context. */
+export const UI_DEFAULTS = {
+  showSpecialOffer:      true,
+  showWishlistButton:    true,
+  showShareButton:       true,
+  showAddToCartButton:   true,
+  showBuyNowButton:      true,
+  showStickyAddToCart:   true,
+  stickyShowBuyNow:      true,
+  stickyVariant:         "A",
+  showCartIcon:          true,
+  showWishlistIcon:      true,
+  showFeedbackBarIcon:   true,
+  primaryColor:          "#111827",
+  secondaryColor:        "#ffffff",
+  showRelatedProducts:   true,
+  enableImageZoom:       true,
+  enableVideo:           true,
+};

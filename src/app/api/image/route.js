@@ -1,0 +1,104 @@
+/**
+ * /api/image
+ * ─────────────────────────────────────────────────────────────────────────────
+ * Image library CRUD — Prisma-backed replacement for the retired MongoDB
+ * /api/image endpoint.  Stores records in the `images` table and files in
+ * /public/uploads/.
+ *
+ * GET              → list all image records  [{ _id, name, url }]
+ * POST (multipart) → upload file → save to /public/uploads/ → DB record
+ * DELETE { _id }   → remove DB record (file stays on disk — safe default)
+ * ─────────────────────────────────────────────────────────────────────────────
+ */
+
+import { writeFile, mkdir } from 'fs/promises';
+import { existsSync }      from 'fs';
+import path from 'path';
+import prisma from '@/lib/prisma';
+import { getWatermarkSettings, applyWatermark } from '@/lib/services/watermarkService.js';
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
+function mapImage(row) {
+  if (!row) return null;
+  return { _id: row.id, name: row.name, url: row.url, createdAt: row.createdAt };
+}
+
+// ── GET → list all images ────────────────────────────────────────────────────
+
+export async function GET() {
+  try {
+    const rows = await prisma.image.findMany({
+      orderBy: { createdAt: 'desc' },
+    });
+    return Response.json(rows.map(mapImage));
+  } catch (err) {
+    console.error('[/api/image GET]', err);
+    return Response.json({ error: 'Server error' }, { status: 500 });
+  }
+}
+
+// ── POST multipart/form-data → upload + save record ──────────────────────────
+
+export async function POST(req) {
+  try {
+    const formData = await req.formData();
+    const file = formData.get('file');
+
+    if (!file || typeof file === 'string') {
+      return Response.json({ error: 'No file provided' }, { status: 400 });
+    }
+
+    let buffer      = Buffer.from(await file.arrayBuffer());
+    const safeName  = file.name.replace(/[^a-zA-Z0-9._-]/g, '-');
+    const fileName  = `${Date.now()}-${safeName}`;
+    const uploadDir = path.join(process.cwd(), 'public', 'uploads');
+    const filePath  = path.join(uploadDir, fileName);
+
+    if (!existsSync(uploadDir)) await mkdir(uploadDir, { recursive: true });
+
+    // Apply watermark to images only (skip for video files)
+    if (!file.type.startsWith('video/')) {
+      try {
+        const wm = await getWatermarkSettings();
+        if (wm?.isEnabled) buffer = await applyWatermark(buffer, wm);
+      } catch (wmErr) {
+        console.warn('[watermark] Skipped:', wmErr.message);
+      }
+    }
+
+    await writeFile(filePath, buffer);
+
+    const url = `/uploads/${fileName}`;
+    const row = await prisma.image.create({
+      data: { name: file.name, url },
+    });
+
+    return Response.json(mapImage(row), { status: 201 });
+  } catch (err) {
+    console.error('[/api/image POST]', err);
+    return Response.json({ error: 'Upload failed' }, { status: 500 });
+  }
+}
+
+// ── DELETE { _id } ────────────────────────────────────────────────────────────
+
+export async function DELETE(req) {
+  try {
+    const { _id, id } = await req.json();
+    const imageId = _id || id;
+
+    if (!imageId) {
+      return Response.json({ error: '_id is required' }, { status: 400 });
+    }
+
+    await prisma.image.delete({ where: { id: imageId } });
+    return Response.json({ ok: true });
+  } catch (err) {
+    if (err.code === 'P2025') {
+      return Response.json({ error: 'Image not found' }, { status: 404 });
+    }
+    console.error('[/api/image DELETE]', err);
+    return Response.json({ error: 'Server error' }, { status: 500 });
+  }
+}
