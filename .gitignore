@@ -53,3 +53,6 @@ next-env.d.ts
 
 # claude settings
 .claude/settings.local.json
+
+# large zip backups
+*.zip
