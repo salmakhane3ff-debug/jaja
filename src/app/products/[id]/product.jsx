@@ -1,14 +1,8 @@
 "use client";
 
-import React, { useState, useEffect, useRef, useCallback } from "react";
+import React, { useState, useEffect, useRef, useCallback, lazy, Suspense, useMemo } from "react";
 import StickyAddToCart from "@/components/product/StickyAddToCart";
 import ProductGallery from "@/components/ProductGallery";
-import SliderProduct from "@/components/Product/SliderProduct";
-import SliderCollection from "@/components/Colleaction/SliderCollection";
-import VideoReels from "@/components/VideoReels";
-import SupportBenefits from "@/components/SupportBenefits";
-import FeedbackSection from "@/components/FeedbackSection";
-import ProductGrid from "@/components/Product/ProductGrid";
 import { BadgeCheck, ShieldCheck, ShoppingCart } from "lucide-react";
 import SectionRenderer from "@/components/SectionRenderer";
 import { ShoppingBag, Heart, Star, Truck, Shield, Share2, Plus, Minus, Award, Box, Tag, Check } from "lucide-react";
@@ -16,9 +10,18 @@ import { Button } from "@heroui/react";
 import { useCart } from "@/hooks/useCart";
 import { useUIControl } from "@/hooks/useUIControl";
 import { useLanguage } from "@/context/LanguageContext";
-import ConversionBadges from "@/components/ConversionBadges";
+import { useSetting } from "@/context/SettingsContext";
 import { useProductScarcity } from "@/hooks/useProductScarcity";
 import { useDiscountRules } from "@/hooks/useDiscountRules";
+
+// ── Lazy-loaded non-critical components ───────────────────────────────────────
+const ConversionBadges  = lazy(() => import("@/components/ConversionBadges"));
+const FeedbackSection   = lazy(() => import("@/components/FeedbackSection"));
+const SliderProduct     = lazy(() => import("@/components/Product/SliderProduct"));
+const SliderCollection  = lazy(() => import("@/components/Colleaction/SliderCollection"));
+const VideoReels        = lazy(() => import("@/components/VideoReels"));
+const SupportBenefits   = lazy(() => import("@/components/SupportBenefits"));
+const ProductGrid       = lazy(() => import("@/components/Product/ProductGrid"));
 
 const DEFAULT_FB_SETTINGS = {
   enableProductFeedback: true,
@@ -34,15 +37,24 @@ export default function Product({ data }) {
   const { getDiscount } = useDiscountRules();
   const discountRule = getDiscount(data);
 
+  // ── Settings from context — no individual fetches ─────────────────────────
+  const { data: fbRaw }         = useSetting("feedback-settings");
+  const { data: convRaw }       = useSetting("conversion-settings");
+
+  const fbSettings = useMemo(() => (
+    fbRaw && !fbRaw.error ? { ...DEFAULT_FB_SETTINGS, ...fbRaw } : DEFAULT_FB_SETTINGS
+  ), [fbRaw]);
+
+  const randomBarEnabled = useMemo(() => (
+    convRaw ? (convRaw?.randomStockBar?.enabled !== false) : true
+  ), [convRaw]);
+
   const [quantity, setQuantity] = useState(1);
   const [selectedSize, setSelectedSize] = useState(null);
   const [selectedColor, setSelectedColor] = useState(null);
   const [wishlist, setWishlist] = useState([]);
-  const [fbSettings, setFbSettings] = useState(DEFAULT_FB_SETTINGS);
   const [feedbackStats, setFeedbackStats] = useState({ avg: 0, count: 0 });
   const [globalStats, setGlobalStats] = useState({ avg: 0, count: 0 });
-  // null = still loading (bar hidden), true = show, false = admin disabled
-  const [randomBarEnabled, setRandomBarEnabled] = useState(null);
   const feedbackRef = useRef(null);
   const actionsRef = useRef(null);
 
@@ -60,29 +72,18 @@ export default function Product({ data }) {
     const savedWishlist = JSON.parse(localStorage.getItem("wishlist") || "[]");
     setWishlist(savedWishlist);
 
-    fetch("/api/setting?type=feedback-settings")
-      .then((r) => r.json())
-      .then((d) => { if (d && !d.error) setFbSettings((p) => ({ ...p, ...d })); })
-      .catch(() => {});
-
-    fetch("/api/setting?type=conversion-settings")
-      .then((r) => r.json())
-      .then((d) => {
-        // Resolve null → true only after we know the admin value.
-        // If the key is missing the bar defaults to enabled.
-        setRandomBarEnabled(!d?.error && d?.randomStockBar?.enabled !== false);
-      })
-      .catch(() => setRandomBarEnabled(true)); // network error → show bar
-
-    fetch("/api/feedback")
-      .then((r) => r.json())
-      .then((list) => {
-        if (!Array.isArray(list) || list.length === 0) return;
-        const avg = list.reduce((a, b) => a + (b.rating || 0), 0) / list.length;
-        setGlobalStats({ avg: parseFloat(avg.toFixed(1)), count: list.length });
-      })
-      .catch(() => {});
-  }, []);
+    // Fetch global feedback stats only when starClickAction needs them
+    if (fbSettings.starClickAction === "goToFeedbackPage") {
+      fetch("/api/feedback")
+        .then((r) => r.json())
+        .then((list) => {
+          if (!Array.isArray(list) || list.length === 0) return;
+          const avg = list.reduce((a, b) => a + (b.rating || 0), 0) / list.length;
+          setGlobalStats({ avg: parseFloat(avg.toFixed(1)), count: list.length });
+        })
+        .catch(() => {});
+    }
+  }, [fbSettings.starClickAction]);
 
   const handleFbStats = useCallback((avg, count) => {
     setFeedbackStats({ avg, count });
@@ -283,7 +284,9 @@ export default function Product({ data }) {
             })()}
 
             {/* Conversion Badges — urgency / scarcity / social proof */}
-            <ConversionBadges />
+            <Suspense fallback={null}>
+              <ConversionBadges />
+            </Suspense>
 
             {/* Special Offer */}
             {ui.showSpecialOffer && (
@@ -469,26 +472,32 @@ export default function Product({ data }) {
           <h2 className="text-lg font-semibold text-gray-900 px-4 md:px-20 container mx-auto mb-2">
             {t("product_related")}
           </h2>
-          <ProductGrid />
+          <Suspense fallback={null}>
+            <ProductGrid />
+          </Suspense>
         </div>
       )}
 
       {/* Customer Feedback */}
       {fbSettings.enableProductFeedback && (
         <div ref={feedbackRef} id="feedback-section" className="container mx-auto px-4 max-w-6xl">
-          <FeedbackSection
-            productId={data._id || data.id}
-            productName={data.title}
-            showForm
-            formDisplay={fbSettings.formDisplay}
-            onStatsLoaded={handleFbStats}
-          />
+          <Suspense fallback={null}>
+            <FeedbackSection
+              productId={data._id || data.id}
+              productName={data.title}
+              showForm
+              formDisplay={fbSettings.formDisplay}
+              onStatsLoaded={handleFbStats}
+            />
+          </Suspense>
         </div>
       )}
 
       {/* Support Benefits */}
       <div className="bg-gray-50">
-        <SupportBenefits />
+        <Suspense fallback={null}>
+          <SupportBenefits />
+        </Suspense>
       </div>
 
       <StickyAddToCart

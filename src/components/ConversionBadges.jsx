@@ -16,8 +16,9 @@
  *   • Purchase Popup — floating bottom-left toast (interval driven)
  */
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useMemo } from "react";
 import { useLanguage } from "@/context/LanguageContext";
+import { useSetting } from "@/context/SettingsContext";
 
 // ── Simulated buyer data ───────────────────────────────────────────────────────
 const AR_NAMES  = ["أحمد", "محمد", "فاطمة", "خديجة", "يوسف", "آية", "ريم", "سارة", "هشام", "نور", "عمر", "لمياء"];
@@ -160,28 +161,21 @@ function PurchasePopup({ settings, lang, dir, t }) {
 // ── Main component ─────────────────────────────────────────────────────────────
 export default function ConversionBadges() {
   const { t, lang, dir } = useLanguage();
-  const [cfg,    setCfg]    = useState(null);   // null = loading
+  const { data: rawCfg, loaded } = useSetting("conversion-settings");
   const [viewers, setViewers] = useState(0);
 
-  // Fetch settings once
-  useEffect(() => {
-    fetch("/api/setting?type=conversion-settings")
-      .then((r) => r.json())
-      .then((data) => {
-        if (data && !data.error) {
-          setCfg({
-            soldCounter:   { ...DEFAULTS.soldCounter,   ...(data.soldCounter   || {}) },
-            liveViewers:   { ...DEFAULTS.liveViewers,   ...(data.liveViewers   || {}) },
-            lowStock:      { ...DEFAULTS.lowStock,      ...(data.lowStock      || {}) },
-            stockProgress: { ...DEFAULTS.stockProgress, ...(data.stockProgress || {}) },
-            purchasePopup: { ...DEFAULTS.purchasePopup, ...(data.purchasePopup || {}) },
-          });
-        } else {
-          setCfg(DEFAULTS);
-        }
-      })
-      .catch(() => setCfg(DEFAULTS));
-  }, []);
+  // Derive merged config from context data — no fetch needed
+  const cfg = useMemo(() => {
+    if (!loaded) return null;
+    if (!rawCfg || rawCfg.error) return DEFAULTS;
+    return {
+      soldCounter:   { ...DEFAULTS.soldCounter,   ...(rawCfg.soldCounter   || {}) },
+      liveViewers:   { ...DEFAULTS.liveViewers,   ...(rawCfg.liveViewers   || {}) },
+      lowStock:      { ...DEFAULTS.lowStock,      ...(rawCfg.lowStock      || {}) },
+      stockProgress: { ...DEFAULTS.stockProgress, ...(rawCfg.stockProgress || {}) },
+      purchasePopup: { ...DEFAULTS.purchasePopup, ...(rawCfg.purchasePopup || {}) },
+    };
+  }, [rawCfg, loaded]);
 
   // Live viewers: set initial random value and refresh every 30s
   useEffect(() => {

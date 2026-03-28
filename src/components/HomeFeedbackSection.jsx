@@ -5,6 +5,7 @@ import { Star, BadgeCheck, Play, Pause, ChevronLeft, ChevronRight, X } from "luc
 import Link from "next/link";
 import formatDate from "@/utils/formatDate";
 import { useLanguage } from "@/context/LanguageContext";
+import { useSetting } from "@/context/SettingsContext";
 
 // ── VoicePlayerMini ───────────────────────────────────────────────────────────
 
@@ -228,34 +229,27 @@ function SliderLayout({ items }) {
 
 export default function HomeFeedbackSection({ slot = "bottom" }) {
   const { t } = useLanguage();
-  const [settings, setSettings] = useState(null);
-  const [items,    setItems]    = useState([]);
-  const [ready,    setReady]    = useState(false);
+  const { data: fbRaw, loaded: fbLoaded } = useSetting("feedback-settings");
+  const settings = fbLoaded ? (fbRaw && !fbRaw.error ? fbRaw : {}) : null;
+  const [items, setItems] = useState([]);
+  const [ready, setReady] = useState(false);
 
-  const load = useCallback(async () => {
-    try {
-      const [sRes, fRes] = await Promise.all([
-        fetch("/api/setting?type=feedback-settings"),
-        fetch("/api/feedback"),
-      ]);
-      const sData = await sRes.json();
-      const fData = await fRes.json();
+  useEffect(() => {
+    if (!settings) return; // wait for context to load
+    const show = settings.showFeedbackSlider ?? settings.showOnHomepage ?? false;
+    if (!show) { setReady(true); return; }
 
-      const s = sData && !sData.error ? sData : {};
-      setSettings(s);
-
-      // Check whether to show at all
-      const show = s.showFeedbackSlider ?? s.showOnHomepage ?? false;
-      if (show) {
-        const max  = s.maxFeedbackItems || s.maxItems || 6;
+    const max = settings.maxFeedbackItems || settings.maxItems || 6;
+    fetch("/api/feedback")
+      .then((r) => r.json())
+      .then((fData) => {
         const list = Array.isArray(fData) ? fData : [];
         setItems(list.slice(0, max));
-      }
-    } catch { /* silently fail */ }
-    finally  { setReady(true); }
-  }, []);
-
-  useEffect(() => { load(); }, [load]);
+      })
+      .catch(() => {})
+      .finally(() => setReady(true));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fbLoaded]);
 
   if (!ready || !settings) return null;
 

@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useCallback } from "react";
+import { useSetting } from "@/context/SettingsContext";
 
 // ── Apply a rule set to one product ──────────────────────────────────────────
 // Returns { effectivePrice, originalPrice, percentage, label } or null.
@@ -42,15 +43,10 @@ export function applyDiscountRules(product, rules) {
 }
 
 // ── Hook ──────────────────────────────────────────────────────────────────────
+// Reads discount rules from the shared SettingsContext — no duplicate fetches.
 export function useDiscountRules() {
-  const [rules, setRules] = useState([]);
-
-  useEffect(() => {
-    fetch("/api/setting?type=discount_rules", { cache: "no-store" })
-      .then(r => r.ok ? r.json() : {})
-      .then(d => setRules(Array.isArray(d?.rules) ? d.rules : []))
-      .catch(() => setRules([]));
-  }, []);
+  const { data } = useSetting("discount_rules");
+  const rules = Array.isArray(data?.rules) ? data.rules : [];
 
   const getDiscount = useCallback(
     (product) => applyDiscountRules(product, rules),

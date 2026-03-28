@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useRef, useCallback } from "react";
+import React, { useState, useEffect, useRef, useCallback, memo } from "react";
 import {
   Star, BadgeCheck, Play, Pause, ChevronDown, ChevronUp,
   ChevronLeft, ChevronRight, MessageSquare, X, PenLine, CheckCircle2,
@@ -336,7 +336,7 @@ function FeedbackModal({ open, onClose, children }) {
 
 // ── FeedbackSection ───────────────────────────────────────────────────────────
 
-export default function FeedbackSection({
+function FeedbackSection({
   productId = null,
   productName: productNameProp = null,
   title = null,
@@ -353,6 +353,10 @@ export default function FeedbackSection({
   const [formOpen,       setFormOpen]       = useState(false);
   const [successVisible, setSuccessVisible] = useState(false);
 
+  // Stable ref so onStatsLoaded doesn't cause fetchData to re-create & re-fire
+  const onStatsLoadedRef = useRef(onStatsLoaded);
+  useEffect(() => { onStatsLoadedRef.current = onStatsLoaded; }, [onStatsLoaded]);
+
   const fetchData = useCallback(async () => {
     setLoading(true);
     try {
@@ -361,13 +365,13 @@ export default function FeedbackSection({
       const data = await res.json();
       const list = Array.isArray(data) ? data : [];
       setItems(list);
-      if (onStatsLoaded && list.length > 0) {
+      if (onStatsLoadedRef.current && list.length > 0) {
         const avg = list.reduce((a, b) => a + (b.rating || 0), 0) / list.length;
-        onStatsLoaded(parseFloat(avg.toFixed(1)), list.length);
+        onStatsLoadedRef.current(parseFloat(avg.toFixed(1)), list.length);
       }
     } catch { /* silently fail */ }
     finally  { setLoading(false); }
-  }, [productId, onStatsLoaded]);
+  }, [productId]); // removed onStatsLoaded from deps — using ref instead
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
@@ -473,3 +477,5 @@ export default function FeedbackSection({
     </section>
   );
 }
+
+export default memo(FeedbackSection);

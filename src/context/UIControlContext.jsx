@@ -28,7 +28,7 @@ export function UIControlProvider({ children }) {
   const [settings, setSettings] = useState({ ...UI_DEFAULTS, _loaded: false });
 
   const reload = useCallback(() => {
-    fetch("/api/ui-control", { cache: "no-store" })
+    fetch("/api/ui-control")
       .then((r) => r.json())
       .then((data) => setSettings({ ...UI_DEFAULTS, ...data, _loaded: true }))
       .catch(() => setSettings((s) => ({ ...s, _loaded: true })));
