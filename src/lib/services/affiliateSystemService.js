@@ -467,6 +467,38 @@ export async function getSubTeamMembers(memberId) {
   }));
 }
 
+/**
+ * Fetch all orders belonging to one team member (lazy, max 100 most-recent).
+ * commissionAmount is already stored on AffiliateOrder at creation time.
+ */
+export async function getMemberOrders(memberId) {
+  const rows = await prisma.affiliateOrder.findMany({
+    where:   { affiliateId: memberId },
+    orderBy: { createdAt: 'desc' },
+    take:    100,
+    select: {
+      id:               true,
+      orderId:          true,
+      productTitle:     true,
+      clientName:       true,
+      total:            true,
+      commissionAmount: true,
+      status:           true,
+      createdAt:        true,
+    },
+  });
+  return rows.map((o) => ({
+    id:               o.id,
+    orderId:          o.orderId  || null,
+    productTitle:     o.productTitle || null,
+    clientName:       o.clientName  || null,
+    total:            o.total,
+    commissionAmount: o.commissionAmount,
+    status:           o.status,
+    createdAt:        o.createdAt,
+  }));
+}
+
 // ── Stats (dashboard) ─────────────────────────────────────────────────────────
 
 export async function getAffiliateDashboardStats(affiliateId) {

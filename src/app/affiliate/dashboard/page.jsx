@@ -425,10 +425,13 @@ export default function AffiliateDashboard() {
   // Store bank info (for payout tab)
   const [storeBankInfo, setStoreBankInfo] = useState(null);
 
-  // Team expand / lazy sub-team
-  const [expandedMembers, setExpandedMembers] = useState(new Set());
-  const [subTeamCache,    setSubTeamCache]    = useState({});   // memberId → member[]
-  const [subTeamLoading,  setSubTeamLoading]  = useState(new Set());
+  // Team expand / lazy sub-team + orders
+  const [expandedMembers,    setExpandedMembers]    = useState(new Set());
+  const [expandedTab,        setExpandedTab]        = useState({});     // memberId → 'orders'|'team'
+  const [subTeamCache,       setSubTeamCache]       = useState({});     // memberId → member[]
+  const [subTeamLoading,     setSubTeamLoading]     = useState(new Set());
+  const [memberOrdersCache,  setMemberOrdersCache]  = useState({});     // memberId → order[]
+  const [memberOrdersLoading,setMemberOrdersLoading]= useState(new Set());
 
   // ── Bootstrap ────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -508,39 +511,76 @@ export default function AffiliateDashboard() {
     router.push("/affiliate/login");
   };
 
-  // ── Sub-team expand / lazy load ──────────────────────────────────────────
-  const handleToggleExpand = useCallback(async (memberId) => {
-    // Toggle visibility
+  // ── Card expand: toggle + default tab 'orders' + preload orders ──────────
+  const handleExpandCard = useCallback(async (memberId) => {
+    const willExpand = !expandedMembers.has(memberId);
     setExpandedMembers((prev) => {
       const next = new Set(prev);
-      next.has(memberId) ? next.delete(memberId) : next.add(memberId);
+      willExpand ? next.add(memberId) : next.delete(memberId);
       return next;
     });
+    if (!willExpand) return;
 
-    // Already cached or currently loading — nothing else to do
-    if (subTeamCache[memberId] !== undefined) return;
+    // Set default tab on first open
+    setExpandedTab((prev) => prev[memberId] ? prev : { ...prev, [memberId]: 'orders' });
 
-    // Guard against duplicate in-flight requests
-    let alreadyLoading = false;
-    setSubTeamLoading((prev) => {
-      if (prev.has(memberId)) { alreadyLoading = true; return prev; }
+    // Preload orders (guard dup requests)
+    if (memberOrdersCache[memberId] !== undefined) return;
+    let skip = false;
+    setMemberOrdersLoading((prev) => {
+      if (prev.has(memberId)) { skip = true; return prev; }
       return new Set(prev).add(memberId);
     });
-    if (alreadyLoading) return;
-
+    if (skip) return;
     try {
-      const tok = localStorage.getItem("affiliateToken") || "";
-      const res = await fetch(`/api/affiliate/sub-team/${memberId}`, {
-        headers: { Authorization: `Bearer ${tok}` },
-      });
+      const res = await fetch(`/api/affiliate/member-orders/${memberId}`, { headers: authHeaders() });
       const body = await res.json();
-      setSubTeamCache((prev) => ({ ...prev, [memberId]: Array.isArray(body) ? body : [] }));
+      setMemberOrdersCache((prev) => ({ ...prev, [memberId]: Array.isArray(body) ? body : [] }));
     } catch {
-      setSubTeamCache((prev) => ({ ...prev, [memberId]: [] }));
+      setMemberOrdersCache((prev) => ({ ...prev, [memberId]: [] }));
     } finally {
-      setSubTeamLoading((prev) => { const n = new Set(prev); n.delete(memberId); return n; });
+      setMemberOrdersLoading((prev) => { const n = new Set(prev); n.delete(memberId); return n; });
     }
-  }, [subTeamCache]);
+  }, [expandedMembers, memberOrdersCache]);
+
+  // ── Tab switch: lazy-load whichever data source isn't cached yet ──────────
+  const handleSwitchTab = useCallback(async (memberId, tab) => {
+    setExpandedTab((prev) => ({ ...prev, [memberId]: tab }));
+
+    if (tab === 'orders' && memberOrdersCache[memberId] === undefined) {
+      let skip = false;
+      setMemberOrdersLoading((prev) => {
+        if (prev.has(memberId)) { skip = true; return prev; }
+        return new Set(prev).add(memberId);
+      });
+      if (!skip) try {
+        const res = await fetch(`/api/affiliate/member-orders/${memberId}`, { headers: authHeaders() });
+        const body = await res.json();
+        setMemberOrdersCache((prev) => ({ ...prev, [memberId]: Array.isArray(body) ? body : [] }));
+      } catch {
+        setMemberOrdersCache((prev) => ({ ...prev, [memberId]: [] }));
+      } finally {
+        setMemberOrdersLoading((prev) => { const n = new Set(prev); n.delete(memberId); return n; });
+      }
+    }
+
+    if (tab === 'team' && subTeamCache[memberId] === undefined) {
+      let skip = false;
+      setSubTeamLoading((prev) => {
+        if (prev.has(memberId)) { skip = true; return prev; }
+        return new Set(prev).add(memberId);
+      });
+      if (!skip) try {
+        const res = await fetch(`/api/affiliate/sub-team/${memberId}`, { headers: authHeaders() });
+        const body = await res.json();
+        setSubTeamCache((prev) => ({ ...prev, [memberId]: Array.isArray(body) ? body : [] }));
+      } catch {
+        setSubTeamCache((prev) => ({ ...prev, [memberId]: [] }));
+      } finally {
+        setSubTeamLoading((prev) => { const n = new Set(prev); n.delete(memberId); return n; });
+      }
+    }
+  }, [memberOrdersCache, subTeamCache]);
 
   // ── Bank save ────────────────────────────────────────────────────────────
   const handleBankSave = async (e) => {
@@ -1440,13 +1480,12 @@ export default function AffiliateDashboard() {
                       return (
                         <div key={m.id} className={`rounded-xl border overflow-hidden transition-shadow ${borderCls}`}>
 
-                          {/* ── Header (clickable to expand) ── */}
+                          {/* ── Header (always clickable) ── */}
                           <button
                             type="button"
-                            onClick={() => hasSubTeam && handleToggleExpand(m.id)}
-                            className={`w-full text-left flex items-center justify-between px-3.5 py-2.5 transition-colors
-                              ${isFireActive ? "bg-green-50" : isActive ? "bg-green-50/60" : "bg-gray-50"}
-                              ${hasSubTeam ? "cursor-pointer hover:brightness-95" : "cursor-default"}`}
+                            onClick={() => handleExpandCard(m.id)}
+                            className={`w-full text-left flex items-center justify-between px-3.5 py-2.5 transition-colors cursor-pointer hover:brightness-95
+                              ${isFireActive ? "bg-green-50" : isActive ? "bg-green-50/60" : "bg-gray-50"}`}
                           >
                             <div className="flex items-center gap-2.5 min-w-0">
                               {/* Avatar + rank */}
@@ -1501,10 +1540,8 @@ export default function AffiliateDashboard() {
                               </span>
 
                               {/* Expand chevron */}
-                              {hasSubTeam && (
-                                <ChevronDown className={`w-4 h-4 text-gray-400 transition-transform duration-200 shrink-0
-                                  ${isExpanded ? "rotate-180" : ""}`} />
-                              )}
+                              <ChevronDown className={`w-4 h-4 text-gray-400 transition-transform duration-200 shrink-0
+                                ${isExpanded ? "rotate-180" : ""}`} />
                             </div>
                           </button>
 
@@ -1544,58 +1581,177 @@ export default function AffiliateDashboard() {
                             </div>
                           )}
 
-                          {/* ── Expandable level-2 panel ── */}
-                          {isExpanded && (
-                            <div className="border-t border-dashed border-gray-200 bg-gray-50/80">
-                              {isLoadingSub ? (
-                                <div className="flex items-center justify-center gap-2 py-4">
-                                  <Loader2 className="w-4 h-4 animate-spin text-gray-400" />
-                                  <span className="text-xs text-gray-400">
-                                    {lang === "fr" ? "Chargement..." : "جاري التحميل..."}
-                                  </span>
+                          {/* ── Expandable panel: tabbed Orders / Team ── */}
+                          {isExpanded && (() => {
+                            const activeTab       = expandedTab[m.id] || 'orders';
+                            const isLoadingOrders = memberOrdersLoading.has(m.id);
+                            const memberOrders    = memberOrdersCache[m.id];
+
+                            return (
+                              <div className="border-t border-gray-100">
+
+                                {/* Tab bar */}
+                                <div className="flex bg-gray-50 border-b border-gray-100">
+                                  <button
+                                    type="button"
+                                    onClick={() => handleSwitchTab(m.id, 'orders')}
+                                    className={`flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold transition-colors border-b-2
+                                      ${activeTab === 'orders'
+                                        ? "border-gray-800 text-gray-900 bg-white"
+                                        : "border-transparent text-gray-400 hover:text-gray-700"}`}
+                                  >
+                                    <Package className="w-3.5 h-3.5 shrink-0" />
+                                    {lang === "fr" ? "Commandes" : "الطلبات"}
+                                    <span className={`px-1.5 py-0.5 rounded-full text-[10px] font-black
+                                      ${activeTab === 'orders' ? "bg-gray-900 text-white" : "bg-gray-200 text-gray-500"}`}>
+                                      {m.deliveredOrdersCount ?? 0}
+                                    </span>
+                                  </button>
+
+                                  {hasSubTeam && (
+                                    <button
+                                      type="button"
+                                      onClick={() => handleSwitchTab(m.id, 'team')}
+                                      className={`flex items-center gap-1.5 px-3.5 py-2 text-xs font-semibold transition-colors border-b-2
+                                        ${activeTab === 'team'
+                                          ? "border-gray-800 text-gray-900 bg-white"
+                                          : "border-transparent text-gray-400 hover:text-gray-700"}`}
+                                    >
+                                      <Users className="w-3.5 h-3.5 shrink-0" />
+                                      {lang === "fr" ? "Équipe" : "الفريق"}
+                                      <span className={`px-1.5 py-0.5 rounded-full text-[10px] font-black
+                                        ${activeTab === 'team' ? "bg-gray-900 text-white" : "bg-gray-200 text-gray-500"}`}>
+                                        {sub.active + sub.pending}
+                                      </span>
+                                    </button>
+                                  )}
                                 </div>
-                              ) : !subMembers || subMembers.length === 0 ? (
-                                <p className="text-center text-xs text-gray-400 py-4">
-                                  {lang === "fr" ? "Aucun filleul enregistré" : "لا يوجد إحالات مسجلة"}
-                                </p>
-                              ) : (
-                                <div className="px-3.5 py-2.5 space-y-1.5">
-                                  <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-2">
-                                    {lang === "fr" ? `Équipe de @${m.username}` : `فريق @${m.username}`}
-                                  </p>
-                                  {subMembers.map((s) => {
-                                    const sActive = s.referralStatus === "active";
-                                    return (
-                                      <div key={s.id}
-                                        className={`flex items-center justify-between px-3 py-2 rounded-lg border text-xs
-                                          ${sActive ? "bg-green-50 border-green-100" : "bg-white border-gray-100"}`}>
-                                        <div className="flex items-center gap-2 min-w-0">
-                                          <div className={`w-5 h-5 rounded-full flex items-center justify-center text-[9px] font-black shrink-0
-                                            ${sActive ? "bg-green-200 text-green-800" : "bg-gray-200 text-gray-500"}`}>
-                                            {(s.name || s.username || "?")[0].toUpperCase()}
-                                          </div>
-                                          <span className="font-semibold text-gray-700 truncate">
-                                            @{s.username}
-                                          </span>
-                                          {s.deliveredOrdersCount > 0 && (
-                                            <span className="text-gray-400 shrink-0">
-                                              · {s.deliveredOrdersCount} {lang === "fr" ? "liv." : "توصيل"}
-                                            </span>
-                                          )}
-                                        </div>
-                                        <span className={`px-2 py-0.5 rounded-full font-bold shrink-0 ml-2
-                                          ${sActive ? "bg-green-200 text-green-800" : "bg-amber-100 text-amber-700"}`}>
-                                          {sActive
-                                            ? (lang === "fr" ? "Actif" : "نشط")
-                                            : (lang === "fr" ? "En attente" : "انتظار")}
+
+                                {/* ── Orders tab ── */}
+                                {activeTab === 'orders' && (
+                                  <div className="bg-white">
+                                    {isLoadingOrders ? (
+                                      <div className="flex items-center justify-center gap-2 py-5">
+                                        <Loader2 className="w-4 h-4 animate-spin text-gray-400" />
+                                        <span className="text-xs text-gray-400">
+                                          {lang === "fr" ? "Chargement..." : "جاري التحميل..."}
                                         </span>
                                       </div>
-                                    );
-                                  })}
-                                </div>
-                              )}
-                            </div>
-                          )}
+                                    ) : !memberOrders || memberOrders.length === 0 ? (
+                                      <div className="flex flex-col items-center py-7">
+                                        <Package className="w-7 h-7 text-gray-200 mb-2" />
+                                        <p className="text-xs text-gray-400">
+                                          {lang === "fr" ? "Aucune commande pour l'instant" : "لا توجد طلبات حتى الآن"}
+                                        </p>
+                                      </div>
+                                    ) : (
+                                      <div className="divide-y divide-gray-50 max-h-80 overflow-y-auto">
+                                        {memberOrders.map((o) => {
+                                          const sCfg = STATUS_CONFIG[o.status] || { label: o.status, cls: "bg-gray-100 text-gray-600" };
+                                          const shortId = o.orderId || o.id.slice(0, 8).toUpperCase();
+                                          const dateStr = new Date(o.createdAt).toLocaleDateString(
+                                            lang === "fr" ? "fr-FR" : "ar-MA",
+                                            { day: "2-digit", month: "2-digit", year: "numeric" }
+                                          );
+                                          return (
+                                            <div key={o.id} className="px-3.5 py-3 hover:bg-gray-50 transition-colors">
+                                              {/* Row 1: product + status */}
+                                              <div className="flex items-start justify-between gap-2 mb-1.5">
+                                                <div className="min-w-0">
+                                                  <p className="text-xs font-bold text-gray-800 truncate">
+                                                    {o.productTitle || (lang === "fr" ? "Produit" : "منتج")}
+                                                  </p>
+                                                  <p className="text-[10px] text-gray-400 font-mono mt-0.5">
+                                                    #{shortId}
+                                                    <span className="mx-1 text-gray-300">·</span>
+                                                    {dateStr}
+                                                    {o.clientName && (
+                                                      <>
+                                                        <span className="mx-1 text-gray-300">·</span>
+                                                        {o.clientName}
+                                                      </>
+                                                    )}
+                                                  </p>
+                                                </div>
+                                                <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold shrink-0 ${sCfg.cls}`}>
+                                                  {sCfg.label}
+                                                </span>
+                                              </div>
+                                              {/* Row 2: total + commission */}
+                                              <div className="flex items-center justify-between">
+                                                <span className="text-xs text-gray-500">
+                                                  {lang === "fr" ? "Total" : "المجموع"}
+                                                  {" "}<strong className="text-gray-800">{o.total.toFixed(0)} MAD</strong>
+                                                </span>
+                                                <span className="text-xs font-black text-green-700">
+                                                  +{o.commissionAmount.toFixed(0)} MAD
+                                                </span>
+                                              </div>
+                                            </div>
+                                          );
+                                        })}
+                                      </div>
+                                    )}
+                                  </div>
+                                )}
+
+                                {/* ── Team tab ── */}
+                                {activeTab === 'team' && (
+                                  <div className="bg-gray-50/80">
+                                    {isLoadingSub ? (
+                                      <div className="flex items-center justify-center gap-2 py-4">
+                                        <Loader2 className="w-4 h-4 animate-spin text-gray-400" />
+                                        <span className="text-xs text-gray-400">
+                                          {lang === "fr" ? "Chargement..." : "جاري التحميل..."}
+                                        </span>
+                                      </div>
+                                    ) : !subMembers || subMembers.length === 0 ? (
+                                      <div className="flex flex-col items-center py-6">
+                                        <Users className="w-7 h-7 text-gray-200 mb-2" />
+                                        <p className="text-xs text-gray-400">
+                                          {lang === "fr" ? "Aucun filleul enregistré" : "لا يوجد إحالات مسجلة"}
+                                        </p>
+                                      </div>
+                                    ) : (
+                                      <div className="px-3.5 py-2.5 space-y-1.5">
+                                        <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-2">
+                                          {lang === "fr" ? `Équipe de @${m.username}` : `فريق @${m.username}`}
+                                        </p>
+                                        {subMembers.map((s) => {
+                                          const sActive = s.referralStatus === "active";
+                                          return (
+                                            <div key={s.id}
+                                              className={`flex items-center justify-between px-3 py-2 rounded-lg border text-xs
+                                                ${sActive ? "bg-green-50 border-green-100" : "bg-white border-gray-100"}`}>
+                                              <div className="flex items-center gap-2 min-w-0">
+                                                <div className={`w-5 h-5 rounded-full flex items-center justify-center text-[9px] font-black shrink-0
+                                                  ${sActive ? "bg-green-200 text-green-800" : "bg-gray-200 text-gray-500"}`}>
+                                                  {(s.name || s.username || "?")[0].toUpperCase()}
+                                                </div>
+                                                <span className="font-semibold text-gray-700 truncate">@{s.username}</span>
+                                                {s.deliveredOrdersCount > 0 && (
+                                                  <span className="text-gray-400 shrink-0">
+                                                    · {s.deliveredOrdersCount} {lang === "fr" ? "liv." : "توصيل"}
+                                                  </span>
+                                                )}
+                                              </div>
+                                              <span className={`px-2 py-0.5 rounded-full font-bold shrink-0 ml-2
+                                                ${sActive ? "bg-green-200 text-green-800" : "bg-amber-100 text-amber-700"}`}>
+                                                {sActive
+                                                  ? (lang === "fr" ? "Actif" : "نشط")
+                                                  : (lang === "fr" ? "En attente" : "انتظار")}
+                                              </span>
+                                            </div>
+                                          );
+                                        })}
+                                      </div>
+                                    )}
+                                  </div>
+                                )}
+
+                              </div>
+                            );
+                          })()}
 
                         </div>
                       );
@@ -1605,8 +1761,8 @@ export default function AffiliateDashboard() {
               })()}
               <p className="text-xs text-gray-400 mt-3">
                 {lang === "fr"
-                  ? "Triés par performance. Cliquez sur un membre pour voir son équipe."
-                  : "مرتّبون حسب الأداء. انقر على عضو لعرض فريقه."}
+                  ? "Triés par performance. Cliquez sur un membre pour voir ses commandes et son équipe."
+                  : "مرتّبون حسب الأداء. انقر على عضو لعرض طلباته وفريقه."}
               </p>
             </Section>
           </div>
