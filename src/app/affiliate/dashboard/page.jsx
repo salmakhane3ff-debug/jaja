@@ -1417,6 +1417,30 @@ export default function AffiliateDashboard() {
                             <span className="text-sm font-black text-blue-800">+{parentEarn.toFixed(0)} MAD</span>
                           </div>
                         )}
+
+                        {/* Sub-referrals row */}
+                        {(() => {
+                          const sub = m.subReferrals ?? { active: 0, pending: 0 };
+                          const total = sub.active + sub.pending;
+                          if (total === 0 && !isActive) return null;
+                          return (
+                            <div className="flex items-center gap-2 px-3.5 py-2 border-t border-gray-100 bg-gray-50">
+                              <span className="text-xs text-gray-500 mr-auto">
+                                {lang === "fr" ? "Ses filleuls" : "إحالاته"}
+                              </span>
+                              <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-bold
+                                ${sub.active > 0 ? "bg-green-100 text-green-700" : "bg-gray-100 text-gray-400"}`}>
+                                <span className="w-1.5 h-1.5 rounded-full bg-current" />
+                                {sub.active} {lang === "fr" ? "actif" : "نشط"}
+                              </span>
+                              <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-bold
+                                ${sub.pending > 0 ? "bg-amber-100 text-amber-700" : "bg-gray-100 text-gray-400"}`}>
+                                <span className="w-1.5 h-1.5 rounded-full bg-current" />
+                                {sub.pending} {lang === "fr" ? "en attente" : "قيد الانتظار"}
+                              </span>
+                            </div>
+                          );
+                        })()}
                       </div>
                     );
                   })}

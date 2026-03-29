@@ -399,7 +399,29 @@ export async function getAffiliateTeam(parentId) {
     where:   { parentId },
     orderBy: { createdAt: 'asc' },
   });
-  return members.map(mapAffiliate);
+  if (members.length === 0) return [];
+
+  const memberIds = members.map((m) => m.id);
+
+  // Single grouped query — counts level-2 referrals without N+1
+  const subCounts = await prisma.affiliate.groupBy({
+    by:     ['parentId', 'referralStatus'],
+    where:  { parentId: { in: memberIds } },
+    _count: { _all: true },
+  });
+
+  // Build a lookup: memberId → { active, pending }
+  const subMap = {};
+  for (const row of subCounts) {
+    if (!subMap[row.parentId]) subMap[row.parentId] = { active: 0, pending: 0 };
+    if (row.referralStatus === 'active')  subMap[row.parentId].active  = row._count._all;
+    if (row.referralStatus === 'pending') subMap[row.parentId].pending = row._count._all;
+  }
+
+  return members.map((m) => ({
+    ...mapAffiliate(m),
+    subReferrals: subMap[m.id] ?? { active: 0, pending: 0 },
+  }));
 }
 
 // ── Stats (dashboard) ─────────────────────────────────────────────────────────
