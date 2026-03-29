@@ -395,9 +395,11 @@ export default function AffiliateDashboard() {
   const [affiliateId, setAffiliateId] = useState(null);
   const [token,       setToken]       = useState(null);
 
-  const [data,       setData]       = useState(null);  // { affiliate, stats, gamification, team }
+  const [data,       setData]       = useState(null);  // { affiliate, stats, gamification, team, bonusConfig }
   const [orders,     setOrders]     = useState([]);
   const [notifs,     setNotifs]     = useState([]);
+  const [claiming,   setClaiming]   = useState(false);
+  const [claimMsg,   setClaimMsg]   = useState(null);
   const [loading,    setLoading]    = useState(true);
   const [error,      setError]      = useState(null);
 
@@ -604,10 +606,18 @@ export default function AffiliateDashboard() {
     );
   }
 
-  const affiliate = data?.affiliate;
-  const stats     = data?.stats;
-  const gami      = data?.gamification;
-  const team      = data?.team || [];
+  const affiliate  = data?.affiliate;
+  const stats      = data?.stats;
+  const gami       = data?.gamification;
+  const team       = data?.team || [];
+  const bonusConfig = data?.bonusConfig ?? { requiredActiveAffiliates: 10, bonusAmount: 2000, commissionTiers: [] };
+  const validReferrals = stats?.validReferrals ?? 0;
+  const bonusGoal      = bonusConfig.requiredActiveAffiliates ?? 10;
+  const bonusAmount    = bonusConfig.bonusAmount ?? 2000;
+  const bonusProgress  = Math.min(100, Math.round((validReferrals / bonusGoal) * 100));
+  const bonusUnlocked  = validReferrals >= bonusGoal;
+  const bonusClaimed   = affiliate?.teamBonusClaimed ?? false;
+  const lang = typeof navigator !== "undefined" && navigator.language?.startsWith("fr") ? "fr" : "ar";
   const refLink   = typeof window !== "undefined" ? `${window.location.origin}?ref=${affiliate?.username}` : "";
   const unread    = notifs.filter((n) => !n.read).length;
   const balance   = stats?.balance ?? 0;
@@ -1173,11 +1183,165 @@ export default function AffiliateDashboard() {
         )}
 
         {/* ══ TEAM ══════════════════════════════════════════════════════════ */}
-        {activeTab === "team" && (
+        {activeTab === "team" && (() => {
+          const handleClaimBonus = async () => {
+            setClaiming(true);
+            setClaimMsg(null);
+            try {
+              const res = await fetch("/api/affiliate/claim-bonus", {
+                method: "POST",
+                headers: authHeaders(),
+              });
+              const d = await res.json();
+              if (res.ok) {
+                setClaimMsg({ type: "success", text: lang === "fr" ? `Félicitations ! ${d.bonus} MAD ajoutés à votre solde.` : `مبروك! تمت إضافة ${d.bonus} درهم إلى رصيدك.` });
+                fetchAll(token);
+              } else {
+                setClaimMsg({ type: "error", text: d.error || (lang === "fr" ? "Erreur" : "خطأ") });
+              }
+            } catch { setClaimMsg({ type: "error", text: lang === "fr" ? "Erreur réseau" : "خطأ في الشبكة" }); }
+            finally { setClaiming(false); }
+          };
+          return (
           <div className="space-y-4">
 
-            {/* Invite link */}
-            <Section title="Inviter un partenaire" icon={UserPlus}>
+            {/* ── GOLD BONUS SECTION ── */}
+            <div className={`relative overflow-hidden rounded-2xl p-5
+              ${bonusClaimed
+                ? "bg-gradient-to-br from-gray-100 to-gray-200 border border-gray-200"
+                : bonusUnlocked
+                  ? "bg-gradient-to-br from-amber-400 via-yellow-400 to-amber-500 border border-amber-300 shadow-lg shadow-amber-100"
+                  : "bg-gradient-to-br from-amber-900 via-yellow-900 to-amber-800 border border-amber-700"
+              }`}>
+
+              {/* Shine overlay */}
+              {!bonusClaimed && (
+                <div className="absolute inset-0 opacity-10"
+                  style={{ background: "linear-gradient(135deg, white 0%, transparent 50%, white 100%)" }} />
+              )}
+
+              <div className="relative">
+                {/* Header */}
+                <div className="flex items-center justify-between mb-3">
+                  <div className="flex items-center gap-2">
+                    <span className="text-2xl">🏆</span>
+                    <div>
+                      <p className={`text-sm font-black ${bonusClaimed ? "text-gray-500" : bonusUnlocked ? "text-amber-900" : "text-amber-100"}`}>
+                        {lang === "fr" ? "Bonus d'équipe" : "مكافأة الفريق"}
+                      </p>
+                      <p className={`text-xs font-semibold ${bonusClaimed ? "text-gray-400" : bonusUnlocked ? "text-amber-800" : "text-amber-300"}`}>
+                        {bonusClaimed
+                          ? (lang === "fr" ? "Bonus déjà réclamé ✓" : "تم استلام المكافأة ✓")
+                          : lang === "fr"
+                            ? `Gagnez ${bonusAmount} MAD avec ${bonusGoal} filleuls actifs`
+                            : `احصل على ${bonusAmount} درهم عند ${bonusGoal} إحالات نشطة`}
+                      </p>
+                    </div>
+                  </div>
+                  <div className={`text-right px-3 py-1.5 rounded-xl ${bonusClaimed ? "bg-gray-200" : bonusUnlocked ? "bg-amber-900/20" : "bg-amber-950/40"}`}>
+                    <p className={`text-xl font-black ${bonusClaimed ? "text-gray-500" : bonusUnlocked ? "text-amber-900" : "text-amber-100"}`}>
+                      {bonusAmount} <span className="text-sm font-semibold">MAD</span>
+                    </p>
+                  </div>
+                </div>
+
+                {/* Counters */}
+                <div className="flex gap-2 mb-3">
+                  <div className={`flex-1 rounded-xl p-2.5 text-center ${bonusClaimed ? "bg-gray-200/60" : bonusUnlocked ? "bg-amber-900/15" : "bg-amber-950/40"}`}>
+                    <p className={`text-xl font-black ${bonusClaimed ? "text-gray-500" : bonusUnlocked ? "text-amber-900" : "text-amber-100"}`}>{stats?.totalReferrals ?? team.length}</p>
+                    <p className={`text-xs ${bonusClaimed ? "text-gray-400" : bonusUnlocked ? "text-amber-800" : "text-amber-300"}`}>
+                      {lang === "fr" ? "Total parrainés" : "إجمالي المُحالين"}
+                    </p>
+                  </div>
+                  <div className={`flex-1 rounded-xl p-2.5 text-center ${bonusClaimed ? "bg-green-100" : bonusUnlocked ? "bg-amber-900/15" : "bg-amber-950/40"}`}>
+                    <p className={`text-xl font-black ${bonusClaimed ? "text-green-600" : bonusUnlocked ? "text-amber-900" : "text-amber-100"}`}>{validReferrals}</p>
+                    <p className={`text-xs ${bonusClaimed ? "text-green-500" : bonusUnlocked ? "text-amber-800" : "text-amber-300"}`}>
+                      {lang === "fr" ? "Actifs" : "نشطون"}
+                    </p>
+                  </div>
+                  <div className={`flex-1 rounded-xl p-2.5 text-center ${bonusClaimed ? "bg-gray-200/60" : bonusUnlocked ? "bg-amber-900/15" : "bg-amber-950/40"}`}>
+                    <p className={`text-xl font-black ${bonusClaimed ? "text-gray-500" : bonusUnlocked ? "text-amber-900" : "text-amber-100"}`}>{bonusGoal}</p>
+                    <p className={`text-xs ${bonusClaimed ? "text-gray-400" : bonusUnlocked ? "text-amber-800" : "text-amber-300"}`}>
+                      {lang === "fr" ? "Objectif" : "الهدف"}
+                    </p>
+                  </div>
+                </div>
+
+                {/* Progress bar */}
+                <div className={`w-full rounded-full h-3 overflow-hidden mb-3 ${bonusClaimed ? "bg-gray-300" : bonusUnlocked ? "bg-amber-900/20" : "bg-amber-950/50"}`}>
+                  <div
+                    className={`h-full rounded-full transition-all duration-700 ${bonusClaimed ? "bg-gray-400" : bonusUnlocked ? "bg-amber-900" : "bg-gradient-to-r from-amber-400 to-yellow-300"}`}
+                    style={{ width: `${bonusProgress}%` }}
+                  />
+                </div>
+                <div className={`flex justify-between text-xs mb-4 ${bonusClaimed ? "text-gray-400" : bonusUnlocked ? "text-amber-800" : "text-amber-300"}`}>
+                  <span>{validReferrals} / {bonusGoal} {lang === "fr" ? "filleuls actifs" : "إحالة نشطة"}</span>
+                  <span className="font-semibold">{bonusProgress}%</span>
+                </div>
+
+                {/* Claim button / status */}
+                {bonusClaimed ? (
+                  <div className="flex items-center justify-center gap-2 py-2.5 bg-gray-300 rounded-xl text-gray-500 text-sm font-bold">
+                    <CheckCircle className="w-4 h-4" />
+                    {lang === "fr" ? "Bonus réclamé" : "تم استلام المكافأة"}
+                  </div>
+                ) : bonusUnlocked ? (
+                  <button
+                    onClick={handleClaimBonus}
+                    disabled={claiming}
+                    className="w-full flex items-center justify-center gap-2 py-3 bg-amber-900 hover:bg-amber-950 active:scale-[0.98] text-amber-100 rounded-xl text-sm font-black transition-all shadow-lg disabled:opacity-60"
+                  >
+                    {claiming ? <Loader2 className="w-4 h-4 animate-spin" /> : <span>🎁</span>}
+                    {lang === "fr" ? "Réclamer la récompense" : "احصل على المكافأة"}
+                  </button>
+                ) : (
+                  <div className="flex items-center justify-center gap-2 py-2.5 bg-amber-950/40 rounded-xl text-amber-300 text-xs font-semibold">
+                    🔒 {lang === "fr"
+                      ? `Encore ${Math.max(0, bonusGoal - validReferrals)} filleul(s) actif(s) requis`
+                      : `تحتاج ${Math.max(0, bonusGoal - validReferrals)} إحالة نشطة أخرى`}
+                  </div>
+                )}
+
+                {claimMsg && (
+                  <div className={`mt-2 text-xs text-center font-semibold rounded-xl py-2 ${claimMsg.type === "success" ? "bg-green-100 text-green-700" : "bg-red-100 text-red-700"}`}>
+                    {claimMsg.text}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* ── Commission tiers legend ── */}
+            {bonusConfig.commissionTiers?.length > 0 && (
+              <Section title={lang === "fr" ? "Barème de commission dynamique" : "جدول العمولة الديناميكية"} icon={TrendingUp}>
+                <div className="space-y-2">
+                  {bonusConfig.commissionTiers.map((t, i) => (
+                    <div key={i} className="flex items-center justify-between p-2.5 bg-gray-50 rounded-xl">
+                      <div className="flex items-center gap-2">
+                        <div className="w-7 h-7 rounded-lg bg-blue-50 flex items-center justify-center text-xs font-bold text-blue-600">
+                          {i + 1}
+                        </div>
+                        <span className="text-sm text-gray-700">
+                          {t.maxDelivered == null
+                            ? (lang === "fr" ? `${t.minDelivered}+ livraisons` : `${t.minDelivered}+ توصيل`)
+                            : (lang === "fr" ? `${t.minDelivered}–${t.maxDelivered} livraisons` : `${t.minDelivered}–${t.maxDelivered} توصيل`)}
+                        </span>
+                      </div>
+                      <span className="text-sm font-black text-blue-700 bg-blue-50 px-2.5 py-0.5 rounded-full">
+                        {t.commissionPct}%
+                      </span>
+                    </div>
+                  ))}
+                </div>
+                <p className="text-xs text-gray-400 mt-2">
+                  {lang === "fr"
+                    ? "La commission augmente automatiquement selon les livraisons du filleul."
+                    : "تزيد العمولة تلقائياً مع زيادة توصيلات المُحال."}
+                </p>
+              </Section>
+            )}
+
+            {/* ── Invite link ── */}
+            <Section title={lang === "fr" ? "Inviter un partenaire" : "دعوة شريك"} icon={UserPlus}>
               <div className="flex gap-2">
                 <div className="flex-1 px-3 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-xs font-mono text-gray-700 truncate">
                   {refLink}
@@ -1185,66 +1349,88 @@ export default function AffiliateDashboard() {
                 <CopyButton text={refLink} />
               </div>
               <p className="text-xs text-gray-400 mt-2">
-                Partagez ce lien. Les personnes qui s&apos;inscrivent via ce lien rejoindront votre équipe.
-                Maximum <strong>10 membres</strong> par équipe.
+                {lang === "fr"
+                  ? "Partagez ce lien. Les personnes qui s'inscrivent via ce lien rejoindront votre équipe."
+                  : "شارك هذا الرابط. من يسجل عبره سينضم لفريقك."}
               </p>
             </Section>
 
-            {/* Referral counters */}
-            <div className="flex gap-3">
-              <div className="flex-1 bg-gray-50 rounded-xl p-3 text-center border border-gray-100">
-                <p className="text-2xl font-black text-gray-900">{stats?.totalReferrals ?? team.length}</p>
-                <p className="text-xs text-gray-500 mt-0.5">Total parrainés</p>
-              </div>
-              <div className="flex-1 bg-green-50 rounded-xl p-3 text-center border border-green-100">
-                <p className="text-2xl font-black text-green-700">{stats?.validReferrals ?? 0}</p>
-                <p className="text-xs text-green-600 mt-0.5">Parrainages valides</p>
-              </div>
-            </div>
-
-            {/* Team list */}
-            <Section title={`Mon équipe (${team.length}/10)`} icon={Users}>
+            {/* ── Team list ── */}
+            <Section title={`${lang === "fr" ? "Mon équipe" : "فريقي"} (${team.length}/10)`} icon={Users}>
               {team.length === 0 ? (
                 <div className="text-center py-10">
                   <Users className="w-10 h-10 text-gray-200 mx-auto mb-3" />
-                  <p className="text-gray-400 text-sm">Votre équipe est vide pour l&apos;instant</p>
+                  <p className="text-gray-400 text-sm">
+                    {lang === "fr" ? "Votre équipe est vide pour l'instant" : "فريقك فارغ حالياً"}
+                  </p>
                 </div>
               ) : (
-                <div className="space-y-2">
+                <div className="space-y-3">
                   {team.map((m) => {
-                    const isActive = m.referralStatus === "active";
+                    const isActive    = m.referralStatus === "active";
+                    const commPct     = m.commissionPct ?? 0;
+                    const revenue     = m.generatedRevenue ?? 0;
+                    const parentEarn  = m.parentEarnings ?? 0;
                     return (
-                      <div key={m.id} className="flex items-center justify-between p-3.5 bg-gray-50 rounded-xl">
-                        <div className="flex items-center gap-3">
-                          <div className="w-9 h-9 bg-gray-200 rounded-full flex items-center justify-center">
-                            <Users className="w-4 h-4 text-gray-500" />
+                      <div key={m.id} className={`rounded-xl border overflow-hidden ${isActive ? "border-green-100" : "border-gray-100"}`}>
+                        {/* Member header */}
+                        <div className={`flex items-center justify-between px-3.5 py-2.5 ${isActive ? "bg-green-50" : "bg-gray-50"}`}>
+                          <div className="flex items-center gap-2.5">
+                            <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-black ${isActive ? "bg-green-200 text-green-800" : "bg-gray-200 text-gray-500"}`}>
+                              {(m.name || m.username || "?")[0].toUpperCase()}
+                            </div>
+                            <div>
+                              <p className="text-sm font-bold text-gray-800">{m.name || m.username}</p>
+                              <p className="text-xs text-gray-400 font-mono">@{m.username}</p>
+                            </div>
                           </div>
-                          <div>
-                            <p className="text-sm font-semibold text-gray-800">{m.name || m.username}</p>
-                            <p className="text-xs text-gray-400 font-mono">@{m.username}</p>
-                          </div>
-                        </div>
-                        <div className="text-right">
-                          <p className="text-xs text-gray-500 mb-1">
-                            {m.deliveredOrdersCount ?? 0} livraison{(m.deliveredOrdersCount ?? 0) !== 1 ? "s" : ""}
-                          </p>
-                          <span className={`text-xs px-2 py-0.5 rounded-full font-semibold
-                            ${isActive ? "bg-green-100 text-green-700" : "bg-amber-50 text-amber-600"}`}>
-                            {isActive ? "Actif" : "En attente"}
+                          <span className={`text-xs px-2.5 py-1 rounded-full font-bold
+                            ${isActive ? "bg-green-200 text-green-800" : "bg-amber-100 text-amber-700"}`}>
+                            {isActive
+                              ? (lang === "fr" ? "Actif" : "نشط")
+                              : (lang === "fr" ? "En attente" : "قيد الانتظار")}
                           </span>
                         </div>
+
+                        {/* Member stats */}
+                        <div className="grid grid-cols-3 divide-x divide-gray-100 px-0 py-0 bg-white">
+                          <div className="text-center py-2.5 px-2">
+                            <p className="text-base font-black text-gray-800">{m.deliveredOrdersCount ?? 0}</p>
+                            <p className="text-xs text-gray-400">{lang === "fr" ? "Livrées" : "مُوصّل"}</p>
+                          </div>
+                          <div className="text-center py-2.5 px-2">
+                            <p className="text-base font-black text-blue-700">{commPct}%</p>
+                            <p className="text-xs text-gray-400">{lang === "fr" ? "Commission" : "عمولتك"}</p>
+                          </div>
+                          <div className="text-center py-2.5 px-2">
+                            <p className="text-base font-black text-amber-700">{revenue.toFixed(0)} <span className="text-xs font-semibold">MAD</span></p>
+                            <p className="text-xs text-gray-400">{lang === "fr" ? "CA généré" : "الإيرادات"}</p>
+                          </div>
+                        </div>
+
+                        {/* Earnings row */}
+                        {isActive && (
+                          <div className="flex items-center justify-between px-3.5 py-2 bg-blue-50 border-t border-blue-100">
+                            <span className="text-xs text-blue-700">
+                              {lang === "fr" ? "Vos gains de ce filleul" : "أرباحك من هذا المُحال"}
+                            </span>
+                            <span className="text-sm font-black text-blue-800">+{parentEarn.toFixed(0)} MAD</span>
+                          </div>
+                        )}
                       </div>
                     );
                   })}
                 </div>
               )}
               <p className="text-xs text-gray-400 mt-3">
-                Statut <strong>Actif</strong> = au moins 1 commande livrée.
-                Statut <strong>En attente</strong> = aucune commande livrée.
+                {lang === "fr"
+                  ? "Commission calculée sur le CA livré du filleul. Augmente automatiquement avec ses performances."
+                  : "العمولة محسوبة على إيرادات المُحال المُوصَّلة. تزيد تلقائياً مع تحسّن أدائه."}
               </p>
             </Section>
           </div>
-        )}
+          );
+        })()}
 
         {/* ══ SETTINGS ══════════════════════════════════════════════════════ */}
         {activeTab === "settings" && (

@@ -31,6 +31,9 @@ function mapAffiliate(a) {
     totalCommission:     a.totalCommission,
     referralStatus:      a.referralStatus      ?? 'pending',
     deliveredOrdersCount:a.deliveredOrdersCount ?? 0,
+    generatedRevenue:    a.generatedRevenue     ?? 0,
+    teamBonusClaimed:    a.teamBonusClaimed     ?? false,
+    bonusBalance:        a.bonusBalance         ?? 0,
     createdAt:           a.createdAt,
   };
 }
@@ -286,14 +289,18 @@ export async function recordAffiliateOrder({ username, affiliateId, orderId, cli
 }
 
 /**
- * When an AffiliateOrder becomes "delivered", increment the owning affiliate's
- * deliveredOrdersCount and flip their referralStatus to "active" (once only).
- * Called fire-and-forget after any status change to "delivered".
+ * When an AffiliateOrder becomes "delivered":
+ *  - increment deliveredOrdersCount
+ *  - add order total to generatedRevenue
+ *  - flip referralStatus to "active" once deliveredOrdersCount >= 1
  */
-async function activateReferralIfDelivered(affiliateId) {
+async function activateReferralIfDelivered(affiliateId, orderTotal = 0) {
   const updated = await prisma.affiliate.update({
-    where: { id: affiliateId },
-    data:  { deliveredOrdersCount: { increment: 1 } },
+    where:  { id: affiliateId },
+    data:   {
+      deliveredOrdersCount: { increment: 1 },
+      generatedRevenue:     { increment: parseFloat(orderTotal) || 0 },
+    },
     select: { deliveredOrdersCount: true, referralStatus: true },
   });
   if (updated.deliveredOrdersCount >= 1 && updated.referralStatus !== 'active') {
@@ -314,7 +321,7 @@ export async function updateAffiliateOrderStatus(affiliateOrderId, status) {
     data:  { status },
   });
   if (status === 'delivered') {
-    activateReferralIfDelivered(order.affiliateId).catch(() => {});
+    activateReferralIfDelivered(order.affiliateId, order.total).catch(() => {});
   }
   return mapOrder(order);
 }
@@ -326,7 +333,7 @@ export async function updateAffiliateOrderStatus(affiliateOrderId, status) {
  *   balance = sum(commissionAmount for delivered orders) - sum(paid payouts)
  */
 export async function getAffiliateBalance(affiliateId) {
-  const [earned, paid] = await Promise.all([
+  const [earned, paid, aff] = await Promise.all([
     prisma.affiliateOrder.aggregate({
       where: { affiliateId, status: 'delivered' },
       _sum:  { commissionAmount: true },
@@ -335,11 +342,13 @@ export async function getAffiliateBalance(affiliateId) {
       where: { affiliateId, status: 'paid' },
       _sum:  { amount: true },
     }),
+    prisma.affiliate.findUnique({ where: { id: affiliateId }, select: { bonusBalance: true } }),
   ]);
 
-  const totalEarned = earned._sum.commissionAmount ?? 0;
-  const totalPaid   = paid._sum.amount             ?? 0;
-  return parseFloat((totalEarned - totalPaid).toFixed(2));
+  const totalEarned  = earned._sum.commissionAmount ?? 0;
+  const totalPaid    = paid._sum.amount             ?? 0;
+  const bonusBalance = aff?.bonusBalance            ?? 0;
+  return parseFloat((totalEarned + bonusBalance - totalPaid).toFixed(2));
 }
 
 export async function getAffiliatePayouts(affiliateId) {
@@ -500,6 +509,80 @@ export function computeGamification(validReferrals, teamSize) {
   return { target, progress, remaining: Math.max(0, target - validReferrals), validReferrals };
 }
 
+// ── Team Bonus & Commission Tiers ─────────────────────────────────────────────
+
+const DEFAULT_BONUS_CONFIG = {
+  requiredActiveAffiliates: 10,
+  bonusAmount: 2000,
+  commissionTiers: [
+    { minDelivered: 0, maxDelivered: 2,    commissionPct: 5  },
+    { minDelivered: 3, maxDelivered: 5,    commissionPct: 7  },
+    { minDelivered: 6, maxDelivered: null, commissionPct: 10 },
+  ],
+};
+
+export async function getTeamBonusConfig() {
+  const setting = await prisma.setting.findUnique({ where: { id: 'team-bonus-config' } });
+  if (!setting?.data) return DEFAULT_BONUS_CONFIG;
+  const d = setting.data;
+  return {
+    requiredActiveAffiliates: d.requiredActiveAffiliates ?? DEFAULT_BONUS_CONFIG.requiredActiveAffiliates,
+    bonusAmount:               d.bonusAmount              ?? DEFAULT_BONUS_CONFIG.bonusAmount,
+    commissionTiers:           Array.isArray(d.commissionTiers) && d.commissionTiers.length > 0
+      ? d.commissionTiers
+      : DEFAULT_BONUS_CONFIG.commissionTiers,
+  };
+}
+
+export async function saveTeamBonusConfig(data) {
+  const saved = await prisma.setting.upsert({
+    where:  { id: 'team-bonus-config' },
+    update: { data },
+    create: { id: 'team-bonus-config', data },
+  });
+  return saved.data;
+}
+
+/** Returns the commission % for this member based on their delivered count */
+export function computeMemberCommissionPct(deliveredCount, tiers) {
+  const list = (Array.isArray(tiers) && tiers.length ? tiers : DEFAULT_BONUS_CONFIG.commissionTiers)
+    .slice()
+    .sort((a, b) => a.minDelivered - b.minDelivered);
+  for (let i = list.length - 1; i >= 0; i--) {
+    const t = list[i];
+    if (deliveredCount >= t.minDelivered) return t.commissionPct;
+  }
+  return list[0]?.commissionPct ?? 0;
+}
+
+/**
+ * Claim team bonus: validates conditions then credits bonusAmount to affiliate.
+ * Returns { ok, bonus } or throws with a user-facing message.
+ */
+export async function claimTeamBonus(affiliateId) {
+  const [config, affiliate, validReferrals] = await Promise.all([
+    getTeamBonusConfig(),
+    prisma.affiliate.findUnique({
+      where:  { id: affiliateId },
+      select: { teamBonusClaimed: true },
+    }),
+    prisma.affiliate.count({ where: { parentId: affiliateId, referralStatus: 'active' } }),
+  ]);
+
+  if (!affiliate)          throw Object.assign(new Error('Affilié introuvable'),              { code: 'NOT_FOUND' });
+  if (affiliate.teamBonusClaimed)
+                           throw Object.assign(new Error('Bonus déjà réclamé'),               { code: 'ALREADY_CLAIMED' });
+  if (validReferrals < config.requiredActiveAffiliates)
+                           throw Object.assign(new Error(`Objectif non atteint : ${validReferrals} / ${config.requiredActiveAffiliates} parrainages valides`), { code: 'GOAL_NOT_MET' });
+
+  await prisma.affiliate.update({
+    where: { id: affiliateId },
+    data:  { teamBonusClaimed: true, bonusBalance: { increment: config.bonusAmount } },
+  });
+
+  return { ok: true, bonus: config.bonusAmount };
+}
+
 // ── Admin ─────────────────────────────────────────────────────────────────────
 
 export async function adminGetAllAffiliates() {
@@ -586,7 +669,7 @@ export async function adminGetAllAffiliateOrders() {
 export async function adminUpdateAffiliateOrderStatus(id, status) {
   const o = await prisma.affiliateOrder.update({ where: { id }, data: { status } });
   if (status === 'delivered') {
-    activateReferralIfDelivered(o.affiliateId).catch(() => {});
+    activateReferralIfDelivered(o.affiliateId, o.total).catch(() => {});
   }
   return mapOrder(o);
 }

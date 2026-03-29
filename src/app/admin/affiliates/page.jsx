@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useMemo } from "react";
-import { Plus, Search, Edit3, Trash2, Users, Loader2, CheckCircle, XCircle, X } from "lucide-react";
+import { Plus, Search, Edit3, Trash2, Users, Loader2, CheckCircle, XCircle, X, Settings, Award, Percent } from "lucide-react";
 
 const COMMISSION_OPTIONS = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8];
 
@@ -114,6 +114,233 @@ function AffiliateForm({ initial, onSave, onClose, saving }) {
         </button>
       </div>
     </form>
+  );
+}
+
+const DEFAULT_TIERS = [
+  { minDelivered: 0, maxDelivered: 2,    commissionPct: 5  },
+  { minDelivered: 3, maxDelivered: 5,    commissionPct: 7  },
+  { minDelivered: 6, maxDelivered: null, commissionPct: 10 },
+];
+
+function TeamBonusConfigPanel() {
+  const [cfg,        setCfg]        = useState(null);
+  const [loadingCfg, setLoadingCfg] = useState(true);
+  const [savingCfg,  setSavingCfg]  = useState(false);
+  const [cfgMsg,     setCfgMsg]     = useState(null);
+
+  const fetchConfig = async () => {
+    setLoadingCfg(true);
+    try {
+      const r = await fetch("/api/admin/team-bonus-config");
+      const d = await r.json();
+      setCfg(d);
+    } catch {
+      setCfg({ requiredActiveAffiliates: 10, bonusAmount: 2000, commissionTiers: DEFAULT_TIERS });
+    } finally {
+      setLoadingCfg(false);
+    }
+  };
+
+  useEffect(() => { fetchConfig(); }, []);
+
+  const setField = (k, v) => setCfg((c) => ({ ...c, [k]: v }));
+
+  const setTier = (i, k, v) => setCfg((c) => {
+    const tiers = [...c.commissionTiers];
+    tiers[i] = { ...tiers[i], [k]: v === "" ? null : Number(v) };
+    return { ...c, commissionTiers: tiers };
+  });
+
+  const addTier = () => setCfg((c) => ({
+    ...c,
+    commissionTiers: [...c.commissionTiers, { minDelivered: 0, maxDelivered: null, commissionPct: 5 }],
+  }));
+
+  const removeTier = (i) => setCfg((c) => ({
+    ...c,
+    commissionTiers: c.commissionTiers.filter((_, idx) => idx !== i),
+  }));
+
+  const handleSaveCfg = async (e) => {
+    e.preventDefault();
+    setSavingCfg(true);
+    setCfgMsg(null);
+    try {
+      const r = await fetch("/api/admin/team-bonus-config", {
+        method:  "POST",
+        headers: { "Content-Type": "application/json" },
+        body:    JSON.stringify({
+          requiredActiveAffiliates: Number(cfg.requiredActiveAffiliates),
+          bonusAmount:              Number(cfg.bonusAmount),
+          commissionTiers:          cfg.commissionTiers,
+        }),
+      });
+      const d = await r.json();
+      if (r.ok) {
+        setCfg(d);
+        setCfgMsg({ type: "ok", text: "Configuration sauvegardée" });
+      } else {
+        setCfgMsg({ type: "err", text: d.error || "Erreur" });
+      }
+    } catch {
+      setCfgMsg({ type: "err", text: "Erreur réseau" });
+    } finally {
+      setSavingCfg(false);
+      setTimeout(() => setCfgMsg(null), 3500);
+    }
+  };
+
+  if (loadingCfg) {
+    return (
+      <div className="bg-white rounded-2xl border border-gray-100 p-6 flex justify-center">
+        <Loader2 className="w-6 h-6 animate-spin text-gray-400" />
+      </div>
+    );
+  }
+
+  return (
+    <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden">
+      <div className="flex items-center gap-3 px-5 py-4 border-b border-gray-100 bg-amber-50">
+        <Award className="w-5 h-5 text-amber-600" />
+        <div>
+          <h2 className="text-sm font-bold text-gray-900">Configuration Bonus Équipe</h2>
+          <p className="text-xs text-gray-500">Définissez les conditions de déblocage et les paliers de commission</p>
+        </div>
+      </div>
+
+      <form onSubmit={handleSaveCfg} className="p-5 space-y-6">
+
+        {/* Bonus unlock conditions */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div>
+            <label className="block text-xs font-semibold text-gray-600 mb-1.5">
+              Affiliés actifs requis
+            </label>
+            <input
+              type="number"
+              min={1}
+              value={cfg.requiredActiveAffiliates}
+              onChange={(e) => setField("requiredActiveAffiliates", e.target.value)}
+              className="w-full px-3 py-2.5 text-sm border border-gray-200 rounded-xl bg-gray-50 focus:outline-none focus:border-gray-400"
+            />
+            <p className="text-xs text-gray-400 mt-1">Nombre d'affiliés avec ≥1 commande livrée</p>
+          </div>
+          <div>
+            <label className="block text-xs font-semibold text-gray-600 mb-1.5">
+              Montant du bonus (MAD)
+            </label>
+            <input
+              type="number"
+              min={0}
+              value={cfg.bonusAmount}
+              onChange={(e) => setField("bonusAmount", e.target.value)}
+              className="w-full px-3 py-2.5 text-sm border border-gray-200 rounded-xl bg-gray-50 focus:outline-none focus:border-gray-400"
+            />
+            <p className="text-xs text-gray-400 mt-1">Crédité sur le solde de l'affilié</p>
+          </div>
+        </div>
+
+        {/* Commission tiers */}
+        <div>
+          <div className="flex items-center justify-between mb-3">
+            <div className="flex items-center gap-2">
+              <Percent className="w-4 h-4 text-gray-500" />
+              <span className="text-xs font-semibold text-gray-700">Paliers de commission dynamique</span>
+            </div>
+            <button
+              type="button"
+              onClick={addTier}
+              className="flex items-center gap-1 px-2.5 py-1 text-xs font-medium bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg transition-colors"
+            >
+              <Plus className="w-3.5 h-3.5" /> Ajouter
+            </button>
+          </div>
+
+          <div className="overflow-x-auto rounded-xl border border-gray-200">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="bg-gray-50 border-b border-gray-200">
+                  <th className="text-left text-xs font-semibold text-gray-500 px-3 py-2.5">Min livraisons</th>
+                  <th className="text-left text-xs font-semibold text-gray-500 px-3 py-2.5">Max livraisons</th>
+                  <th className="text-left text-xs font-semibold text-gray-500 px-3 py-2.5">Commission %</th>
+                  <th className="px-3 py-2.5" />
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100">
+                {cfg.commissionTiers.map((tier, i) => (
+                  <tr key={i} className="hover:bg-gray-50">
+                    <td className="px-3 py-2">
+                      <input
+                        type="number"
+                        min={0}
+                        value={tier.minDelivered}
+                        onChange={(e) => setTier(i, "minDelivered", e.target.value)}
+                        className="w-24 px-2 py-1.5 text-xs border border-gray-200 rounded-lg bg-white focus:outline-none focus:border-gray-400"
+                      />
+                    </td>
+                    <td className="px-3 py-2">
+                      <input
+                        type="number"
+                        min={0}
+                        value={tier.maxDelivered ?? ""}
+                        onChange={(e) => setTier(i, "maxDelivered", e.target.value)}
+                        placeholder="∞"
+                        className="w-24 px-2 py-1.5 text-xs border border-gray-200 rounded-lg bg-white focus:outline-none focus:border-gray-400"
+                      />
+                    </td>
+                    <td className="px-3 py-2">
+                      <div className="flex items-center gap-1.5">
+                        <input
+                          type="number"
+                          min={0}
+                          max={100}
+                          value={tier.commissionPct}
+                          onChange={(e) => setTier(i, "commissionPct", e.target.value)}
+                          className="w-20 px-2 py-1.5 text-xs border border-gray-200 rounded-lg bg-white focus:outline-none focus:border-gray-400"
+                        />
+                        <span className="text-xs text-gray-500">%</span>
+                      </div>
+                    </td>
+                    <td className="px-3 py-2">
+                      {cfg.commissionTiers.length > 1 && (
+                        <button
+                          type="button"
+                          onClick={() => removeTier(i)}
+                          className="text-red-400 hover:text-red-600 transition-colors"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      )}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          <p className="text-xs text-gray-400 mt-2">
+            Laisser "Max livraisons" vide = palier sans limite supérieure
+          </p>
+        </div>
+
+        {/* Save */}
+        <div className="flex items-center gap-4">
+          <button
+            type="submit"
+            disabled={savingCfg}
+            className="flex items-center gap-2 px-5 py-2.5 bg-amber-600 hover:bg-amber-700 text-white text-sm font-bold rounded-xl disabled:opacity-50 transition-colors"
+          >
+            {savingCfg ? <Loader2 className="w-4 h-4 animate-spin" /> : <CheckCircle className="w-4 h-4" />}
+            {savingCfg ? "Enregistrement..." : "Sauvegarder"}
+          </button>
+          {cfgMsg && (
+            <span className={`text-sm font-medium ${cfgMsg.type === "ok" ? "text-green-600" : "text-red-600"}`}>
+              {cfgMsg.text}
+            </span>
+          )}
+        </div>
+      </form>
+    </div>
   );
 }
 
@@ -308,6 +535,8 @@ export default function AdminAffiliatesPage() {
           />
         </Modal>
       )}
+
+      <TeamBonusConfigPanel />
     </div>
   );
 }

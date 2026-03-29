@@ -13,6 +13,8 @@ import {
   getAffiliateDashboardStats,
   computeGamification,
   getAffiliateTeam,
+  getTeamBonusConfig,
+  computeMemberCommissionPct,
 } from '@/lib/services/affiliateSystemService';
 import { comparePassword } from '@/lib/services/authService';
 
@@ -21,14 +23,23 @@ async function getHandler(req, _ctx, decoded) {
     const affiliate = await getAffiliateById(decoded.affiliateId);
     if (!affiliate) return Response.json({ error: 'Affilié introuvable' }, { status: 404 });
 
-    const [stats, team] = await Promise.all([
+    const [stats, team, bonusConfig] = await Promise.all([
       getAffiliateDashboardStats(decoded.affiliateId),
       getAffiliateTeam(decoded.affiliateId),
+      getTeamBonusConfig(),
     ]);
 
     const gamification = computeGamification(stats.validReferrals, team.length);
 
-    return Response.json({ affiliate, stats, gamification, team });
+    // Enrich each team member with their dynamic commission %
+    const tiers = bonusConfig.commissionTiers;
+    const teamEnriched = team.map((m) => ({
+      ...m,
+      commissionPct:   computeMemberCommissionPct(m.deliveredOrdersCount, tiers),
+      parentEarnings:  parseFloat(((m.generatedRevenue ?? 0) * computeMemberCommissionPct(m.deliveredOrdersCount, tiers) / 100).toFixed(2)),
+    }));
+
+    return Response.json({ affiliate, stats, gamification, team: teamEnriched, bonusConfig });
   } catch (err) {
     console.error('Affiliate me GET error:', err);
     return Response.json({ error: 'Erreur serveur' }, { status: 500 });

@@ -202,6 +202,9 @@ model Affiliate {
   rib                  String?
   referralStatus       String                  @default("pending")   // "pending" | "active"
   deliveredOrdersCount Int                     @default(0)
+  generatedRevenue     Float                   @default(0)           // sum of delivered order totals
+  teamBonusClaimed     Boolean                 @default(false)
+  bonusBalance         Float                   @default(0)           // credited on bonus claim
   clicks          AffiliateClick[]
   notifications   AffiliateNotification[]
   affiliateOrders AffiliateOrder[]
