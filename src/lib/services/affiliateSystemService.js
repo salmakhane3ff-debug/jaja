@@ -14,22 +14,24 @@ import { hashPassword, comparePassword, signToken } from './authService.js';
 function mapAffiliate(a) {
   if (!a) return null;
   return {
-    _id:            a.id,
-    id:             a.id,
-    username:       a.username,
-    name:           a.name,
-    phone:          a.phone     || null,
-    avatarUrl:      a.avatarUrl || null,
-    commissionRate: a.commissionRate,
-    isActive:       a.isActive,
-    bankName:       a.bankName,
-    rib:            a.rib,
-    accountName:    a.accountName,
-    parentId:       a.parentId,
-    totalClicks:    a.totalClicks,
-    totalOrders:    a.totalOrders,
-    totalCommission:a.totalCommission,
-    createdAt:      a.createdAt,
+    _id:                 a.id,
+    id:                  a.id,
+    username:            a.username,
+    name:                a.name,
+    phone:               a.phone     || null,
+    avatarUrl:           a.avatarUrl || null,
+    commissionRate:      a.commissionRate,
+    isActive:            a.isActive,
+    bankName:            a.bankName,
+    rib:                 a.rib,
+    accountName:         a.accountName,
+    parentId:            a.parentId,
+    totalClicks:         a.totalClicks,
+    totalOrders:         a.totalOrders,
+    totalCommission:     a.totalCommission,
+    referralStatus:      a.referralStatus      ?? 'pending',
+    deliveredOrdersCount:a.deliveredOrdersCount ?? 0,
+    createdAt:           a.createdAt,
   };
 }
 
@@ -284,14 +286,36 @@ export async function recordAffiliateOrder({ username, affiliateId, orderId, cli
 }
 
 /**
+ * When an AffiliateOrder becomes "delivered", increment the owning affiliate's
+ * deliveredOrdersCount and flip their referralStatus to "active" (once only).
+ * Called fire-and-forget after any status change to "delivered".
+ */
+async function activateReferralIfDelivered(affiliateId) {
+  const updated = await prisma.affiliate.update({
+    where: { id: affiliateId },
+    data:  { deliveredOrdersCount: { increment: 1 } },
+    select: { deliveredOrdersCount: true, referralStatus: true },
+  });
+  if (updated.deliveredOrdersCount >= 1 && updated.referralStatus !== 'active') {
+    await prisma.affiliate.update({
+      where: { id: affiliateId },
+      data:  { referralStatus: 'active' },
+    });
+  }
+}
+
+/**
  * Update AffiliateOrder status (affiliate or admin).
- * Also syncs with Order.status if matching orderId.
+ * Triggers referral activation when status becomes "delivered".
  */
 export async function updateAffiliateOrderStatus(affiliateOrderId, status) {
   const order = await prisma.affiliateOrder.update({
     where: { id: affiliateOrderId },
     data:  { status },
   });
+  if (status === 'delivered') {
+    activateReferralIfDelivered(order.affiliateId).catch(() => {});
+  }
   return mapOrder(order);
 }
 
@@ -380,6 +404,7 @@ export async function getAffiliateDashboardStats(affiliateId) {
     allOrders,
     todayOrders,
     teamCount,
+    validReferrals,
     unreadCount,
     balance,
     payouts,
@@ -394,6 +419,7 @@ export async function getAffiliateDashboardStats(affiliateId) {
       where: { affiliateId, createdAt: { gte: today } },
     }),
     prisma.affiliate.count({ where: { parentId: affiliateId } }),
+    prisma.affiliate.count({ where: { parentId: affiliateId, referralStatus: 'active' } }),
     prisma.affiliateNotification.count({ where: { affiliateId, read: false } }),
     getAffiliateBalance(affiliateId),
     getAffiliatePayouts(affiliateId),
@@ -450,6 +476,8 @@ export async function getAffiliateDashboardStats(affiliateId) {
     totalCommission:  allOrders.reduce((s, o) => s + o.commissionAmount, 0),
     balance,
     teamCount,
+    totalReferrals:   teamCount,        // all invited affiliates
+    validReferrals,                     // only those with ≥1 delivered order
     unreadCount,
     payouts,
     totalClicks,
@@ -461,11 +489,15 @@ export async function getAffiliateDashboardStats(affiliateId) {
 
 // ── Gamification ──────────────────────────────────────────────────────────────
 
-export function computeGamification(deliveredCount, teamSize) {
-  // Each team referral reduces target by 20, min target 10
-  const target  = Math.max(10, 100 - teamSize * 20);
-  const progress = Math.min(100, Math.round((deliveredCount / target) * 100));
-  return { target, progress, remaining: Math.max(0, target - deliveredCount) };
+/**
+ * Bonus progression based on VALID referrals (team members with ≥1 delivered order).
+ * Goal: reach `target` valid referrals to unlock the bonus.
+ * Target scales down as the team grows (max reduction: -2 per 2 members, floor 3).
+ */
+export function computeGamification(validReferrals, teamSize) {
+  const target   = Math.max(3, 5 - Math.floor(teamSize / 2));
+  const progress = Math.min(100, Math.round((validReferrals / target) * 100));
+  return { target, progress, remaining: Math.max(0, target - validReferrals), validReferrals };
 }
 
 // ── Admin ─────────────────────────────────────────────────────────────────────
@@ -553,6 +585,9 @@ export async function adminGetAllAffiliateOrders() {
 
 export async function adminUpdateAffiliateOrderStatus(id, status) {
   const o = await prisma.affiliateOrder.update({ where: { id }, data: { status } });
+  if (status === 'delivered') {
+    activateReferralIfDelivered(o.affiliateId).catch(() => {});
+  }
   return mapOrder(o);
 }
 

@@ -87,12 +87,12 @@ function Section({ title, children, icon: Icon }) {
 
 // ── Progress bar ──────────────────────────────────────────────────────────────
 
-function ProgressBar({ progress, target, remaining, delivered }) {
+function ProgressBar({ progress, target, remaining, validReferrals }) {
   return (
     <div className="space-y-3">
       <div className="flex items-center justify-between text-sm">
-        <span className="font-semibold text-gray-700">Objectif d&apos;activation</span>
-        <span className="font-bold text-gray-900">{delivered} / {target} livrées</span>
+        <span className="font-semibold text-gray-700">Parrainages valides</span>
+        <span className="font-bold text-gray-900">{validReferrals} / {target}</span>
       </div>
       <div className="w-full bg-gray-100 rounded-full h-3 overflow-hidden">
         <div
@@ -103,7 +103,7 @@ function ProgressBar({ progress, target, remaining, delivered }) {
       <div className="flex items-center justify-between text-xs text-gray-500">
         <span className="font-medium text-blue-600">{progress}% complété</span>
         {remaining > 0 ? (
-          <span>{remaining} livraisons restantes pour l&apos;activation</span>
+          <span>{remaining} parrainage{remaining !== 1 ? "s" : ""} valide{remaining !== 1 ? "s" : ""} restant{remaining !== 1 ? "s" : ""}</span>
         ) : (
           <span className="text-green-600 font-semibold">✓ Objectif atteint !</span>
         )}
@@ -758,22 +758,22 @@ export default function AffiliateDashboard() {
                   {/* Orders progress */}
                   <div>
                     <p className="mb-1.5 text-xs font-bold">
-                      {stats?.delivered || 0} / {gami?.target || 100} commandes livrées
+                      {stats?.validReferrals ?? 0} / {gami?.target || 5} parrainages valides
                     </p>
                     <div className="w-full overflow-hidden rounded-full h-2" style={{ background: "rgba(255,255,255,0.25)" }}>
                       <div className="h-full rounded-full bg-white transition-all duration-700"
-                        style={{ width: `${Math.min(100, ((stats?.delivered || 0) / (gami?.target || 100)) * 100)}%` }} />
+                        style={{ width: `${gami?.progress || 0}%` }} />
                     </div>
                   </div>
 
-                  {/* Referrals progress */}
+                  {/* Total vs valid referrals */}
                   <div>
                     <p className="mb-1.5 text-xs font-bold">
-                      {team.length} / 5 Équipe
+                      {stats?.totalReferrals ?? 0} invités · {stats?.validReferrals ?? 0} valides
                     </p>
                     <div className="w-full overflow-hidden rounded-full h-2" style={{ background: "rgba(255,255,255,0.25)" }}>
                       <div className="h-full rounded-full bg-white transition-all duration-700"
-                        style={{ width: `${Math.min(100, (team.length / 5) * 100)}%` }} />
+                        style={{ width: `${(stats?.totalReferrals ?? 0) > 0 ? Math.min(100, ((stats?.validReferrals ?? 0) / (stats?.totalReferrals ?? 1)) * 100) : 0}%` }} />
                     </div>
                   </div>
                 </div>
@@ -802,16 +802,28 @@ export default function AffiliateDashboard() {
 
             {/* Gamification */}
             {gami && (
-              <Section title="Progression de l'activation" icon={Target}>
+              <Section title="Progression du bonus" icon={Target}>
+                {/* Referral counters */}
+                <div className="flex gap-3 mb-4">
+                  <div className="flex-1 bg-gray-50 rounded-xl p-3 text-center">
+                    <p className="text-2xl font-black text-gray-900">{stats?.totalReferrals ?? 0}</p>
+                    <p className="text-xs text-gray-500 mt-0.5">Total parrainés</p>
+                  </div>
+                  <div className="flex-1 bg-green-50 rounded-xl p-3 text-center">
+                    <p className="text-2xl font-black text-green-700">{stats?.validReferrals ?? 0}</p>
+                    <p className="text-xs text-green-600 mt-0.5">Parrainages valides</p>
+                  </div>
+                </div>
                 <ProgressBar
                   progress={gami.progress}
                   target={gami.target}
                   remaining={gami.remaining}
-                  delivered={stats?.delivered || 0}
+                  validReferrals={gami.validReferrals ?? stats?.validReferrals ?? 0}
                 />
                 <p className="text-xs text-gray-400 mt-3">
-                  Chaque membre parrainé réduit l&apos;objectif de 20 commandes.
-                  Équipe actuelle : <strong>{team.length}</strong> membre(s).
+                  Un parrainage est <strong>valide</strong> uniquement si le filleul a au moins
+                  1 commande <strong>livrée</strong>. Les commandes en attente, confirmées ou annulées
+                  ne comptent pas.
                 </p>
               </Section>
             )}
@@ -1178,6 +1190,18 @@ export default function AffiliateDashboard() {
               </p>
             </Section>
 
+            {/* Referral counters */}
+            <div className="flex gap-3">
+              <div className="flex-1 bg-gray-50 rounded-xl p-3 text-center border border-gray-100">
+                <p className="text-2xl font-black text-gray-900">{stats?.totalReferrals ?? team.length}</p>
+                <p className="text-xs text-gray-500 mt-0.5">Total parrainés</p>
+              </div>
+              <div className="flex-1 bg-green-50 rounded-xl p-3 text-center border border-green-100">
+                <p className="text-2xl font-black text-green-700">{stats?.validReferrals ?? 0}</p>
+                <p className="text-xs text-green-600 mt-0.5">Parrainages valides</p>
+              </div>
+            </div>
+
             {/* Team list */}
             <Section title={`Mon équipe (${team.length}/10)`} icon={Users}>
               {team.length === 0 ? (
@@ -1187,30 +1211,37 @@ export default function AffiliateDashboard() {
                 </div>
               ) : (
                 <div className="space-y-2">
-                  {team.map((m) => (
-                    <div key={m.id} className="flex items-center justify-between p-3.5 bg-gray-50 rounded-xl">
-                      <div className="flex items-center gap-3">
-                        <div className="w-9 h-9 bg-gray-200 rounded-full flex items-center justify-center">
-                          <Users className="w-4 h-4 text-gray-500" />
+                  {team.map((m) => {
+                    const isActive = m.referralStatus === "active";
+                    return (
+                      <div key={m.id} className="flex items-center justify-between p-3.5 bg-gray-50 rounded-xl">
+                        <div className="flex items-center gap-3">
+                          <div className="w-9 h-9 bg-gray-200 rounded-full flex items-center justify-center">
+                            <Users className="w-4 h-4 text-gray-500" />
+                          </div>
+                          <div>
+                            <p className="text-sm font-semibold text-gray-800">{m.name || m.username}</p>
+                            <p className="text-xs text-gray-400 font-mono">@{m.username}</p>
+                          </div>
                         </div>
-                        <div>
-                          <p className="text-sm font-semibold text-gray-800">{m.name || m.username}</p>
-                          <p className="text-xs text-gray-400 font-mono">@{m.username}</p>
+                        <div className="text-right">
+                          <p className="text-xs text-gray-500 mb-1">
+                            {m.deliveredOrdersCount ?? 0} livraison{(m.deliveredOrdersCount ?? 0) !== 1 ? "s" : ""}
+                          </p>
+                          <span className={`text-xs px-2 py-0.5 rounded-full font-semibold
+                            ${isActive ? "bg-green-100 text-green-700" : "bg-amber-50 text-amber-600"}`}>
+                            {isActive ? "Actif" : "En attente"}
+                          </span>
                         </div>
                       </div>
-                      <div className="text-right">
-                        <p className="text-xs text-gray-500">
-                          {m.totalOrders} commande{m.totalOrders !== 1 ? "s" : ""}
-                        </p>
-                        <span className={`text-xs px-2 py-0.5 rounded-full font-semibold
-                          ${m.isActive ? "bg-green-100 text-green-700" : "bg-gray-100 text-gray-500"}`}>
-                          {m.isActive ? "Actif" : "Inactif"}
-                        </span>
-                      </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               )}
+              <p className="text-xs text-gray-400 mt-3">
+                Statut <strong>Actif</strong> = au moins 1 commande livrée.
+                Statut <strong>En attente</strong> = aucune commande livrée.
+              </p>
             </Section>
           </div>
         )}

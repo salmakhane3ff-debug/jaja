@@ -182,24 +182,26 @@ model Feedback {
 }
 
 model Affiliate {
-  id              String                  @id @default(uuid())
-  username        String                  @unique
-  commissionRate  Float                   @default(0.5)
-  isActive        Boolean                 @default(false)
-  totalClicks     Int                     @default(0)
-  totalOrders     Int                     @default(0)
-  totalCommission Float                   @default(0)
-  userId          String?                 @unique
-  createdAt       DateTime                @default(now())
-  updatedAt       DateTime                @updatedAt
-  accountName     String?
-  bankName        String?
-  name            String                  @default("")
-  phone           String?                 @unique
-  avatarUrl       String?
-  parentId        String?
-  password        String                  @default("")
-  rib             String?
+  id                   String                  @id @default(uuid())
+  username             String                  @unique
+  commissionRate       Float                   @default(0.5)
+  isActive             Boolean                 @default(false)
+  totalClicks          Int                     @default(0)
+  totalOrders          Int                     @default(0)
+  totalCommission      Float                   @default(0)
+  userId               String?                 @unique
+  createdAt            DateTime                @default(now())
+  updatedAt            DateTime                @updatedAt
+  accountName          String?
+  bankName             String?
+  name                 String                  @default("")
+  phone                String?                 @unique
+  avatarUrl            String?
+  parentId             String?
+  password             String                  @default("")
+  rib                  String?
+  referralStatus       String                  @default("pending")   // "pending" | "active"
+  deliveredOrdersCount Int                     @default(0)
   clicks          AffiliateClick[]
   notifications   AffiliateNotification[]
   affiliateOrders AffiliateOrder[]
@@ -212,6 +214,7 @@ model Affiliate {
   @@index([username])
   @@index([isActive])
   @@index([parentId])
+  @@index([referralStatus])
   @@map("affiliates")
 }
 

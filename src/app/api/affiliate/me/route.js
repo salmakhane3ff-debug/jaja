@@ -26,7 +26,7 @@ async function getHandler(req, _ctx, decoded) {
       getAffiliateTeam(decoded.affiliateId),
     ]);
 
-    const gamification = computeGamification(stats.delivered, team.length);
+    const gamification = computeGamification(stats.validReferrals, team.length);
 
     return Response.json({ affiliate, stats, gamification, team });
   } catch (err) {
