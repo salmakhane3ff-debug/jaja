@@ -425,6 +425,11 @@ export default function AffiliateDashboard() {
   // Store bank info (for payout tab)
   const [storeBankInfo, setStoreBankInfo] = useState(null);
 
+  // Team expand / lazy sub-team
+  const [expandedMembers, setExpandedMembers] = useState(new Set());
+  const [subTeamCache,    setSubTeamCache]    = useState({});   // memberId → member[]
+  const [subTeamLoading,  setSubTeamLoading]  = useState(new Set());
+
   // ── Bootstrap ────────────────────────────────────────────────────────────
   useEffect(() => {
     const tok = localStorage.getItem("affiliateToken");
@@ -502,6 +507,40 @@ export default function AffiliateDashboard() {
     });
     router.push("/affiliate/login");
   };
+
+  // ── Sub-team expand / lazy load ──────────────────────────────────────────
+  const handleToggleExpand = useCallback(async (memberId) => {
+    // Toggle visibility
+    setExpandedMembers((prev) => {
+      const next = new Set(prev);
+      next.has(memberId) ? next.delete(memberId) : next.add(memberId);
+      return next;
+    });
+
+    // Already cached or currently loading — nothing else to do
+    if (subTeamCache[memberId] !== undefined) return;
+
+    // Guard against duplicate in-flight requests
+    let alreadyLoading = false;
+    setSubTeamLoading((prev) => {
+      if (prev.has(memberId)) { alreadyLoading = true; return prev; }
+      return new Set(prev).add(memberId);
+    });
+    if (alreadyLoading) return;
+
+    try {
+      const tok = localStorage.getItem("affiliateToken") || "";
+      const res = await fetch(`/api/affiliate/sub-team/${memberId}`, {
+        headers: { Authorization: `Bearer ${tok}` },
+      });
+      const body = await res.json();
+      setSubTeamCache((prev) => ({ ...prev, [memberId]: Array.isArray(body) ? body : [] }));
+    } catch {
+      setSubTeamCache((prev) => ({ ...prev, [memberId]: [] }));
+    } finally {
+      setSubTeamLoading((prev) => { const n = new Set(prev); n.delete(memberId); return n; });
+    }
+  }, [subTeamCache]);
 
   // ── Bank save ────────────────────────────────────────────────────────────
   const handleBankSave = async (e) => {
@@ -1356,7 +1395,7 @@ export default function AffiliateDashboard() {
             </Section>
 
             {/* ── Team list ── */}
-            <Section title={`${lang === "fr" ? "Mon équipe" : "فريقي"} (${team.length}/10)`} icon={Users}>
+            <Section title={`${lang === "fr" ? "Mon équipe" : "فريقي"} (${team.length})`} icon={Users}>
               {team.length === 0 ? (
                 <div className="text-center py-10">
                   <Users className="w-10 h-10 text-gray-200 mx-auto mb-3" />
@@ -1364,66 +1403,141 @@ export default function AffiliateDashboard() {
                     {lang === "fr" ? "Votre équipe est vide pour l'instant" : "فريقك فارغ حالياً"}
                   </p>
                 </div>
-              ) : (
-                <div className="space-y-3">
-                  {team.map((m) => {
-                    const isActive    = m.referralStatus === "active";
-                    const commPct     = m.commissionPct ?? 0;
-                    const revenue     = m.generatedRevenue ?? 0;
-                    const parentEarn  = m.parentEarnings ?? 0;
-                    return (
-                      <div key={m.id} className={`rounded-xl border overflow-hidden ${isActive ? "border-green-100" : "border-gray-100"}`}>
-                        {/* Member header */}
-                        <div className={`flex items-center justify-between px-3.5 py-2.5 ${isActive ? "bg-green-50" : "bg-gray-50"}`}>
-                          <div className="flex items-center gap-2.5">
-                            <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-black ${isActive ? "bg-green-200 text-green-800" : "bg-gray-200 text-gray-500"}`}>
-                              {(m.name || m.username || "?")[0].toUpperCase()}
+              ) : (() => {
+                // ── Sort: subReferrals.active DESC → deliveredOrdersCount DESC ──
+                const sorted = [...team].sort((a, b) => {
+                  const da = (b.subReferrals?.active ?? 0) - (a.subReferrals?.active ?? 0);
+                  if (da !== 0) return da;
+                  return (b.deliveredOrdersCount ?? 0) - (a.deliveredOrdersCount ?? 0);
+                });
+
+                return (
+                  <div className="space-y-3">
+                    {sorted.map((m, rank) => {
+                      const isActive   = m.referralStatus === "active";
+                      const commPct    = m.commissionPct ?? 0;
+                      const revenue    = m.generatedRevenue ?? 0;
+                      const parentEarn = m.parentEarnings ?? 0;
+                      const sub        = m.subReferrals ?? { active: 0, pending: 0 };
+                      const score      = (sub.active * 10) + ((m.deliveredOrdersCount ?? 0) * 5);
+
+                      // Performance highlight logic
+                      const isFireActive  = sub.active > 0;
+                      const isPotential   = sub.pending > 3 && sub.active === 0;
+
+                      const isExpanded    = expandedMembers.has(m.id);
+                      const isLoadingSub  = subTeamLoading.has(m.id);
+                      const subMembers    = subTeamCache[m.id];
+                      const hasSubTeam    = (sub.active + sub.pending) > 0;
+
+                      // Card border colour
+                      const borderCls = isFireActive
+                        ? "border-green-300 shadow-sm shadow-green-100"
+                        : isActive
+                          ? "border-green-100"
+                          : "border-gray-100";
+
+                      return (
+                        <div key={m.id} className={`rounded-xl border overflow-hidden transition-shadow ${borderCls}`}>
+
+                          {/* ── Header (clickable to expand) ── */}
+                          <button
+                            type="button"
+                            onClick={() => hasSubTeam && handleToggleExpand(m.id)}
+                            className={`w-full text-left flex items-center justify-between px-3.5 py-2.5 transition-colors
+                              ${isFireActive ? "bg-green-50" : isActive ? "bg-green-50/60" : "bg-gray-50"}
+                              ${hasSubTeam ? "cursor-pointer hover:brightness-95" : "cursor-default"}`}
+                          >
+                            <div className="flex items-center gap-2.5 min-w-0">
+                              {/* Avatar + rank */}
+                              <div className="relative shrink-0">
+                                <div className={`w-8 h-8 rounded-full flex items-center justify-center text-xs font-black
+                                  ${isFireActive ? "bg-green-300 text-green-900" : isActive ? "bg-green-200 text-green-800" : "bg-gray-200 text-gray-500"}`}>
+                                  {(m.name || m.username || "?")[0].toUpperCase()}
+                                </div>
+                                {rank === 0 && score > 0 && (
+                                  <span className="absolute -top-1 -right-1 text-[9px] leading-none">🥇</span>
+                                )}
+                                {rank === 1 && score > 0 && (
+                                  <span className="absolute -top-1 -right-1 text-[9px] leading-none">🥈</span>
+                                )}
+                                {rank === 2 && score > 0 && (
+                                  <span className="absolute -top-1 -right-1 text-[9px] leading-none">🥉</span>
+                                )}
+                              </div>
+
+                              <div className="min-w-0">
+                                <div className="flex items-center gap-1.5 flex-wrap">
+                                  <p className="text-sm font-bold text-gray-800 truncate">{m.name || m.username}</p>
+                                  {isFireActive && (
+                                    <span className="text-[10px] font-black px-1.5 py-0.5 rounded-full bg-green-200 text-green-800 whitespace-nowrap">
+                                      Actif 🔥
+                                    </span>
+                                  )}
+                                  {isPotential && (
+                                    <span className="text-[10px] font-black px-1.5 py-0.5 rounded-full bg-orange-100 text-orange-700 whitespace-nowrap">
+                                      Potentiel 🔥
+                                    </span>
+                                  )}
+                                </div>
+                                <p className="text-xs text-gray-400 font-mono">@{m.username}</p>
+                              </div>
                             </div>
-                            <div>
-                              <p className="text-sm font-bold text-gray-800">{m.name || m.username}</p>
-                              <p className="text-xs text-gray-400 font-mono">@{m.username}</p>
+
+                            <div className="flex items-center gap-2 shrink-0 ml-2">
+                              {/* Score badge */}
+                              {score > 0 && (
+                                <span className="text-[10px] font-black px-2 py-0.5 rounded-full bg-purple-100 text-purple-700 whitespace-nowrap">
+                                  {lang === "fr" ? "Score" : "نقاط"} {score}
+                                </span>
+                              )}
+
+                              {/* Status badge */}
+                              <span className={`text-xs px-2.5 py-1 rounded-full font-bold whitespace-nowrap
+                                ${isActive ? "bg-green-200 text-green-800" : "bg-amber-100 text-amber-700"}`}>
+                                {isActive
+                                  ? (lang === "fr" ? "Actif" : "نشط")
+                                  : (lang === "fr" ? "En attente" : "قيد الانتظار")}
+                              </span>
+
+                              {/* Expand chevron */}
+                              {hasSubTeam && (
+                                <ChevronDown className={`w-4 h-4 text-gray-400 transition-transform duration-200 shrink-0
+                                  ${isExpanded ? "rotate-180" : ""}`} />
+                              )}
+                            </div>
+                          </button>
+
+                          {/* ── Stats grid ── */}
+                          <div className="grid grid-cols-3 divide-x divide-gray-100 bg-white">
+                            <div className="text-center py-2.5 px-2">
+                              <p className="text-base font-black text-gray-800">{m.deliveredOrdersCount ?? 0}</p>
+                              <p className="text-xs text-gray-400">{lang === "fr" ? "Livrées" : "مُوصّل"}</p>
+                            </div>
+                            <div className="text-center py-2.5 px-2">
+                              <p className="text-base font-black text-blue-700">{commPct}%</p>
+                              <p className="text-xs text-gray-400">{lang === "fr" ? "Commission" : "عمولتك"}</p>
+                            </div>
+                            <div className="text-center py-2.5 px-2">
+                              <p className="text-base font-black text-amber-700">
+                                {revenue.toFixed(0)} <span className="text-xs font-semibold">MAD</span>
+                              </p>
+                              <p className="text-xs text-gray-400">{lang === "fr" ? "CA généré" : "الإيرادات"}</p>
                             </div>
                           </div>
-                          <span className={`text-xs px-2.5 py-1 rounded-full font-bold
-                            ${isActive ? "bg-green-200 text-green-800" : "bg-amber-100 text-amber-700"}`}>
-                            {isActive
-                              ? (lang === "fr" ? "Actif" : "نشط")
-                              : (lang === "fr" ? "En attente" : "قيد الانتظار")}
-                          </span>
-                        </div>
 
-                        {/* Member stats */}
-                        <div className="grid grid-cols-3 divide-x divide-gray-100 px-0 py-0 bg-white">
-                          <div className="text-center py-2.5 px-2">
-                            <p className="text-base font-black text-gray-800">{m.deliveredOrdersCount ?? 0}</p>
-                            <p className="text-xs text-gray-400">{lang === "fr" ? "Livrées" : "مُوصّل"}</p>
-                          </div>
-                          <div className="text-center py-2.5 px-2">
-                            <p className="text-base font-black text-blue-700">{commPct}%</p>
-                            <p className="text-xs text-gray-400">{lang === "fr" ? "Commission" : "عمولتك"}</p>
-                          </div>
-                          <div className="text-center py-2.5 px-2">
-                            <p className="text-base font-black text-amber-700">{revenue.toFixed(0)} <span className="text-xs font-semibold">MAD</span></p>
-                            <p className="text-xs text-gray-400">{lang === "fr" ? "CA généré" : "الإيرادات"}</p>
-                          </div>
-                        </div>
+                          {/* ── Earnings row ── */}
+                          {isActive && (
+                            <div className="flex items-center justify-between px-3.5 py-2 bg-blue-50 border-t border-blue-100">
+                              <span className="text-xs text-blue-700">
+                                {lang === "fr" ? "Vos gains de ce filleul" : "أرباحك من هذا المُحال"}
+                              </span>
+                              <span className="text-sm font-black text-blue-800">+{parentEarn.toFixed(0)} MAD</span>
+                            </div>
+                          )}
 
-                        {/* Earnings row */}
-                        {isActive && (
-                          <div className="flex items-center justify-between px-3.5 py-2 bg-blue-50 border-t border-blue-100">
-                            <span className="text-xs text-blue-700">
-                              {lang === "fr" ? "Vos gains de ce filleul" : "أرباحك من هذا المُحال"}
-                            </span>
-                            <span className="text-sm font-black text-blue-800">+{parentEarn.toFixed(0)} MAD</span>
-                          </div>
-                        )}
-
-                        {/* Sub-referrals row */}
-                        {(() => {
-                          const sub = m.subReferrals ?? { active: 0, pending: 0 };
-                          const total = sub.active + sub.pending;
-                          if (total === 0 && !isActive) return null;
-                          return (
+                          {/* ── Sub-referrals summary row ── */}
+                          {(sub.active + sub.pending) > 0 && (
                             <div className="flex items-center gap-2 px-3.5 py-2 border-t border-gray-100 bg-gray-50">
                               <span className="text-xs text-gray-500 mr-auto">
                                 {lang === "fr" ? "Ses filleuls" : "إحالاته"}
@@ -1439,17 +1553,71 @@ export default function AffiliateDashboard() {
                                 {sub.pending} {lang === "fr" ? "en attente" : "قيد الانتظار"}
                               </span>
                             </div>
-                          );
-                        })()}
-                      </div>
-                    );
-                  })}
-                </div>
-              )}
+                          )}
+
+                          {/* ── Expandable level-2 panel ── */}
+                          {isExpanded && (
+                            <div className="border-t border-dashed border-gray-200 bg-gray-50/80">
+                              {isLoadingSub ? (
+                                <div className="flex items-center justify-center gap-2 py-4">
+                                  <Loader2 className="w-4 h-4 animate-spin text-gray-400" />
+                                  <span className="text-xs text-gray-400">
+                                    {lang === "fr" ? "Chargement..." : "جاري التحميل..."}
+                                  </span>
+                                </div>
+                              ) : !subMembers || subMembers.length === 0 ? (
+                                <p className="text-center text-xs text-gray-400 py-4">
+                                  {lang === "fr" ? "Aucun filleul enregistré" : "لا يوجد إحالات مسجلة"}
+                                </p>
+                              ) : (
+                                <div className="px-3.5 py-2.5 space-y-1.5">
+                                  <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-2">
+                                    {lang === "fr" ? `Équipe de @${m.username}` : `فريق @${m.username}`}
+                                  </p>
+                                  {subMembers.map((s) => {
+                                    const sActive = s.referralStatus === "active";
+                                    return (
+                                      <div key={s.id}
+                                        className={`flex items-center justify-between px-3 py-2 rounded-lg border text-xs
+                                          ${sActive ? "bg-green-50 border-green-100" : "bg-white border-gray-100"}`}>
+                                        <div className="flex items-center gap-2 min-w-0">
+                                          <div className={`w-5 h-5 rounded-full flex items-center justify-center text-[9px] font-black shrink-0
+                                            ${sActive ? "bg-green-200 text-green-800" : "bg-gray-200 text-gray-500"}`}>
+                                            {(s.name || s.username || "?")[0].toUpperCase()}
+                                          </div>
+                                          <span className="font-semibold text-gray-700 truncate">
+                                            @{s.username}
+                                          </span>
+                                          {s.deliveredOrdersCount > 0 && (
+                                            <span className="text-gray-400 shrink-0">
+                                              · {s.deliveredOrdersCount} {lang === "fr" ? "liv." : "توصيل"}
+                                            </span>
+                                          )}
+                                        </div>
+                                        <span className={`px-2 py-0.5 rounded-full font-bold shrink-0 ml-2
+                                          ${sActive ? "bg-green-200 text-green-800" : "bg-amber-100 text-amber-700"}`}>
+                                          {sActive
+                                            ? (lang === "fr" ? "Actif" : "نشط")
+                                            : (lang === "fr" ? "En attente" : "انتظار")}
+                                        </span>
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+                              )}
+                            </div>
+                          )}
+
+                        </div>
+                      );
+                    })}
+                  </div>
+                );
+              })()}
               <p className="text-xs text-gray-400 mt-3">
                 {lang === "fr"
-                  ? "Commission calculée sur le CA livré du filleul. Augmente automatiquement avec ses performances."
-                  : "العمولة محسوبة على إيرادات المُحال المُوصَّلة. تزيد تلقائياً مع تحسّن أدائه."}
+                  ? "Triés par performance. Cliquez sur un membre pour voir son équipe."
+                  : "مرتّبون حسب الأداء. انقر على عضو لعرض فريقه."}
               </p>
             </Section>
           </div>

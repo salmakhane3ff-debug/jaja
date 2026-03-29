@@ -394,12 +394,27 @@ export async function markNotificationsRead(affiliateId) {
 
 // ── Team ──────────────────────────────────────────────────────────────────────
 
+// ── In-memory cache for team aggregations (TTL: 45 s) ─────────────────────────
+const _teamCache = new Map(); // parentId → { data: [], ts: number }
+const TEAM_CACHE_TTL = 45_000;
+
+export function invalidateTeamCache(parentId) {
+  if (parentId) _teamCache.delete(parentId);
+}
+
 export async function getAffiliateTeam(parentId) {
+  const cached = _teamCache.get(parentId);
+  if (cached && Date.now() - cached.ts < TEAM_CACHE_TTL) return cached.data;
+
   const members = await prisma.affiliate.findMany({
     where:   { parentId },
     orderBy: { createdAt: 'asc' },
   });
-  if (members.length === 0) return [];
+
+  if (members.length === 0) {
+    _teamCache.set(parentId, { data: [], ts: Date.now() });
+    return [];
+  }
 
   const memberIds = members.map((m) => m.id);
 
@@ -418,9 +433,37 @@ export async function getAffiliateTeam(parentId) {
     if (row.referralStatus === 'pending') subMap[row.parentId].pending = row._count._all;
   }
 
-  return members.map((m) => ({
+  const data = members.map((m) => ({
     ...mapAffiliate(m),
     subReferrals: subMap[m.id] ?? { active: 0, pending: 0 },
+  }));
+
+  _teamCache.set(parentId, { data, ts: Date.now() });
+  return data;
+}
+
+/**
+ * Fetch direct children of one team member (level-2) for the lazy expandable view.
+ * Returns a minimal shape to keep the payload small.
+ */
+export async function getSubTeamMembers(memberId) {
+  const rows = await prisma.affiliate.findMany({
+    where:   { parentId: memberId },
+    orderBy: { createdAt: 'asc' },
+    select: {
+      id:                   true,
+      username:             true,
+      name:                 true,
+      referralStatus:       true,
+      deliveredOrdersCount: true,
+    },
+  });
+  return rows.map((r) => ({
+    id:                   r.id,
+    username:             r.username,
+    name:                 r.name || null,
+    referralStatus:       r.referralStatus,
+    deliveredOrdersCount: r.deliveredOrdersCount,
   }));
 }
 
