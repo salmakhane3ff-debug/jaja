@@ -1509,20 +1509,28 @@ export default function AffiliateDashboard() {
                           </button>
 
                           {/* ── Stats grid ── */}
-                          <div className="grid grid-cols-3 divide-x divide-gray-100 bg-white">
-                            <div className="text-center py-2.5 px-2">
+                          <div className="grid grid-cols-4 divide-x divide-gray-100 bg-white">
+                            <div className="text-center py-2.5 px-1.5">
                               <p className="text-base font-black text-gray-800">{m.deliveredOrdersCount ?? 0}</p>
                               <p className="text-xs text-gray-400">{lang === "fr" ? "Livrées" : "مُوصّل"}</p>
                             </div>
-                            <div className="text-center py-2.5 px-2">
+                            <div className="text-center py-2.5 px-1.5">
                               <p className="text-base font-black text-blue-700">{commPct}%</p>
                               <p className="text-xs text-gray-400">{lang === "fr" ? "Commission" : "عمولتك"}</p>
                             </div>
-                            <div className="text-center py-2.5 px-2">
+                            <div className="text-center py-2.5 px-1.5">
                               <p className="text-base font-black text-amber-700">
-                                {revenue.toFixed(0)} <span className="text-xs font-semibold">MAD</span>
+                                {revenue.toFixed(0)} <span className="text-[10px] font-semibold">MAD</span>
                               </p>
                               <p className="text-xs text-gray-400">{lang === "fr" ? "CA généré" : "الإيرادات"}</p>
+                            </div>
+                            <div className="text-center py-2.5 px-1.5">
+                              <p className="text-[11px] font-black leading-tight">
+                                <span className="text-green-600">{sub.active}</span>
+                                <span className="text-gray-300 mx-0.5">/</span>
+                                <span className="text-amber-500">{sub.pending}</span>
+                              </p>
+                              <p className="text-xs text-gray-400">{lang === "fr" ? "Filleuls" : "إحالات"}</p>
                             </div>
                           </div>
 
@@ -1533,25 +1541,6 @@ export default function AffiliateDashboard() {
                                 {lang === "fr" ? "Vos gains de ce filleul" : "أرباحك من هذا المُحال"}
                               </span>
                               <span className="text-sm font-black text-blue-800">+{parentEarn.toFixed(0)} MAD</span>
-                            </div>
-                          )}
-
-                          {/* ── Sub-referrals summary row ── */}
-                          {(sub.active + sub.pending) > 0 && (
-                            <div className="flex items-center gap-2 px-3.5 py-2 border-t border-gray-100 bg-gray-50">
-                              <span className="text-xs text-gray-500 mr-auto">
-                                {lang === "fr" ? "Ses filleuls" : "إحالاته"}
-                              </span>
-                              <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-bold
-                                ${sub.active > 0 ? "bg-green-100 text-green-700" : "bg-gray-100 text-gray-400"}`}>
-                                <span className="w-1.5 h-1.5 rounded-full bg-current" />
-                                {sub.active} {lang === "fr" ? "actif" : "نشط"}
-                              </span>
-                              <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-bold
-                                ${sub.pending > 0 ? "bg-amber-100 text-amber-700" : "bg-gray-100 text-gray-400"}`}>
-                                <span className="w-1.5 h-1.5 rounded-full bg-current" />
-                                {sub.pending} {lang === "fr" ? "en attente" : "قيد الانتظار"}
-                              </span>
                             </div>
                           )}
 
