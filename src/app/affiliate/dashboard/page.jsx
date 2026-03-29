@@ -1629,39 +1629,96 @@ export default function AffiliateDashboard() {
 
                                 {/* ── Orders tab ── */}
                                 {activeTab === 'orders' && (
-                                  <div className="bg-white">
+                                  <div className="bg-gray-50">
+
+                                    {/* Section header */}
+                                    <div className="flex items-center gap-2 px-3.5 pt-3 pb-2">
+                                      <Package className="w-3.5 h-3.5 text-gray-400 shrink-0" />
+                                      <span className="text-[11px] font-bold text-gray-500 uppercase tracking-wider">
+                                        {lang === "fr" ? "Commandes" : "الطلبات"}
+                                      </span>
+                                    </div>
+
                                     {isLoadingOrders ? (
-                                      <div className="flex items-center justify-center gap-2 py-5">
+                                      <div className="flex items-center justify-center gap-2 py-6 bg-white mx-3 mb-3 rounded-xl border border-gray-100">
                                         <Loader2 className="w-4 h-4 animate-spin text-gray-400" />
                                         <span className="text-xs text-gray-400">
                                           {lang === "fr" ? "Chargement..." : "جاري التحميل..."}
                                         </span>
                                       </div>
                                     ) : !memberOrders || memberOrders.length === 0 ? (
-                                      <div className="flex flex-col items-center py-7">
-                                        <Package className="w-7 h-7 text-gray-200 mb-2" />
-                                        <p className="text-xs text-gray-400">
+                                      <div className="flex flex-col items-center py-8 bg-white mx-3 mb-3 rounded-xl border border-dashed border-gray-200">
+                                        <Package className="w-8 h-8 text-gray-200 mb-2" />
+                                        <p className="text-xs font-semibold text-gray-400">
                                           {lang === "fr" ? "Aucune commande pour l'instant" : "لا توجد طلبات حتى الآن"}
                                         </p>
                                       </div>
-                                    ) : (
-                                      <div className="divide-y divide-gray-50 max-h-80 overflow-y-auto">
-                                        {memberOrders.map((o) => {
-                                          const sCfg = STATUS_CONFIG[o.status] || { label: o.status, cls: "bg-gray-100 text-gray-600" };
-                                          const shortId = o.orderId || o.id.slice(0, 8).toUpperCase();
-                                          const dateStr = new Date(o.createdAt).toLocaleDateString(
-                                            lang === "fr" ? "fr-FR" : "ar-MA",
-                                            { day: "2-digit", month: "2-digit", year: "numeric" }
-                                          );
-                                          return (
-                                            <div key={o.id} className="px-3.5 py-3 hover:bg-gray-50 transition-colors">
-                                              {/* Row 1: product + status */}
-                                              <div className="flex items-start justify-between gap-2 mb-1.5">
-                                                <div className="min-w-0">
-                                                  <p className="text-xs font-bold text-gray-800 truncate">
-                                                    {o.productTitle || (lang === "fr" ? "Produit" : "منتج")}
-                                                  </p>
-                                                  <p className="text-[10px] text-gray-400 font-mono mt-0.5">
+                                    ) : (() => {
+                                      // ── Summary figures ──
+                                      const totalOrders   = memberOrders.length;
+                                      const totalRevenue  = memberOrders.reduce((s, o) => s + (o.total            ?? 0), 0);
+                                      const totalEarnings = memberOrders.reduce((s, o) => s + (o.commissionAmount ?? 0), 0);
+
+                                      return (
+                                        <>
+                                          {/* ── Summary strip ── */}
+                                          <div className="grid grid-cols-3 divide-x divide-gray-200 bg-white mx-3 rounded-xl border border-gray-200 mb-3 overflow-hidden">
+                                            <div className="text-center py-2.5 px-2">
+                                              <p className="text-sm font-black text-gray-800">{totalOrders}</p>
+                                              <p className="text-[10px] text-gray-400">
+                                                {lang === "fr" ? "Commandes" : "طلبات"}
+                                              </p>
+                                            </div>
+                                            <div className="text-center py-2.5 px-2">
+                                              <p className="text-sm font-black text-amber-700">
+                                                {totalRevenue.toFixed(0)}
+                                                <span className="text-[9px] font-semibold ml-0.5">MAD</span>
+                                              </p>
+                                              <p className="text-[10px] text-gray-400">
+                                                {lang === "fr" ? "CA total" : "إجمالي"}
+                                              </p>
+                                            </div>
+                                            <div className="text-center py-2.5 px-2">
+                                              <p className="text-sm font-black text-green-700">
+                                                +{totalEarnings.toFixed(0)}
+                                                <span className="text-[9px] font-semibold ml-0.5">MAD</span>
+                                              </p>
+                                              <p className="text-[10px] text-gray-400">
+                                                {lang === "fr" ? "Vos gains" : "أرباحك"}
+                                              </p>
+                                            </div>
+                                          </div>
+
+                                          {/* ── Order mini-cards ── */}
+                                          <div className="px-3 pb-3 space-y-2 max-h-80 overflow-y-auto">
+                                            {memberOrders.map((o) => {
+                                              const sCfg    = STATUS_CONFIG[o.status] || { label: o.status, cls: "bg-gray-100 text-gray-600" };
+                                              const shortId = o.orderId || o.id.slice(0, 8).toUpperCase();
+                                              const dateStr = new Date(o.createdAt).toLocaleDateString(
+                                                lang === "fr" ? "fr-FR" : "ar-MA",
+                                                { day: "2-digit", month: "2-digit", year: "numeric" }
+                                              );
+                                              const isDelivered = o.status === "delivered";
+                                              return (
+                                                <div
+                                                  key={o.id}
+                                                  className={`rounded-xl border p-3 transition-colors
+                                                    ${isDelivered
+                                                      ? "bg-green-50/60 border-green-100"
+                                                      : "bg-white border-gray-100"}`}
+                                                >
+                                                  {/* Line 1: product name + status badge */}
+                                                  <div className="flex items-start justify-between gap-2 mb-2">
+                                                    <p className="text-xs font-bold text-gray-800 leading-tight truncate">
+                                                      {o.productTitle || (lang === "fr" ? "Produit" : "منتج")}
+                                                    </p>
+                                                    <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold shrink-0 ${sCfg.cls}`}>
+                                                      {sCfg.label}
+                                                    </span>
+                                                  </div>
+
+                                                  {/* Line 2: meta (ID · date · client) */}
+                                                  <p className="text-[10px] text-gray-400 font-mono mb-2.5 truncate">
                                                     #{shortId}
                                                     <span className="mx-1 text-gray-300">·</span>
                                                     {dateStr}
@@ -1672,26 +1729,29 @@ export default function AffiliateDashboard() {
                                                       </>
                                                     )}
                                                   </p>
+
+                                                  {/* Line 3: total (left) + commission (right) */}
+                                                  <div className="flex items-center justify-between pt-2 border-t border-gray-100">
+                                                    <div className="flex items-center gap-1">
+                                                      <span className="text-[10px] text-gray-400">
+                                                        {lang === "fr" ? "Total" : "المجموع"}
+                                                      </span>
+                                                      <span className="text-xs font-black text-gray-700">
+                                                        {o.total.toFixed(0)} MAD
+                                                      </span>
+                                                    </div>
+                                                    <span className={`text-xs font-black
+                                                      ${isDelivered ? "text-green-700" : "text-gray-500"}`}>
+                                                      {isDelivered ? "+" : ""}{o.commissionAmount.toFixed(0)} MAD
+                                                    </span>
+                                                  </div>
                                                 </div>
-                                                <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold shrink-0 ${sCfg.cls}`}>
-                                                  {sCfg.label}
-                                                </span>
-                                              </div>
-                                              {/* Row 2: total + commission */}
-                                              <div className="flex items-center justify-between">
-                                                <span className="text-xs text-gray-500">
-                                                  {lang === "fr" ? "Total" : "المجموع"}
-                                                  {" "}<strong className="text-gray-800">{o.total.toFixed(0)} MAD</strong>
-                                                </span>
-                                                <span className="text-xs font-black text-green-700">
-                                                  +{o.commissionAmount.toFixed(0)} MAD
-                                                </span>
-                                              </div>
-                                            </div>
-                                          );
-                                        })}
-                                      </div>
-                                    )}
+                                              );
+                                            })}
+                                          </div>
+                                        </>
+                                      );
+                                    })()}
                                   </div>
                                 )}
 
