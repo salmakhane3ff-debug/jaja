@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useMemo } from "react";
-import { Plus, Search, Edit3, Trash2, Users, Loader2, CheckCircle, XCircle, X, Settings, Award, Percent } from "lucide-react";
+import { Plus, Search, Edit3, Trash2, Users, Loader2, CheckCircle, XCircle, X, Settings, Award, Percent, Trophy, Play, RefreshCw, ToggleLeft, ToggleRight, Zap } from "lucide-react";
 
 const COMMISSION_OPTIONS = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8];
 
@@ -344,6 +344,217 @@ function TeamBonusConfigPanel() {
   );
 }
 
+// ── Demo Management Panel ─────────────────────────────────────────────────────
+
+const SPEED_OPTIONS = [
+  { value: 'slow',   label: 'Lent',   desc: '×0.4 — croissance douce'  },
+  { value: 'medium', label: 'Moyen',  desc: '×1 — vitesse standard'    },
+  { value: 'fast',   label: 'Rapide', desc: '×2.8 — croissance intense' },
+];
+
+function DemoManagementPanel() {
+  const [info,        setInfo]        = useState(null);
+  const [loading,     setLoading]     = useState(true);
+  const [genCount,    setGenCount]    = useState(60);
+  const [busy,        setBusy]        = useState(null); // 'generate'|'simulate'|'reset'|'save'
+  const [msg,         setMsg]         = useState(null);
+
+  const fetchInfo = async () => {
+    setLoading(true);
+    try {
+      const r = await fetch('/api/admin/demo');
+      const d = await r.json();
+      setInfo(d);
+    } catch { } finally { setLoading(false); }
+  };
+
+  useEffect(() => { fetchInfo(); }, []);
+
+  const post = async (url, body, busyKey) => {
+    setBusy(busyKey);
+    setMsg(null);
+    try {
+      const r = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: body ? JSON.stringify(body) : undefined,
+      });
+      const d = await r.json();
+      if (!r.ok) { setMsg({ type: 'err', text: d.error || 'Erreur' }); return; }
+      setMsg({ type: 'ok', text: busyKey === 'generate' ? `${d.generated} affiliés générés ✓`
+                                : busyKey === 'simulate' ? `Simulation effectuée (${d.simulated} affiliés) ✓`
+                                : 'Compétition réinitialisée ✓' });
+      await fetchInfo();
+    } catch { setMsg({ type: 'err', text: 'Erreur réseau' }); }
+    finally { setBusy(null); setTimeout(() => setMsg(null), 3500); }
+  };
+
+  const saveSettings = async (patch) => {
+    if (!info) return;
+    const next = { ...info.settings, ...patch };
+    setBusy('save');
+    try {
+      const r = await fetch('/api/admin/demo', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ isEnabled: next.isEnabled, simulationSpeed: next.simulationSpeed }),
+      });
+      if (r.ok) setInfo((prev) => ({ ...prev, settings: next }));
+    } catch { } finally { setBusy(null); }
+  };
+
+  const s   = info?.settings;
+  const c   = info?.competition;
+
+  return (
+    <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden">
+      {/* Header */}
+      <div className="flex items-center gap-3 px-5 py-4 border-b border-gray-100 bg-indigo-50">
+        <Trophy className="w-5 h-5 text-indigo-600" />
+        <div>
+          <h2 className="text-sm font-bold text-gray-900">Système de Compétition Démo</h2>
+          <p className="text-xs text-gray-500">Gérez les affiliés fictifs et les cycles de compétition</p>
+        </div>
+        {s && (
+          <button
+            type="button"
+            onClick={() => saveSettings({ isEnabled: !s.isEnabled })}
+            className="ml-auto flex items-center gap-1.5 text-xs font-bold"
+            disabled={busy === 'save'}
+          >
+            {s.isEnabled
+              ? <ToggleRight className="w-7 h-7 text-green-500" />
+              : <ToggleLeft  className="w-7 h-7 text-gray-400"  />}
+            <span className={s.isEnabled ? 'text-green-600' : 'text-gray-400'}>
+              {s.isEnabled ? 'Activé' : 'Désactivé'}
+            </span>
+          </button>
+        )}
+      </div>
+
+      <div className="p-5 space-y-5">
+        {loading ? (
+          <div className="flex justify-center py-8"><Loader2 className="w-6 h-6 animate-spin text-gray-400" /></div>
+        ) : (
+          <>
+            {/* Status row */}
+            {c && (
+              <div className="grid grid-cols-3 gap-3">
+                {[
+                  { label: 'Cycle',          value: `#${c.cycleNum}` },
+                  { label: 'Jours restants', value: `${c.daysLeft}j` },
+                  { label: 'Participants',   value: c.totalParticipants },
+                ].map((st) => (
+                  <div key={st.label} className="text-center bg-gray-50 rounded-xl border border-gray-100 py-3 px-2">
+                    <p className="text-xl font-black text-gray-800">{st.value}</p>
+                    <p className="text-[10px] text-gray-400 mt-0.5">{st.label}</p>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            {/* Simulation speed */}
+            <div>
+              <label className="block text-xs font-semibold text-gray-600 mb-2">
+                Vitesse de simulation
+              </label>
+              <div className="grid grid-cols-3 gap-2">
+                {SPEED_OPTIONS.map((opt) => (
+                  <button
+                    key={opt.value}
+                    type="button"
+                    onClick={() => saveSettings({ simulationSpeed: opt.value })}
+                    className={`py-2.5 px-3 rounded-xl border text-left transition-colors
+                      ${s?.simulationSpeed === opt.value
+                        ? 'bg-indigo-600 border-indigo-600 text-white'
+                        : 'bg-gray-50 border-gray-200 text-gray-700 hover:bg-gray-100'}`}
+                  >
+                    <p className="text-xs font-bold">{opt.label}</p>
+                    <p className={`text-[10px] mt-0.5 ${s?.simulationSpeed === opt.value ? 'text-indigo-200' : 'text-gray-400'}`}>
+                      {opt.desc}
+                    </p>
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* Actions */}
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+
+              {/* Generate */}
+              <div className="space-y-2">
+                <label className="text-xs font-semibold text-gray-600">Générer des affiliés</label>
+                <div className="flex gap-2">
+                  <input
+                    type="number" min={10} max={100}
+                    value={genCount}
+                    onChange={(e) => setGenCount(parseInt(e.target.value) || 60)}
+                    className="w-20 px-2 py-2 text-sm border border-gray-200 rounded-xl bg-gray-50 focus:outline-none focus:border-gray-400"
+                  />
+                  <button
+                    type="button"
+                    onClick={() => post('/api/admin/demo', { count: genCount }, 'generate')}
+                    disabled={!!busy}
+                    className="flex-1 flex items-center justify-center gap-1.5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-xl disabled:opacity-50 transition-colors"
+                  >
+                    {busy === 'generate' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Users className="w-3.5 h-3.5" />}
+                    Générer
+                  </button>
+                </div>
+              </div>
+
+              {/* Simulate */}
+              <div className="space-y-2">
+                <label className="text-xs font-semibold text-gray-600">Simuler un tick</label>
+                <button
+                  type="button"
+                  onClick={() => post('/api/admin/demo/simulate', null, 'simulate')}
+                  disabled={!!busy}
+                  className="w-full flex items-center justify-center gap-1.5 py-2 bg-green-600 hover:bg-green-700 text-white text-xs font-bold rounded-xl disabled:opacity-50 transition-colors"
+                >
+                  {busy === 'simulate' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Play className="w-3.5 h-3.5" />}
+                  Simuler activité
+                </button>
+                {s?.lastSimAt && (
+                  <p className="text-[10px] text-gray-400">
+                    Dernière : {new Date(s.lastSimAt).toLocaleString('fr-FR', { hour: '2-digit', minute: '2-digit', day: '2-digit', month: '2-digit' })}
+                  </p>
+                )}
+              </div>
+
+              {/* Reset */}
+              <div className="space-y-2">
+                <label className="text-xs font-semibold text-gray-600">Réinitialiser</label>
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (!confirm('Réinitialiser toute la compétition ? Les stats seront remises à zéro.')) return;
+                    post('/api/admin/demo/reset', null, 'reset');
+                  }}
+                  disabled={!!busy}
+                  className="w-full flex items-center justify-center gap-1.5 py-2 bg-red-500 hover:bg-red-600 text-white text-xs font-bold rounded-xl disabled:opacity-50 transition-colors"
+                >
+                  {busy === 'reset' ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />}
+                  Nouveau cycle
+                </button>
+              </div>
+            </div>
+
+            {/* Feedback */}
+            {msg && (
+              <div className={`flex items-center gap-2 px-4 py-3 rounded-xl text-sm font-semibold
+                ${msg.type === 'ok' ? 'bg-green-50 text-green-700 border border-green-200' : 'bg-red-50 text-red-700 border border-red-200'}`}>
+                {msg.type === 'ok' ? <CheckCircle className="w-4 h-4 shrink-0" /> : <XCircle className="w-4 h-4 shrink-0" />}
+                {msg.text}
+              </div>
+            )}
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export default function AdminAffiliatesPage() {
   const [affiliates, setAffiliates] = useState([]);
   const [loading,    setLoading]    = useState(true);
@@ -537,6 +748,7 @@ export default function AdminAffiliatesPage() {
       )}
 
       <TeamBonusConfigPanel />
+      <DemoManagementPanel />
     </div>
   );
 }

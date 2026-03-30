@@ -387,6 +387,378 @@ function AvatarUpload({ affiliate, authHeaders, onUpdate }) {
   );
 }
 
+// ── Demo Competition helpers ──────────────────────────────────────────────────
+
+const RANK_MEDALS  = ['🥇', '🥈', '🥉'];
+const GROWTH_BADGE = {
+  aggressive: { label: 'Top Performer',  cls: 'bg-red-100 text-red-700'    },
+  consistent: { label: 'Régulier ⚡',    cls: 'bg-blue-100 text-blue-700'  },
+  slow:       { label: 'En croissance',  cls: 'bg-gray-100 text-gray-600'  },
+};
+
+function DemoAvatar({ name, color, size = 'md' }) {
+  const sz = size === 'lg' ? 'w-14 h-14 text-xl' : size === 'sm' ? 'w-7 h-7 text-xs' : 'w-10 h-10 text-sm';
+  return (
+    <div className={`${sz} rounded-full flex items-center justify-center font-black text-white shrink-0`}
+      style={{ background: color }}>
+      {(name || '?')[0].toUpperCase()}
+    </div>
+  );
+}
+
+// ── Demo Affiliate Detail Modal ───────────────────────────────────────────────
+
+function DemoAffiliateModal({ affiliateId, onClose, lang }) {
+  const [data,      setData]      = useState(null);
+  const [loading,   setLoading]   = useState(true);
+  const [activeTab, setActiveTab] = useState('overview');
+
+  useEffect(() => {
+    if (!affiliateId) return;
+    setLoading(true);
+    fetch(`/api/demo/affiliate/${affiliateId}`)
+      .then((r) => r.json())
+      .then(setData)
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, [affiliateId]);
+
+  const fr = lang === 'fr';
+
+  return (
+    <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-black/50 backdrop-blur-sm"
+      onClick={(e) => e.target === e.currentTarget && onClose()}>
+
+      <div className="bg-white w-full sm:max-w-lg rounded-t-3xl sm:rounded-2xl shadow-2xl overflow-hidden
+        animate-in slide-in-from-bottom-4 sm:zoom-in-95 duration-200">
+
+        {/* Header */}
+        <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
+          <h2 className="text-sm font-bold text-gray-800">
+            {fr ? 'Profil compétiteur' : 'ملف المنافس'}
+          </h2>
+          <button onClick={onClose}
+            className="w-7 h-7 rounded-full bg-gray-100 flex items-center justify-center text-gray-500 hover:bg-gray-200 transition-colors">
+            <XCircle className="w-4 h-4" />
+          </button>
+        </div>
+
+        {loading ? (
+          <div className="flex items-center justify-center py-16">
+            <Loader2 className="w-8 h-8 animate-spin text-gray-300" />
+          </div>
+        ) : !data ? (
+          <p className="text-center text-sm text-gray-400 py-12">
+            {fr ? 'Données introuvables' : 'البيانات غير موجودة'}
+          </p>
+        ) : (
+          <div className="flex flex-col max-h-[80vh]">
+
+            {/* Identity strip */}
+            <div className="flex items-center gap-3 px-5 py-4 bg-gradient-to-r from-gray-50 to-white border-b border-gray-100">
+              <DemoAvatar name={data.name} color={data.avatarColor} size="lg" />
+              <div className="min-w-0 flex-1">
+                <div className="flex items-center gap-2 flex-wrap">
+                  <p className="font-black text-gray-900 text-base truncate">{data.name}</p>
+                  {data.rank <= 3 && <span className="text-xl">{RANK_MEDALS[data.rank - 1]}</span>}
+                </div>
+                <p className="text-xs text-gray-400 font-mono">@{data.username}</p>
+                <div className="flex items-center gap-2 mt-1 flex-wrap">
+                  <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-gray-900 text-white">
+                    #{data.rank} {fr ? 'classement' : 'ترتيب'}
+                  </span>
+                  <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${GROWTH_BADGE[data.growthType]?.cls}`}>
+                    {GROWTH_BADGE[data.growthType]?.label}
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            {/* Tabs */}
+            <div className="flex border-b border-gray-100 bg-gray-50">
+              {[
+                { id: 'overview', label: fr ? 'Aperçu'   : 'نظرة عامة' },
+                { id: 'team',     label: fr ? 'Équipe'   : 'الفريق'    },
+                { id: 'earnings', label: fr ? 'Gains'    : 'الأرباح'   },
+              ].map((t) => (
+                <button key={t.id} onClick={() => setActiveTab(t.id)}
+                  className={`flex-1 py-2.5 text-xs font-semibold transition-colors border-b-2
+                    ${activeTab === t.id
+                      ? 'border-gray-900 text-gray-900 bg-white'
+                      : 'border-transparent text-gray-400 hover:text-gray-700'}`}>
+                  {t.label}
+                </button>
+              ))}
+            </div>
+
+            {/* Scrollable body */}
+            <div className="overflow-y-auto flex-1">
+
+              {/* ── OVERVIEW ── */}
+              {activeTab === 'overview' && (
+                <div className="p-4 space-y-4">
+                  {/* Main stats */}
+                  <div className="grid grid-cols-2 gap-2">
+                    {[
+                      { label: fr ? 'Commandes totales' : 'إجمالي الطلبات', value: data.totalOrders,     color: 'text-gray-800' },
+                      { label: fr ? 'CA total (MAD)'    : 'إجمالي الإيرادات', value: `${Math.round(data.totalRevenue).toLocaleString()} MAD`, color: 'text-amber-700' },
+                      { label: fr ? 'Confirmées'        : 'مؤكدة',           value: data.confirmedOrders, color: 'text-green-700' },
+                      { label: fr ? 'Annulées'          : 'ملغاة',            value: data.cancelledOrders, color: 'text-red-600'   },
+                    ].map((s) => (
+                      <div key={s.label} className="bg-gray-50 rounded-xl p-3 border border-gray-100">
+                        <p className={`text-lg font-black ${s.color}`}>{s.value}</p>
+                        <p className="text-[10px] text-gray-400 mt-0.5">{s.label}</p>
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* Today */}
+                  <div className="bg-indigo-50 rounded-xl p-3.5 border border-indigo-100">
+                    <p className="text-[10px] font-bold text-indigo-500 uppercase tracking-wider mb-2">
+                      {fr ? "Aujourd'hui" : 'اليوم'}
+                    </p>
+                    <div className="flex justify-between items-center">
+                      <div>
+                        <p className="text-2xl font-black text-indigo-800">{data.todayOrders}</p>
+                        <p className="text-[10px] text-indigo-400">{fr ? 'commandes' : 'طلبات'}</p>
+                      </div>
+                      <div className="text-right">
+                        <p className="text-xl font-black text-indigo-700">
+                          {Math.round(data.todayRevenue).toLocaleString()} MAD
+                        </p>
+                        <p className="text-[10px] text-indigo-400">{fr ? 'CA aujourd\'hui' : 'إيرادات اليوم'}</p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* ── TEAM ── */}
+              {activeTab === 'team' && (
+                <div className="p-4 space-y-3">
+                  <div className="grid grid-cols-2 gap-2">
+                    {[
+                      { label: fr ? 'Taille équipe'    : 'حجم الفريق',        value: data.teamSize,       color: 'text-purple-700' },
+                      { label: fr ? 'Cmds équipe'      : 'طلبات الفريق',      value: data.teamOrders,     color: 'text-gray-800'   },
+                      { label: fr ? 'CA équipe (MAD)'  : 'إيرادات الفريق',    value: `${Math.round(data.teamRevenue).toLocaleString()} MAD`, color: 'text-amber-700'  },
+                      { label: fr ? 'Ta commission 5%' : 'عمولتك 5٪',         value: `${Math.round(data.teamCommission).toLocaleString()} MAD`, color: 'text-green-700' },
+                    ].map((s) => (
+                      <div key={s.label} className="bg-gray-50 rounded-xl p-3 border border-gray-100">
+                        <p className={`text-lg font-black ${s.color}`}>{s.value}</p>
+                        <p className="text-[10px] text-gray-400 mt-0.5">{s.label}</p>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* ── EARNINGS HISTORY ── */}
+              {activeTab === 'earnings' && (
+                <div className="p-4">
+                  {data.earningsHistory.length === 0 ? (
+                    <p className="text-center text-sm text-gray-400 py-8">
+                      {fr ? 'Aucun historique' : 'لا يوجد سجل'}
+                    </p>
+                  ) : (
+                    <>
+                      {/* Mini bar chart using CSS */}
+                      {(() => {
+                        const maxRev = Math.max(...data.earningsHistory.map((h) => h.revenue), 1);
+                        return (
+                          <div className="mb-4">
+                            <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-3">
+                              {fr ? 'Revenus (30 derniers jours)' : 'الإيرادات (آخر 30 يوماً)'}
+                            </p>
+                            <div className="flex items-end gap-1 h-20">
+                              {data.earningsHistory.slice(-14).map((h, i) => (
+                                <div key={i} className="flex-1 flex flex-col items-center gap-0.5">
+                                  <div
+                                    className="w-full rounded-t-sm bg-indigo-400 transition-all"
+                                    style={{ height: `${Math.round((h.revenue / maxRev) * 100)}%`, minHeight: h.revenue > 0 ? '3px' : '1px' }}
+                                    title={`${h.orders} cmds · ${Math.round(h.revenue)} MAD`}
+                                  />
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        );
+                      })()}
+
+                      {/* List */}
+                      <div className="space-y-1.5 max-h-56 overflow-y-auto">
+                        {[...data.earningsHistory].reverse().slice(0, 14).map((h, i) => {
+                          const d = new Date(h.date);
+                          const dateStr = d.toLocaleDateString(fr ? 'fr-FR' : 'ar-MA', { day: '2-digit', month: 'short' });
+                          return (
+                            <div key={i} className="flex items-center justify-between px-3 py-2 bg-gray-50 rounded-lg border border-gray-100 text-xs">
+                              <span className="text-gray-500 font-mono w-16 shrink-0">{dateStr}</span>
+                              <span className="text-gray-700 font-semibold">{h.orders} {fr ? 'cmds' : 'طلب'}</span>
+                              <span className="text-amber-700 font-bold">{Math.round(h.revenue)} MAD</span>
+                              <span className="text-green-700 font-black">+{Math.round(h.commission)} MAD</span>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </>
+                  )}
+                </div>
+              )}
+
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ── Competition Tab ───────────────────────────────────────────────────────────
+
+function CompetitionTab({ lang }) {
+  const fr = lang === 'fr';
+  const [leaderboard,  setLeaderboard]  = useState([]);
+  const [competition,  setCompetition]  = useState(null);
+  const [loading,      setLoading]      = useState(true);
+  const [selectedId,   setSelectedId]   = useState(null);
+
+  useEffect(() => {
+    setLoading(true);
+    fetch('/api/demo/leaderboard?limit=20')
+      .then((r) => r.json())
+      .then((d) => {
+        setLeaderboard(d.leaderboard || []);
+        setCompetition(d.competition || null);
+      })
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, []);
+
+  const daysLeft = competition?.daysLeft ?? 0;
+
+  return (
+    <div className="space-y-4">
+
+      {/* ── Competition banner ── */}
+      <div className="rounded-2xl overflow-hidden"
+        style={{ background: 'linear-gradient(135deg, #1e1b4b 0%, #312e81 50%, #4338ca 100%)' }}>
+        <div className="px-5 py-4">
+          <div className="flex items-center justify-between flex-wrap gap-3">
+            <div>
+              <p className="text-indigo-300 text-xs font-semibold uppercase tracking-widest mb-1">
+                {fr ? `Cycle #${competition?.cycleNum ?? 1}` : `الدورة #${competition?.cycleNum ?? 1}`}
+              </p>
+              <h2 className="text-white text-xl font-black">
+                {fr ? '🏆 Compétition du mois' : '🏆 مسابقة الشهر'}
+              </h2>
+              <p className="text-indigo-300 text-xs mt-1">
+                {fr
+                  ? `${competition?.totalParticipants ?? 0} participants · ${daysLeft} jours restants`
+                  : `${competition?.totalParticipants ?? 0} مشارك · ${daysLeft} يوم متبقٍ`}
+              </p>
+            </div>
+            <div className="text-center">
+              <p className="text-4xl font-black text-white">{daysLeft}</p>
+              <p className="text-indigo-300 text-xs">{fr ? 'jours' : 'أيام'}</p>
+            </div>
+          </div>
+          {/* Progress bar */}
+          {competition && (() => {
+            const total = 30;
+            const elapsed = total - daysLeft;
+            const pct = Math.round((elapsed / total) * 100);
+            return (
+              <div className="mt-3 bg-indigo-900/60 rounded-full h-1.5">
+                <div className="bg-indigo-400 h-1.5 rounded-full transition-all" style={{ width: `${pct}%` }} />
+              </div>
+            );
+          })()}
+        </div>
+      </div>
+
+      {/* ── Leaderboard ── */}
+      <Section title={fr ? 'Classement du mois' : 'ترتيب الشهر'} icon={TrendingUp}>
+        {loading ? (
+          <div className="flex items-center justify-center py-10 gap-2">
+            <Loader2 className="w-5 h-5 animate-spin text-gray-400" />
+            <span className="text-sm text-gray-400">{fr ? 'Chargement...' : 'جاري التحميل...'}</span>
+          </div>
+        ) : leaderboard.length === 0 ? (
+          <div className="text-center py-12">
+            <p className="text-gray-400 text-sm">
+              {fr ? 'Aucun participant pour l\'instant.' : 'لا يوجد مشاركون حتى الآن.'}
+            </p>
+            <p className="text-gray-400 text-xs mt-1">
+              {fr ? 'Activez la compétition depuis le panneau admin.' : 'فعّل المسابقة من لوحة الإدارة.'}
+            </p>
+          </div>
+        ) : (
+          <div className="space-y-2">
+            {leaderboard.map((a, i) => (
+              <button
+                key={a.id}
+                type="button"
+                onClick={() => setSelectedId(a.id)}
+                className={`w-full text-left flex items-center gap-3 px-3.5 py-3 rounded-xl border transition-all hover:shadow-sm active:scale-[0.99]
+                  ${i === 0 ? 'bg-amber-50 border-amber-200 shadow-sm shadow-amber-100'
+                  : i === 1 ? 'bg-gray-50 border-gray-200'
+                  : i === 2 ? 'bg-orange-50 border-orange-200'
+                  : 'bg-white border-gray-100'}`}
+              >
+                {/* Rank */}
+                <div className="w-7 text-center shrink-0">
+                  {i < 3
+                    ? <span className="text-xl">{RANK_MEDALS[i]}</span>
+                    : <span className="text-xs font-black text-gray-400">#{i + 1}</span>}
+                </div>
+
+                {/* Avatar */}
+                <DemoAvatar name={a.name} color={a.avatarColor} size="sm" />
+
+                {/* Name + badge */}
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    <p className="text-sm font-bold text-gray-800 truncate">{a.name}</p>
+                    {a.growthType === 'aggressive' && (
+                      <span className="text-[9px] font-black px-1.5 py-0.5 rounded-full bg-red-100 text-red-700 whitespace-nowrap">
+                        Top 🔥
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-[10px] text-gray-400 font-mono">@{a.username}</p>
+                </div>
+
+                {/* Stats */}
+                <div className="text-right shrink-0">
+                  <p className="text-sm font-black text-gray-800">{a.totalOrders}
+                    <span className="text-xs font-normal text-gray-400 ml-1">{fr ? 'cmds' : 'طلب'}</span>
+                  </p>
+                  <p className="text-xs text-amber-700 font-bold">{Math.round(a.totalRevenue).toLocaleString()} MAD</p>
+                </div>
+
+                <ChevronDown className="w-4 h-4 text-gray-300 -rotate-90 shrink-0" />
+              </button>
+            ))}
+          </div>
+        )}
+        <p className="text-xs text-gray-400 mt-3">
+          {fr
+            ? 'Cliquez sur un affilié pour voir ses statistiques détaillées.'
+            : 'انقر على منافس لعرض إحصائياته التفصيلية.'}
+        </p>
+      </Section>
+
+      {/* ── Detail modal ── */}
+      {selectedId && (
+        <DemoAffiliateModal
+          affiliateId={selectedId}
+          onClose={() => setSelectedId(null)}
+          lang={lang}
+        />
+      )}
+    </div>
+  );
+}
+
 // ── Main dashboard ────────────────────────────────────────────────────────────
 
 export default function AffiliateDashboard() {
@@ -719,6 +1091,7 @@ export default function AffiliateDashboard() {
     { id: "payout",        label: "Retraits" },
     { id: "notifications", label: `Notifs ${unread > 0 ? `(${unread})` : ""}` },
     { id: "team",          label: `Équipe (${team.length})` },
+    { id: "competition",   label: "🏆 Compétition" },
     { id: "settings",      label: "Paramètres" },
   ];
 
@@ -1828,6 +2201,9 @@ export default function AffiliateDashboard() {
           </div>
           );
         })()}
+
+        {/* ══ COMPETITION ═══════════════════════════════════════════════════ */}
+        {activeTab === "competition" && <CompetitionTab lang={lang} />}
 
         {/* ══ SETTINGS ══════════════════════════════════════════════════════ */}
         {activeTab === "settings" && (
