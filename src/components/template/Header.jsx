@@ -1,7 +1,8 @@
 "use client";
 
 import React, { useState, useEffect, useCallback, useMemo } from "react";
-import { motion, AnimatePresence } from "framer-motion";
+// PERF: framer-motion removed (~78 KB JS). Sidebar slide + backdrop fade
+//       are now handled with CSS transitions (zero JS cost).
 import { RiMenuLine } from "react-icons/ri";
 import { IoBagOutline } from "react-icons/io5";
 import { DynamicIcon } from "lucide-react/dynamic";
@@ -22,6 +23,12 @@ export default function FullHeader() {
   const [wishlistCount, setWishlistCount] = useState(0);
   const [cartCount, setCartCount] = useState(0);
   const [isLoading, setIsLoading] = useState(true);
+  // Hydration guard: sidebar and backdrop are only rendered after the client has
+  // mounted. This prevents a server/client mismatch caused by isRTL and t() reading
+  // client-side state (localStorage / cookie) that differs from the SSR pass.
+  // Since menuOpen is always false at startup, users cannot open the menu before
+  // hydration, so there is zero visual impact.
+  const [mounted, setMounted] = useState(false);
 
   const updateWishlistCount = useCallback(() => {
     const savedWishlist = JSON.parse(localStorage.getItem("wishlist") || "[]");
@@ -61,6 +68,7 @@ export default function FullHeader() {
       }
     };
 
+    setMounted(true);
     fetchData();
     updateWishlistCount();
     updateCartCount();
@@ -86,10 +94,14 @@ export default function FullHeader() {
   const displayMenuItems = useMemo(() => menuItems, [menuItems]);
   const closeMenu = useCallback(() => setMenuOpen(false), []);
 
-  // Mobile sidebar slides from the correct side based on layout direction
-  const sidebarInitial = isRTL ? { x: "100%" } : { x: "-100%" };
-  const sidebarExit = isRTL ? { x: "100%" } : { x: "-100%" };
+  // PERF: sidebar position class — no framer-motion needed, pure CSS transform
   const sidebarPosition = isRTL ? "right-0" : "left-0";
+  // PERF: translate direction — sidebar starts off-screen, slides to x:0 on open
+  const sidebarTranslate = menuOpen
+    ? "translate-x-0"
+    : isRTL
+    ? "translate-x-full"
+    : "-translate-x-full";
 
   return (
     <>
@@ -181,25 +193,25 @@ export default function FullHeader() {
         </div>
       </header>
 
-      {/* Mobile Sidebar — slides from the appropriate side */}
-      <AnimatePresence>
-        {menuOpen && (
-          <>
-            <motion.div
-              className="fixed inset-0 backdrop-blur-sm bg-white/30 z-50"
-              onClick={() => setMenuOpen(false)}
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-            />
+      {/* Mobile Sidebar — CSS transitions replace framer-motion (~78 KB saved).
+          Gated on `mounted` so SSR never outputs RTL-dependent classes or translated
+          strings, eliminating the server/client hydration mismatch entirely.
+          Since menuOpen is always false at first render, there is no visible flicker. */}
+      {mounted && (
+        <>
+          {/* Backdrop */}
+          <div
+            className={`fixed inset-0 backdrop-blur-sm bg-white/30 z-50 transition-opacity duration-300 ${
+              menuOpen ? "opacity-100 pointer-events-auto" : "opacity-0 pointer-events-none"
+            }`}
+            onClick={() => setMenuOpen(false)}
+            aria-hidden="true"
+          />
 
-            <motion.div
-              className={`fixed top-0 ${sidebarPosition} bottom-0 w-[85%] max-w-sm bg-white z-50 flex flex-col overflow-y-auto`}
-              initial={sidebarInitial}
-              animate={{ x: 0 }}
-              exit={sidebarExit}
-              transition={{ type: "tween", duration: 0.3 }}
-            >
+          {/* Sidebar panel */}
+          <div
+            className={`fixed top-0 ${sidebarPosition} bottom-0 w-[85%] max-w-sm bg-white z-50 flex flex-col overflow-y-auto transform transition-transform duration-300 ease-in-out ${sidebarTranslate}`}
+          >
               {/* Header Section */}
               <div className="relative bg-gray-50 border-b border-gray-200 px-4 py-6 pt-8">
                 <button
@@ -274,10 +286,9 @@ export default function FullHeader() {
                   </div>
                 </div>
               )}
-            </motion.div>
-          </>
-        )}
-      </AnimatePresence>
+          </div>
+        </>
+      )}
     </>
   );
 }

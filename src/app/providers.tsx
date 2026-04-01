@@ -1,7 +1,13 @@
 // app/providers.tsx
 "use client";
 
-import { HeroUIProvider } from "@heroui/react";
+// PERF: HeroUIProvider removed from the global provider tree.
+//       It was wrapping every page — including the storefront — and shipping
+//       the full HeroUI theme CSS + JS to all visitors.
+//       HeroUIProvider is now applied only in:
+//         - src/app/admin/layout.jsx   (admin panel uses HeroUI heavily)
+//         - src/app/checkout/layout.jsx (checkout uses HeroUI form inputs)
+//       Public pages (homepage, product, feedback) no longer download it.
 import { CartProvider, useCartDrawer } from "@/hooks/useCart";
 import CartDrawer from "@/components/CartDrawer";
 import { UIControlProvider } from "@/context/UIControlContext";
@@ -22,16 +28,15 @@ function CartDrawerWrapper() {
 export function Providers({ children }: { children: React.ReactNode }) {
   return (
     <LanguageProvider>
-      <HeroUIProvider>
-        <SettingsProvider>
-          <UIControlProvider>
-            <CartProvider>
-              {children}
-              <CartDrawerWrapper />
-            </CartProvider>
-          </UIControlProvider>
-        </SettingsProvider>
-      </HeroUIProvider>
+      {/* PERF: HeroUIProvider removed — see comment at top of file */}
+      <SettingsProvider>
+        <UIControlProvider>
+          <CartProvider>
+            {children}
+            <CartDrawerWrapper />
+          </CartProvider>
+        </UIControlProvider>
+      </SettingsProvider>
     </LanguageProvider>
   );
 }

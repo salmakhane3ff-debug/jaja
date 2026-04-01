@@ -174,16 +174,45 @@ export async function getCampaignStats(campaignId) {
 /**
  * Return all campaigns with their aggregated stats merged in.
  * Used by GET /api/track/campaigns?stats=true.
+ *
+ * PERF: Previously this ran 1 + N Prisma queries (one per campaign).
+ *       Now it runs exactly 2 queries regardless of how many campaigns exist:
+ *         1. getAllCampaigns()          → fetches all AdCampaign rows
+ *         2. prisma.adStatsDaily.groupBy → sums stats for ALL campaigns at once
+ *       Then stats are merged in memory via a Map lookup (O(1) per campaign).
  */
 export async function getAllCampaignsWithStats() {
-  const campaigns = await getAllCampaigns();
-
-  const withStats = await Promise.all(
-    campaigns.map(async (c) => {
-      const stats = await getCampaignStats(c.campaignId);
-      return { ...c, stats };
+  const [campaigns, statRows] = await Promise.all([
+    getAllCampaigns(),
+    // Single aggregation across every campaign in one DB round-trip
+    prisma.adStatsDaily.groupBy({
+      by:  ['campaignId'],
+      _sum: { clicks: true, conversions: true, revenue: true, cost: true },
     }),
+  ]);
+
+  // Build a Map keyed by AdCampaign.id (UUID) for O(1) lookups below
+  const statsMap = new Map(
+    statRows.map((row) => [row.campaignId, row._sum]),
   );
 
-  return withStats;
+  return campaigns.map((c) => {
+    const s           = statsMap.get(c.id) ?? {};
+    const totalClicks      = s.clicks      ?? 0;
+    const totalConversions = s.conversions ?? 0;
+    const totalRevenue     = s.revenue     ?? 0;
+    const totalCost        = s.cost        ?? 0;
+    return {
+      ...c,
+      stats: {
+        campaignId:       c.campaignId,
+        totalClicks,
+        totalConversions,
+        totalRevenue,
+        totalCost,
+        cvr: totalClicks > 0 ? ((totalConversions / totalClicks) * 100).toFixed(2) : '0.00',
+        roi: totalCost   > 0 ? (((totalRevenue - totalCost) / totalCost) * 100).toFixed(2) : '0.00',
+      },
+    };
+  });
 }

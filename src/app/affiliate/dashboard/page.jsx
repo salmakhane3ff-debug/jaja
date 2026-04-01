@@ -614,28 +614,101 @@ function DemoAffiliateModal({ affiliateId, onClose, lang }) {
 
 // ── Competition Tab ───────────────────────────────────────────────────────────
 
+const REFRESH_SEC = 15;
+
 function CompetitionTab({ lang }) {
   const fr = lang === 'fr';
   const [leaderboard,  setLeaderboard]  = useState([]);
   const [competition,  setCompetition]  = useState(null);
   const [loading,      setLoading]      = useState(true);
   const [selectedId,   setSelectedId]   = useState(null);
+  const [rankDeltas,   setRankDeltas]   = useState({}); // id → delta (+up / -down)
+  const [flashMap,     setFlashMap]     = useState({}); // id → 'up'|'down'|'new'
+  const [countdown,    setCountdown]    = useState(REFRESH_SEC);
+  const prevRankRef  = useRef({});   // id → last index
+  const deltaTimerRef = useRef(null);
+  const flashTimerRef = useRef(null);
 
+  const applyNewBoard = useCallback((newBoard) => {
+    const prevMap = prevRankRef.current;
+    const deltas  = {};
+    const flash   = {};
+
+    newBoard.forEach((a, i) => {
+      const prev = prevMap[a.id];
+      if (prev === undefined) {
+        flash[a.id] = 'new';
+      } else if (prev !== i) {
+        deltas[a.id] = prev - i;           // positive → moved up
+        flash[a.id]  = prev > i ? 'up' : 'down';
+      }
+    });
+
+    // Persist new positions
+    const newMap = {};
+    newBoard.forEach((a, i) => { newMap[a.id] = i; });
+    prevRankRef.current = newMap;
+
+    setLeaderboard(newBoard);
+    setRankDeltas(deltas);
+    setFlashMap(flash);
+
+    // Auto-clear flash after 2 s, deltas after 5 s
+    clearTimeout(flashTimerRef.current);
+    clearTimeout(deltaTimerRef.current);
+    flashTimerRef.current = setTimeout(() => setFlashMap({}),   2000);
+    deltaTimerRef.current = setTimeout(() => setRankDeltas({}), 5000);
+  }, []);
+
+  const fetchBoard = useCallback(async (initial = false) => {
+    try {
+      const r = await fetch('/api/demo/leaderboard?limit=20');
+      const d = await r.json();
+      applyNewBoard(d.leaderboard || []);
+      setCompetition(d.competition || null);
+    } catch {}
+    if (initial) setLoading(false);
+  }, [applyNewBoard]);
+
+  // Initial load
   useEffect(() => {
     setLoading(true);
-    fetch('/api/demo/leaderboard?limit=20')
-      .then((r) => r.json())
-      .then((d) => {
-        setLeaderboard(d.leaderboard || []);
-        setCompetition(d.competition || null);
-      })
-      .catch(() => {})
-      .finally(() => setLoading(false));
-  }, []);
+    fetchBoard(true);
+    return () => {
+      clearTimeout(flashTimerRef.current);
+      clearTimeout(deltaTimerRef.current);
+    };
+  }, [fetchBoard]);
+
+  // Auto-refresh every REFRESH_SEC seconds + live countdown
+  useEffect(() => {
+    setCountdown(REFRESH_SEC);
+    const tick = setInterval(() => {
+      setCountdown((prev) => {
+        if (prev <= 1) {
+          fetchBoard(false);
+          return REFRESH_SEC;
+        }
+        return prev - 1;
+      });
+    }, 1000);
+    return () => clearInterval(tick);
+  }, [fetchBoard]);
 
   const daysLeft = competition?.daysLeft ?? 0;
 
   return (
+    <>
+      {/* Inject keyframes for flash animations */}
+      <style>{`
+        @keyframes flashUp   { 0%,100%{background:transparent} 30%{background:#dcfce7} }
+        @keyframes flashDown { 0%,100%{background:transparent} 30%{background:#fee2e2} }
+        @keyframes flashNew  { 0%,100%{background:transparent} 30%{background:#ede9fe} }
+        .flash-up   { animation: flashUp   2s ease forwards }
+        .flash-down { animation: flashDown 2s ease forwards }
+        .flash-new  { animation: flashNew  2s ease forwards }
+      `}</style>
+
     <div className="space-y-4">
 
       {/* ── Competition banner ── */}
@@ -661,14 +734,12 @@ function CompetitionTab({ lang }) {
               <p className="text-indigo-300 text-xs">{fr ? 'jours' : 'أيام'}</p>
             </div>
           </div>
-          {/* Progress bar */}
           {competition && (() => {
-            const total = 30;
-            const elapsed = total - daysLeft;
-            const pct = Math.round((elapsed / total) * 100);
+            const elapsed = 30 - daysLeft;
+            const pct = Math.round((elapsed / 30) * 100);
             return (
               <div className="mt-3 bg-indigo-900/60 rounded-full h-1.5">
-                <div className="bg-indigo-400 h-1.5 rounded-full transition-all" style={{ width: `${pct}%` }} />
+                <div className="bg-indigo-400 h-1.5 rounded-full transition-all duration-1000" style={{ width: `${pct}%` }} />
               </div>
             );
           })()}
@@ -676,7 +747,18 @@ function CompetitionTab({ lang }) {
       </div>
 
       {/* ── Leaderboard ── */}
-      <Section title={fr ? 'Classement du mois' : 'ترتيب الشهر'} icon={TrendingUp}>
+      <Section
+        title={
+          <div className="flex items-center justify-between w-full">
+            <span>{fr ? 'Classement du mois' : 'ترتيب الشهر'}</span>
+            <span className="flex items-center gap-1.5 text-[10px] font-semibold text-gray-400">
+              <span className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse" />
+              {fr ? `Live · ${countdown}s` : `مباشر · ${countdown}ث`}
+            </span>
+          </div>
+        }
+        icon={TrendingUp}
+      >
         {loading ? (
           <div className="flex items-center justify-center py-10 gap-2">
             <Loader2 className="w-5 h-5 animate-spin text-gray-400" />
@@ -685,7 +767,7 @@ function CompetitionTab({ lang }) {
         ) : leaderboard.length === 0 ? (
           <div className="text-center py-12">
             <p className="text-gray-400 text-sm">
-              {fr ? 'Aucun participant pour l\'instant.' : 'لا يوجد مشاركون حتى الآن.'}
+              {fr ? "Aucun participant pour l'instant." : 'لا يوجد مشاركون حتى الآن.'}
             </p>
             <p className="text-gray-400 text-xs mt-1">
               {fr ? 'Activez la compétition depuis le panneau admin.' : 'فعّل المسابقة من لوحة الإدارة.'}
@@ -693,57 +775,75 @@ function CompetitionTab({ lang }) {
           </div>
         ) : (
           <div className="space-y-2">
-            {leaderboard.map((a, i) => (
-              <button
-                key={a.id}
-                type="button"
-                onClick={() => setSelectedId(a.id)}
-                className={`w-full text-left flex items-center gap-3 px-3.5 py-3 rounded-xl border transition-all hover:shadow-sm active:scale-[0.99]
-                  ${i === 0 ? 'bg-amber-50 border-amber-200 shadow-sm shadow-amber-100'
-                  : i === 1 ? 'bg-gray-50 border-gray-200'
-                  : i === 2 ? 'bg-orange-50 border-orange-200'
-                  : 'bg-white border-gray-100'}`}
-              >
-                {/* Rank */}
-                <div className="w-7 text-center shrink-0">
-                  {i < 3
-                    ? <span className="text-xl">{RANK_MEDALS[i]}</span>
-                    : <span className="text-xs font-black text-gray-400">#{i + 1}</span>}
-                </div>
-
-                {/* Avatar */}
-                <DemoAvatar name={a.name} color={a.avatarColor} size="sm" />
-
-                {/* Name + badge */}
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-1.5 flex-wrap">
-                    <p className="text-sm font-bold text-gray-800 truncate">{a.name}</p>
-                    {a.growthType === 'aggressive' && (
-                      <span className="text-[9px] font-black px-1.5 py-0.5 rounded-full bg-red-100 text-red-700 whitespace-nowrap">
-                        Top 🔥
-                      </span>
-                    )}
+            {leaderboard.map((a, i) => {
+              const delta     = rankDeltas[a.id] ?? 0;
+              const flash     = flashMap[a.id];
+              const flashCls  = flash === 'up' ? 'flash-up' : flash === 'down' ? 'flash-down' : flash === 'new' ? 'flash-new' : '';
+              const baseBg    = i === 0 ? 'bg-amber-50 border-amber-200 shadow-sm shadow-amber-100'
+                              : i === 1 ? 'bg-gray-50 border-gray-200'
+                              : i === 2 ? 'bg-orange-50 border-orange-200'
+                              : 'bg-white border-gray-100';
+              return (
+                <button
+                  key={a.id}
+                  type="button"
+                  onClick={() => setSelectedId(a.id)}
+                  className={`${flashCls} w-full text-left flex items-center gap-3 px-3.5 py-3 rounded-xl border transition-all duration-500 hover:shadow-sm active:scale-[0.99] ${baseBg}`}
+                >
+                  {/* Rank number */}
+                  <div className="w-7 text-center shrink-0">
+                    {i < 3
+                      ? <span className="text-xl">{RANK_MEDALS[i]}</span>
+                      : <span className="text-xs font-black text-gray-400">#{i + 1}</span>}
                   </div>
-                  <p className="text-[10px] text-gray-400 font-mono">@{a.username}</p>
-                </div>
 
-                {/* Stats */}
-                <div className="text-right shrink-0">
-                  <p className="text-sm font-black text-gray-800">{a.totalOrders}
-                    <span className="text-xs font-normal text-gray-400 ml-1">{fr ? 'cmds' : 'طلب'}</span>
-                  </p>
-                  <p className="text-xs text-amber-700 font-bold">{Math.round(a.totalRevenue).toLocaleString()} MAD</p>
-                </div>
+                  {/* Avatar */}
+                  <DemoAvatar name={a.name} color={a.avatarColor} size="sm" />
 
-                <ChevronDown className="w-4 h-4 text-gray-300 -rotate-90 shrink-0" />
-              </button>
-            ))}
+                  {/* Name + badge + delta */}
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <p className="text-sm font-bold text-gray-800 truncate">{a.name}</p>
+                      {a.growthType === 'aggressive' && (
+                        <span className="text-[9px] font-black px-1.5 py-0.5 rounded-full bg-red-100 text-red-700 whitespace-nowrap">
+                          Top 🔥
+                        </span>
+                      )}
+                      {/* Rank movement badge */}
+                      {delta !== 0 && (
+                        <span className={`text-[9px] font-black px-1.5 py-0.5 rounded-full whitespace-nowrap
+                          ${delta > 0 ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
+                          {delta > 0 ? `▲ +${delta}` : `▼ ${delta}`}
+                        </span>
+                      )}
+                      {flash === 'new' && (
+                        <span className="text-[9px] font-black px-1.5 py-0.5 rounded-full bg-purple-100 text-purple-700 whitespace-nowrap">
+                          Nouveau
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-[10px] text-gray-400 font-mono">@{a.username}</p>
+                  </div>
+
+                  {/* Stats */}
+                  <div className="text-right shrink-0">
+                    <p className="text-sm font-black text-gray-800">
+                      {a.totalOrders}
+                      <span className="text-xs font-normal text-gray-400 ml-1">{fr ? 'cmds' : 'طلب'}</span>
+                    </p>
+                    <p className="text-xs text-amber-700 font-bold">{Math.round(a.totalRevenue).toLocaleString()} MAD</p>
+                  </div>
+
+                  <ChevronDown className="w-4 h-4 text-gray-300 -rotate-90 shrink-0" />
+                </button>
+              );
+            })}
           </div>
         )}
         <p className="text-xs text-gray-400 mt-3">
           {fr
-            ? 'Cliquez sur un affilié pour voir ses statistiques détaillées.'
-            : 'انقر على منافس لعرض إحصائياته التفصيلية.'}
+            ? 'Mise à jour automatique toutes les 15 s. Cliquez pour les détails.'
+            : 'يتجدد تلقائياً كل 15 ثانية. انقر للتفاصيل.'}
         </p>
       </Section>
 
@@ -756,6 +856,7 @@ function CompetitionTab({ lang }) {
         />
       )}
     </div>
+  </>
   );
 }
 

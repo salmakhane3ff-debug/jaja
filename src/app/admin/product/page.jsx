@@ -22,9 +22,23 @@ function parseCollections(c) {
   catch { return []; }
 }
 
+const VIDEO_EXTS = /\.(mp4|webm|ogg|mov|avi|mkv|m4v)(\?.*)?$/i;
+
 function imgSrc(v) {
   if (!v) return "";
-  return typeof v === "string" ? v : v.url || v.src || "";
+  const url = typeof v === "string" ? v : v.url || v.src || "";
+  // Return empty string for video files so the caller renders the placeholder icon
+  return VIDEO_EXTS.test(url) ? "" : url;
+}
+
+/** Pick the first image (non-video) from a product's images array */
+function firstImageSrc(images) {
+  if (!Array.isArray(images)) return "";
+  for (const item of images) {
+    const url = imgSrc(item);
+    if (url) return url;
+  }
+  return "";
 }
 
 function fmt(price) {
@@ -520,7 +534,7 @@ export default function ProductTablePage() {
             {/* ── Mobile cards ──────────────────────────────────────────── */}
             <div className="block lg:hidden divide-y divide-gray-50">
               {paginated.map((product) => {
-                const thumb   = imgSrc((Array.isArray(product.images) ? product.images : [])[0]);
+                const thumb   = firstImageSrc(product.images);
                 const stats   = analytics[product._id] || { orders: 0, clicks: 0 };
                 const isSel   = selectedIds.has(product._id);
                 const isDup   = duplicating === product._id;
@@ -610,7 +624,7 @@ export default function ProductTablePage() {
                 </thead>
                 <tbody className="divide-y divide-gray-50">
                   {paginated.map((product) => {
-                    const thumb  = imgSrc((Array.isArray(product.images) ? product.images : [])[0]);
+                    const thumb  = firstImageSrc(product.images);
                     const price  = product.salePrice || product.regularPrice;
                     const stats  = analytics[product._id] || { orders: 0, clicks: 0 };
                     const isSel  = selectedIds.has(product._id);

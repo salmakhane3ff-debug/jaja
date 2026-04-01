@@ -1,5 +1,7 @@
 "use client";
 
+// PERF: prose.css scoped to this route — not loaded on the homepage or checkout.
+import "@/app/prose.css";
 import React, { useState, useEffect, useRef, useCallback, lazy, Suspense, useMemo } from "react";
 import StickyAddToCart from "@/components/product/StickyAddToCart";
 import ProductGallery from "@/components/ProductGallery";

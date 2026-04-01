@@ -140,6 +140,7 @@ model OrderItem {
   product         Product? @relation(fields: [productId], references: [id])
 
   @@index([orderId])
+  @@index([productId])  // PERF: speeds up "orders containing product X" queries
   @@map("order_items")
 }
 

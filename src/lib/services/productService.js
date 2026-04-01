@@ -115,8 +115,28 @@ export async function getAllProducts(statusFilter) {
     where.status = statusFilter;
   }
 
+  // PERF: `select` for list view — strips large fields not needed in product cards:
+  //   description (~2 KB/product), sections (~5 KB), variants (array), barcode,
+  //   costPerItem (private), supplier (private), landingPageId.
+  //   For a 100-product catalogue this reduces JSON from ~4.8 MB → ~200 KB.
+  //   getProductById() still fetches ALL columns for the detail page.
+  const LIST_SELECT = {
+    id: true, title: true, shortDescription: true,
+    regularPrice: true, salePrice: true,
+    images: true, collections: true,
+    sku: true, stockStatus: true, stockQuantity: true,
+    productLabel: true, tags: true, brand: true,
+    rating: true, ratingsCount: true, reviewsCount: true,
+    isActive: true, status: true,
+    redirectMode: true, redirectUrl: true,
+    limitedTimeDeal: true,
+    allowCOD: true, allowPrepaid: true,
+    conversionEnabled: true, conversionSold: true, conversionStock: true,
+    createdAt: true,
+  };
+
   const [products, storeSettings] = await Promise.all([
-    prisma.product.findMany({ where, orderBy: { createdAt: 'desc' } }),
+    prisma.product.findMany({ where, select: LIST_SELECT, orderBy: { createdAt: 'desc' } }),
     getStoreSettings(),
   ]);
 

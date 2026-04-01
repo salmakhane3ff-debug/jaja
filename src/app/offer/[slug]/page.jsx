@@ -1,5 +1,7 @@
 "use client";
 
+// PERF: prose.css scoped to this route — not loaded on the storefront or checkout.
+import "@/app/prose.css";
 import { useState, useEffect, useRef, Suspense } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { Star, Check, X, Zap, ShieldCheck, Truck, RotateCcw, Home, ChevronDown, ChevronUp } from "lucide-react";

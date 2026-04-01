@@ -59,9 +59,17 @@ function DraggableImageGrid({ images, onChange, onLibrary }) {
           // Replace blob URL with real server URL
           onChange((prev) => prev.map((u) => (u === localUrl ? data.url : u)));
           URL.revokeObjectURL(localUrl);
+        } else {
+          // Server responded but returned no URL (unexpected) — remove blob so it
+          // doesn't get persisted to the DB and cause a broken image on next load.
+          onChange((prev) => prev.filter((u) => u !== localUrl));
+          URL.revokeObjectURL(localUrl);
         }
       } catch {
-        // leave the blob URL as-is if upload fails — user can retry
+        // Upload failed — remove the blob entry immediately so the user sees
+        // the failure rather than a dangling preview that gets saved to the DB.
+        onChange((prev) => prev.filter((u) => u !== localUrl));
+        URL.revokeObjectURL(localUrl);
       } finally {
         setUploading((u) => { const n = { ...u }; delete n[tempId]; return n; });
       }
@@ -191,7 +199,12 @@ function DraggableImageGrid({ images, onChange, onLibrary }) {
               ) : (
                 <>
                   <img src={img} alt={`Product ${i + 1}`} draggable={false}
-                    className="w-full h-full object-contain" />
+                    className="w-full h-full object-contain"
+                    onError={(e) => {
+                      // Stale blob URL or missing file — hide broken image icon
+                      // and let the parent container show the placeholder background.
+                      e.currentTarget.style.display = "none";
+                    }} />
                   {i === 0 && (
                     <span className="absolute top-1.5 left-1.5 text-[10px] font-bold bg-gray-900 text-white px-1.5 py-0.5 rounded-full leading-none">
                       Main

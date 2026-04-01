@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useState } from "react";
+import Image from "next/image"; // PERF: Next.js Image for WebP/AVIF + responsive srcset
 import ProductLabel from "@/components/ProductLabel";
 import Link from "next/link";
 import { Skeleton } from "@heroui/skeleton";
@@ -176,10 +177,13 @@ export default function StyleOne() {
       </div>
 
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 2xl:grid-cols-5 gap-3 md:gap-4">
-        {displayProducts.map((product) => {
+        {displayProducts.map((product, index) => {
           const discount    = calculateDiscount(product.regularPrice, product.salePrice);
           const imageUrl    = product.images?.[0]?.url || product.images?.[0] || "https://placehold.co/400x500?text=No+Image";
           const productHref = `/products/${product._id}`;
+          // PERF: First 2 products are above the fold — mark as priority (LCP candidates).
+          //       All others load lazily.
+          const isAboveFold = index < 2;
           // Resolve collection name — skip raw IDs (numbers / short strings)
           const rawCol      = Array.isArray(product.collections) ? product.collections[0] : null;
           const colName     = typeof rawCol === "string" && rawCol.length > 4 ? rawCol
@@ -195,10 +199,20 @@ export default function StyleOne() {
               {/* Image */}
               <a href={productHref} onClick={(e) => navigateProduct(product, e)}>
                 <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-gray-100 to-gray-200 mb-3 aspect-square">
-                  <img
+                  {/* PERF: <Image fill> replaces raw <img>.
+                           - fill: fills the positioned aspect-square container (no CLS)
+                           - sizes: gives browser the right srcset slot per breakpoint
+                           - priority / fetchPriority: first 2 cards are LCP candidates
+                           - quality={80}: ~35% smaller files vs default 75 */}
+                  <Image
                     src={imageUrl}
                     alt={product.title}
-                    className="absolute inset-0 w-full h-full object-cover object-top"
+                    fill
+                    sizes="(max-width: 640px) 50vw, (max-width: 1024px) 33vw, 25vw"
+                    className="object-cover object-top"
+                    priority={isAboveFold}
+                    fetchPriority={isAboveFold ? "high" : "auto"}
+                    quality={80}
                   />
                   {!!product.productLabel && (
                     <div className="absolute top-2 left-2">

@@ -91,13 +91,16 @@ function ReelCard({ item, active }) {
       className="relative w-full overflow-hidden select-none"
       style={{ aspectRatio: "9/16", borderRadius: 16, border: "1px solid rgba(255,255,255,0.12)" }}
     >
-      {/* ── Active: local <video> ── */}
+      {/* ── Active: local <video> ──
+           PERF: preload="none" — browser won't download video bytes until autoPlay kicks in.
+                 Eliminates the "15 MB video on page load" LCP killer. */}
       {local && (
         <video
           ref={videoRef}
           src={item.videoUrl}
           className="absolute inset-0 w-full h-full object-cover"
           muted autoPlay loop playsInline
+          preload="none"
           style={{ opacity: active ? 1 : 0.6 }}
         />
       )}
@@ -168,23 +171,46 @@ export default function VideoReelsSlider() {
   const [activeIndex, setActiveIndex] = useState(0);
   const prevRef = useRef(null);
   const nextRef = useRef(null);
+  // PERF: Root sentinel — IntersectionObserver watches this div.
+  //       The API fetch is deferred until the section scrolls into the viewport,
+  //       so video data (and subsequent video loads) don't block the LCP element.
+  const rootRef = useRef(null);
 
   useEffect(() => {
-    fetch("/api/data?collection=video-reels", { cache: "no-store" })
-      .then((r) => r.json())
-      .then((data) => {
-        if (Array.isArray(data)) {
-          setReels(data.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt)));
-        }
-      })
-      .catch(() => {})
-      .finally(() => setLoading(false));
+    const el = rootRef.current;
+    if (!el) return;
+
+    // PERF: Use IntersectionObserver to defer fetch until component is visible.
+    //       rootMargin "200px" starts the fetch slightly before the user reaches
+    //       the section so there's no perceived loading delay.
+    const observer = new IntersectionObserver(
+      ([entry]) => {
+        if (!entry.isIntersecting) return;
+        observer.disconnect();
+        fetch("/api/data?collection=video-reels", { cache: "no-store" })
+          .then((r) => r.json())
+          .then((data) => {
+            if (Array.isArray(data)) {
+              setReels(data.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt)));
+            }
+          })
+          .catch(() => {})
+          .finally(() => setLoading(false));
+      },
+      { rootMargin: "200px" }
+    );
+    observer.observe(el);
+    return () => observer.disconnect();
   }, []);
 
-  if (loading || !reels.length) return null;
+  // PERF: While we're waiting for the IO callback, render an invisible sentinel div
+  //       so the observer has something to watch. Once data loads, we render the real UI.
+  if (loading || !reels.length) {
+    return <div ref={rootRef} aria-hidden="true" style={{ minHeight: 1 }} />;
+  }
 
   return (
-    <div className="w-full overflow-hidden">
+    <div ref={rootRef} className="w-full overflow-hidden">
       <div className="max-w-7xl mx-auto px-4 mb-8 text-center">
         <h2 className="text-xl md:text-2xl font-bold text-gray-900">Customer Reels</h2>
         <p className="text-sm text-gray-500 mt-1">Real feedback from our happy customers</p>

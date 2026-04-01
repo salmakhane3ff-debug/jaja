@@ -205,15 +205,22 @@ const PADDING = {
 };
 
 // ── Main renderer ─────────────────────────────────────────────────────────────
-export default function HomeSectionRenderer() {
-  const [sections, setSections] = useState(null);
+// PERF: Accepts `sections` as an optional prop.
+//       When page.jsx already fetched homepage_layout and passes sections here,
+//       this component skips its own duplicate fetch — eliminating a redundant
+//       /api/setting?type=homepage_layout network round-trip on every page load.
+export default function HomeSectionRenderer({ sections: initialSections } = {}) {
+  const [sections, setSections] = useState(initialSections ?? null);
 
   useEffect(() => {
+    // PERF: Skip fetch when caller already provided sections (e.g. page.jsx).
+    if (initialSections != null) return;
+
     fetch("/api/setting?type=homepage_layout", { cache: "no-store" })
       .then(r => r.ok ? r.json() : {})
       .then(d => setSections(Array.isArray(d?.sections) ? d.sections : null))
       .catch(() => setSections(null));
-  }, []);
+  }, [initialSections]);
 
   // null = loading or no custom layout → homepage uses default layout
   if (sections === null) return null;

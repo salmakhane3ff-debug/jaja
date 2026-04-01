@@ -1,5 +1,7 @@
 "use client";
 
+// PERF: prose.css scoped to this route — not loaded on the storefront or checkout.
+import "@/app/prose.css";
 import { useState, useEffect } from "react";
 import { useParams } from "next/navigation";
 import Link from "next/link";

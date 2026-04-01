@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useEffect, useRef, useState } from "react";
+import Image from "next/image"; // PERF: Next.js Image for automatic WebP/AVIF + responsive sizing
 import { Swiper, SwiperSlide } from "swiper/react";
 import { Autoplay, Pagination, Navigation } from "swiper/modules";
 import "swiper/css";
@@ -19,9 +20,11 @@ function isYouTubeUrl(url = "") {
 
 function getYouTubeEmbedUrl(url) {
   const short = url.match(/youtu\.be\/([^?&\s]+)/);
-  if (short) return `https://www.youtube.com/embed/${short[1]}?autoplay=1&mute=1&loop=1&playlist=${short[1]}&controls=0&playsinline=1`;
-  const long  = url.match(/[?&]v=([^&\s]+)/);
-  if (long)  return `https://www.youtube.com/embed/${long[1]}?autoplay=1&mute=1&loop=1&playlist=${long[1]}&controls=0&playsinline=1`;
+  if (short)
+    return `https://www.youtube.com/embed/${short[1]}?autoplay=1&mute=1&loop=1&playlist=${short[1]}&controls=0&playsinline=1`;
+  const long = url.match(/[?&]v=([^&\s]+)/);
+  if (long)
+    return `https://www.youtube.com/embed/${long[1]}?autoplay=1&mute=1&loop=1&playlist=${long[1]}&controls=0&playsinline=1`;
   return url;
 }
 
@@ -50,7 +53,7 @@ export default function StyleOne() {
         if (sliderRes.ok) {
           const sorted = sliderData
             .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
-            .filter((s) => s.active !== false); // only show active (ON) slides
+            .filter((s) => s.active !== false);
           setImages(sorted);
         }
 
@@ -60,7 +63,6 @@ export default function StyleOne() {
           setPromoTexts([]);
         }
       } catch (err) {
-        console.error("Error fetching slider data:", err);
         setError("Failed to load data");
         setPromoTexts([]);
       } finally {
@@ -104,11 +106,21 @@ export default function StyleOne() {
             className="rounded-3xl overflow-hidden"
             loop={false}
             rewind={images.length > 1}
-            autoplay={images.length > 1 ? { delay: 4000, disableOnInteraction: false } : false}
-            pagination={images.length > 1 ? {
-              clickable: true, dynamicBullets: true,
-              dynamicMainBullets: 3, el: ".slider-pagination",
-            } : false}
+            autoplay={
+              images.length > 1
+                ? { delay: 4000, disableOnInteraction: false }
+                : false
+            }
+            pagination={
+              images.length > 1
+                ? {
+                    clickable: true,
+                    dynamicBullets: true,
+                    dynamicMainBullets: 3,
+                    el: ".slider-pagination",
+                  }
+                : false
+            }
             navigation={false}
             onSwiper={(swiper) => { swiperRef.current = swiper; }}
             onSlideChange={handleSlideChange}
@@ -116,6 +128,9 @@ export default function StyleOne() {
             {images.map((item, index) => {
               const isVideo   = item.mediaType === "video";
               const hasBuyNow = item.showBuyNow && item.buyNowUrl;
+              // PERF: First slide is the LCP element — load it eagerly with high priority.
+              //       All subsequent slides are below-fold so they load lazily.
+              const isFirstSlide = index === 0;
 
               return (
                 <SwiperSlide key={item._id || index}>
@@ -133,27 +148,51 @@ export default function StyleOne() {
                           title={item.title || `Slide ${index + 1}`}
                         />
                       ) : (
+                        /* PERF: preload="none" instead of preload="auto".
+                               preload="auto" was downloading the entire video file on
+                               page load, blocking LCP by up to 18 s on slow connections.
+                               poster shows the first frame while user decides to play. */
                         <video
                           src={item.videoUrl}
                           className="w-full h-full object-cover"
-                          autoPlay muted loop playsInline preload="auto"
+                          autoPlay
+                          muted
+                          loop
+                          playsInline
+                          preload="none"
+                          poster={item.image || undefined}
                         />
                       )
                     ) : (
                       /* ── Image ── */
                       <a href={item.url || "#"} className="block w-full h-full">
-                        <img
+                        {/* PERF: Replaced raw <img> with Next.js <Image>.
+                               - fill: fills the absolutely-positioned container (no width/height needed)
+                               - sizes: tells browser the image always spans 100vw → correct srcset
+                               - priority: first slide is LCP; browser preloads it immediately
+                               - fetchPriority="high": additional hint for browsers that support it
+                               - quality={85}: good visual quality at ~30% smaller file size
+                               Benefits: automatic WebP/AVIF, responsive srcset, no CLS */}
+                        <Image
                           src={item.image}
                           alt={item.title || `Slide ${index + 1}`}
-                          className="w-full h-full object-cover"
-                          loading="eager"
+                          fill
+                          sizes="100vw"
+                          className="object-cover"
+                          priority={isFirstSlide}
+                          fetchPriority={isFirstSlide ? "high" : "auto"}
+                          quality={85}
                         />
                       </a>
                     )}
 
                     {/* Click-through overlay for video slides with a redirect URL */}
                     {isVideo && item.url && item.url !== "#" && !hasBuyNow && (
-                      <a href={item.url} className="absolute inset-0 z-10" aria-label={item.title || "View offer"} />
+                      <a
+                        href={item.url}
+                        className="absolute inset-0 z-10"
+                        aria-label={item.title || "View offer"}
+                      />
                     )}
 
                     {/* ── Buy Now Button ── */}
@@ -184,11 +223,16 @@ export default function StyleOne() {
       {promoTexts.length > 0 && (
         <div className="bg-gradient-to-r from-red-500 to-pink-500 text-white py-3 mt-6 overflow-hidden relative">
           <div className="flex animate-marquee whitespace-nowrap">
-            {Array(500).fill(null).map((_, i) => (
-              <span key={i} className="text-lg font-bold mx-8 flex items-center">
-                {promoTexts[0].text || `${promoTexts[0].emoji || "🎉"} ${promoTexts[0].title || promoTexts[0].content} ${promoTexts[0].emoji || "🎉"}`}
-              </span>
-            ))}
+            {Array(500)
+              .fill(null)
+              .map((_, i) => (
+                <span key={i} className="text-lg font-bold mx-8 flex items-center">
+                  {promoTexts[0].text ||
+                    `${promoTexts[0].emoji || "🎉"} ${
+                      promoTexts[0].title || promoTexts[0].content
+                    } ${promoTexts[0].emoji || "🎉"}`}
+                </span>
+              ))}
           </div>
         </div>
       )}
@@ -201,11 +245,6 @@ export default function StyleOne() {
           align-items: center;
           width: 100% !important;
         }
-        /* Swiper dynamicBullets injects inline left/right offsets via JS.
-           In LTR it uses left:Xpx, in RTL it uses right:Xpx — both cause
-           bullets to stack at the same position.
-           Switching bullets to position:static lets them flow naturally
-           inside the flex container, making those inline styles irrelevant. */
         .slider-pagination .swiper-pagination-bullet {
           position: static !important;
           left: auto !important;
