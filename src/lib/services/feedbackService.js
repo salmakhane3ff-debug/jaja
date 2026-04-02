@@ -23,6 +23,9 @@ function mapFeedback(f) {
   return {
     _id: f.id,
     ...f,
+    // Backward-compat aliases for frontend code that may use old field names
+    name: f.authorName ?? f.name ?? null,
+    text: f.textContent ?? f.text ?? null,
     product: f.product ? { _id: f.product.id, title: f.product.title } : undefined,
   };
 }
@@ -63,8 +66,8 @@ export async function getPublicFeedback({ productId = null, featuredOnly = false
       createdAt:   true,
       type:        true,
       rating:      true,
-      name:        true,
-      text:        true,
+      authorName:  true,
+      textContent: true,
       mediaUrl:    true,
       productId:   true,
       product:     { select: { id: true, title: true } },
