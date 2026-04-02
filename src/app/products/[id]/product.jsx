@@ -401,61 +401,6 @@ export default function Product({ data }) {
               )}
             </div>
 
-            {/* Wishlist & Share */}
-            {(ui.showWishlistButton || ui.showShareButton) && (
-              <div className="flex items-center gap-3">
-                {ui.showWishlistButton && (
-                  <button
-                    onClick={handleWishlist}
-                    className={`flex-1 flex items-center justify-center gap-2 py-2 px-4 border rounded-lg text-xs font-medium transition-colors ${
-                      isInWishlist()
-                        ? "border-red-500 text-red-600 bg-red-50"
-                        : "border-gray-300 text-gray-700 hover:bg-gray-50"
-                    }`}
-                  >
-                    <Heart className={`w-3 h-3 ${isInWishlist() ? "fill-current" : ""}`} />
-                    <span>{t("product_wishlist")}</span>
-                  </button>
-                )}
-                {ui.showShareButton && (
-                  <button
-                    onClick={handleShare}
-                    className="flex-1 flex items-center justify-center gap-2 py-2 px-4 border border-gray-300 text-gray-700 rounded-lg text-xs font-medium hover:bg-gray-50 transition-colors"
-                  >
-                    <Share2 className="w-3 h-3" />
-                    <span>{t("product_share")}</span>
-                  </button>
-                )}
-              </div>
-            )}
-
-            {/* Trust Badges */}
-            <div className="grid grid-cols-4 gap-2 md:gap-4 py-4 md:py-6 border-t border-gray-200">
-              <div className="flex flex-col items-center text-center gap-1">
-                <BadgeCheck className="w-5 h-5 md:w-8 md:h-8 text-gray-700" />
-                <div className="text-[10px] md:text-xs font-medium text-gray-700 line-clamp-2 leading-tight">
-                  {t("product_trust_premium")}
-                </div>
-              </div>
-              <div className="flex flex-col items-center text-center gap-1">
-                <Truck className="w-5 h-5 md:w-8 md:h-8 text-gray-700" />
-                <div className="text-[10px] md:text-xs font-medium text-gray-700 line-clamp-2 leading-tight">
-                  {t("product_trust_shipping")}
-                </div>
-              </div>
-              <div className="flex flex-col items-center text-center gap-1">
-                <ShoppingCart className="w-5 h-5 md:w-8 md:h-8 text-gray-700" />
-                <div className="text-[10px] md:text-xs font-medium text-gray-700 line-clamp-2 leading-tight">
-                  {t("product_trust_best_price")}
-                </div>
-              </div>
-              <div className="flex flex-col items-center text-center gap-1">
-                <ShieldCheck className="w-5 h-5 md:w-8 md:h-8 text-gray-700" />
-                <div className="text-[10px] md:text-xs font-medium text-gray-700 line-clamp-2 leading-tight">
-                  {t("product_trust_verified")}
-                </div>
-              </div>
-            </div>
 
             {/* Description / Sections */}
             {(data.sections?.length > 0 || data.description) && (
