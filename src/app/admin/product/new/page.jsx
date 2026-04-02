@@ -171,9 +171,12 @@ function DraggableImageGrid({ images, onChange, onLibrary }) {
           onDragLeave={() => setDropActive(false)}
           onDrop={(e) => { if (dragIdx.current === null) handleDrop(e); }}
         >
-          {images.map((img, i) => (
+          {images.map((img, i) => {
+            // Normalize: img may be a plain URL string or an object {url, _id, ...}
+            const imgUrl = typeof img === "string" ? img : (img?.url || img?.src || "");
+            return (
             <div
-              key={img + i}
+              key={imgUrl + i}
               draggable
               onDragStart={() => handleDragStart(i)}
               onDragEnter={() => handleDragEnter(i)}
@@ -182,10 +185,10 @@ function DraggableImageGrid({ images, onChange, onLibrary }) {
               className="relative group rounded-lg border-2 border-gray-200 overflow-hidden bg-gray-50 cursor-grab active:cursor-grabbing select-none transition-shadow hover:shadow-md"
               style={{ aspectRatio: "1/1" }}
             >
-              {isVideoUrl(img) ? (
+              {isVideoUrl(imgUrl) ? (
                 <>
                   <video
-                    src={img}
+                    src={imgUrl}
                     muted
                     playsInline
                     preload="metadata"
@@ -198,13 +201,16 @@ function DraggableImageGrid({ images, onChange, onLibrary }) {
                 </>
               ) : (
                 <>
-                  <img src={img} alt={`Product ${i + 1}`} draggable={false}
+                  <img src={imgUrl} alt={`Product ${i + 1}`} draggable={false}
                     className="w-full h-full object-contain"
                     onError={(e) => {
-                      // Stale blob URL or missing file — hide broken image icon
-                      // and let the parent container show the placeholder background.
                       e.currentTarget.style.display = "none";
+                      e.currentTarget.nextElementSibling?.style && (e.currentTarget.nextElementSibling.style.display = "flex");
                     }} />
+                  <div className="absolute inset-0 items-center justify-center text-gray-400 text-xs hidden flex-col gap-1">
+                    <span>⚠</span>
+                    <span>Broken</span>
+                  </div>
                   {i === 0 && (
                     <span className="absolute top-1.5 left-1.5 text-[10px] font-bold bg-gray-900 text-white px-1.5 py-0.5 rounded-full leading-none">
                       Main
@@ -231,7 +237,8 @@ function DraggableImageGrid({ images, onChange, onLibrary }) {
                 {i + 1}
               </span>
             </div>
-          ))}
+            );
+          })}
 
           {/* Upload more cell */}
           <button
@@ -373,7 +380,10 @@ function ProductForm() {
           conversionStock:   data.conversionStock   ?? "",
         });
 
-        setSelectedImages(data.images || []);
+        // Normalize: images may be stored as objects {url, _id} or plain strings
+        setSelectedImages((data.images || []).map(img =>
+          typeof img === "string" ? img : (img?.url || img?.src || "")
+        ).filter(Boolean));
         setCategories(new Set(data.collections || []));
         // Load sections
         const raw = data.sections;
@@ -433,7 +443,7 @@ function ProductForm() {
           ...(isUpdate && { _id: productId }),
           ...productData,
           collections:   Array.from(categories),
-          images:        selectedImages,
+          images:        selectedImages.filter(img => !String(img).startsWith("blob:")),
           sections,
         }),
       });

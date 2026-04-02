@@ -179,7 +179,12 @@ export default function StyleOne() {
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 2xl:grid-cols-5 gap-3 md:gap-4">
         {displayProducts.map((product, index) => {
           const discount    = calculateDiscount(product.regularPrice, product.salePrice);
-          const imageUrl    = product.images?.[0]?.url || product.images?.[0] || "https://placehold.co/400x500?text=No+Image";
+          const VIDEO_EXT = /\.(mp4|webm|mov|avi|mkv|ogv)(\?.*)?$/i;
+          const imageUrl = (() => {
+            const list = Array.isArray(product.images) ? product.images : [];
+            const found = list.find(img => !VIDEO_EXT.test(img?.url || img || ""));
+            return found?.url || found || "https://placehold.co/400x500?text=No+Image";
+          })();
           const productHref = `/products/${product._id}`;
           // PERF: First 2 products are above the fold — mark as priority (LCP candidates).
           //       All others load lazily.

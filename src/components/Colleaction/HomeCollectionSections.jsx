@@ -7,8 +7,18 @@ import { useDiscountRules } from "@/hooks/useDiscountRules";
 
 // ── Product Card ──────────────────────────────────────────────────────────────
 
+const VIDEO_EXT = /\.(mp4|webm|mov|avi|mkv|ogv)(\?.*)?$/i;
+function getProductImageUrl(images) {
+  const list = Array.isArray(images) ? images : [];
+  const found = list.find(img => {
+    const url = (img?.url || img || "");
+    return !VIDEO_EXT.test(url);
+  });
+  return found?.url || found || "https://placehold.co/400x400?text=No+Image";
+}
+
 function ProductCard({ product, formatPrice, getDiscount }) {
-  const imageUrl     = product.images?.[0] || "https://placehold.co/400x400?text=No+Image";
+  const imageUrl     = getProductImageUrl(product.images);
   const discountRule = getDiscount ? getDiscount(product) : null;
   const price        = discountRule ? discountRule.effectivePrice : (product.salePrice || product.regularPrice);
   const href         = `/products/${product._id || product.id}`;
