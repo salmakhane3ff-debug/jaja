@@ -3,11 +3,6 @@ import { useState, useEffect } from "react";
 import ProductData from "./Product";
 import StripeCardForm from "../paymentMethod/StripeCardForm";
 import PayPalButton from "../paymentMethod/PayPalButton";
-import RazorpayButton from "../paymentMethod/RazorpayButton";
-import CashfreeButton from "../paymentMethod/CashfreeButton";
-import PayUButton from "../paymentMethod/PayUButton";
-import PhonePeButton from "../paymentMethod/PhonePeButton";
-import PaytmButton from "../paymentMethod/PaytmButton";
 import { useLanguage } from "@/context/LanguageContext";
 import orderCreate from "./orderCreate";
 import { usePaymentSettings } from "../PaymentContext";
@@ -321,26 +316,6 @@ export default function CheckoutOrderSummary({ billingDetails, setErrors }) {
               />
             )}
 
-            {/* Razorpay */}
-            {activePaymentGateway === "razorpay" && (
-              <RazorpayButton
-                amount={costDetails.total}
-                currency="INR"
-                orderData={orderDataForPayment}
-                onSuccess={async (paymentResult) => {
-                  await handlePaymentSuccess(
-                    {
-                      razorpayOrderId: paymentResult.paymentDetails?.razorpayOrderId,
-                      razorpayPaymentId: paymentResult.paymentDetails?.razorpayPaymentId,
-                      razorpaySignature: paymentResult.paymentDetails?.razorpaySignature,
-                    },
-                    "razorpay"
-                  );
-                }}
-                onError={handlePaymentError}
-              />
-            )}
-
             {/* PayPal */}
             {activePaymentGateway === "paypal" && (
               <PayPalButton
@@ -359,81 +334,6 @@ export default function CheckoutOrderSummary({ billingDetails, setErrors }) {
               />
             )}
 
-            {/* Cashfree */}
-            {activePaymentGateway === "cashfree" && (
-              <CashfreeButton
-                amount={costDetails.total}
-                currency="INR"
-                orderData={orderDataForPayment}
-                onSuccess={async (paymentResult) => {
-                  await handlePaymentSuccess(
-                    {
-                      cashfreeOrderId: paymentResult.paymentDetails?.orderId || paymentResult.paymentDetails?.cashfreeOrderId,
-                      cashfreeTransactionId: paymentResult.paymentDetails?.cfOrderId || paymentResult.paymentDetails?.cashfreeTransactionId,
-                    },
-                    "cashfree"
-                  );
-                }}
-                onError={handlePaymentError}
-              />
-            )}
-
-            {/* PayU */}
-            {activePaymentGateway === "payu" && (
-              <PayUButton
-                amount={costDetails.total}
-                currency="INR"
-                orderData={orderDataForPayment}
-                onSuccess={async (order) => {
-                  await handlePaymentSuccess(
-                    {
-                      payuTxnId: order.paymentDetails?.txnId,
-                      payuMoneyId: order.paymentDetails?.payuMoneyId,
-                    },
-                    "payu"
-                  );
-                }}
-                onError={handlePaymentError}
-              />
-            )}
-
-            {/* PhonePe */}
-            {activePaymentGateway === "phonepe" && (
-              <PhonePeButton
-                amount={costDetails.total}
-                currency="INR"
-                orderData={orderDataForPayment}
-                onSuccess={async (order) => {
-                  await handlePaymentSuccess(
-                    {
-                      phonePeTransactionId: order.paymentDetails?.transactionId,
-                      phonePeStatus: order.paymentDetails?.paymentState,
-                    },
-                    "phonepe"
-                  );
-                }}
-                onError={handlePaymentError}
-              />
-            )}
-
-            {/* Paytm */}
-            {activePaymentGateway === "paytm" && (
-              <PaytmButton
-                amount={costDetails.total}
-                currency="INR"
-                orderData={orderDataForPayment}
-                onSuccess={async (order) => {
-                  await handlePaymentSuccess(
-                    {
-                      paytmOrderId: order.paymentDetails?.orderId,
-                      paytmTxnId: order.paymentDetails?.paytmTxnId,
-                    },
-                    "paytm"
-                  );
-                }}
-                onError={handlePaymentError}
-              />
-            )}
           </div>
         )}
 

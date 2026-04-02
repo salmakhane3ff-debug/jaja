@@ -69,7 +69,6 @@ const SideBar = ({ onItemClick }) => {
     { href: "/admin/faqs", icon: <HelpCircle size={16} />, label: "FAQs" },
     { href: "/admin/analytics",         icon: <BarChart2 size={16} />, label: "Analytics" },
     { href: "/admin/product-analytics", icon: <BarChart2 size={16} />, label: "Product Analytics" },
-    { href: "/admin/tracking", icon: <Activity size={16} />, label: "Tracking" },
     { href: "/admin/tracker",    icon: <MousePointerClick size={16} />, label: "Click Tracker" },
     { href: "/admin/campaigns",  icon: <Link2 size={16} />,            label: "Campaigns" },
     { href: "/admin/ui-control", icon: <ToggleRight size={16} />,      label: "UI Control" },

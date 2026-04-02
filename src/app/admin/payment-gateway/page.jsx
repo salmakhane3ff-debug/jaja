@@ -22,11 +22,6 @@ export default function PaymentMethodsPage() {
   const [gateways, setGateways] = useState({
     stripe: { enabled: false, publishableKey: "", secretKey: "", webhookSecret: "" },
     paypal: { enabled: false, clientId: "", clientSecret: "", mode: "sandbox" },
-    razorpay: { enabled: false, keyId: "", keySecret: "", webhookSecret: "" },
-    cashfree: { enabled: false, appId: "", secretKey: "", mode: "sandbox" },
-    payu: { enabled: false, merchantId: "", merchantKey: "", merchantSalt: "", mode: "test" },
-    phonepe: { enabled: false, merchantId: "", saltKey: "", saltIndex: "", mode: "sandbox" },
-    paytm: { enabled: false, merchantId: "", merchantKey: "", industryType: "", website: "", mode: "staging" }
   });
 
   const gatewayConfig = {
@@ -40,44 +35,9 @@ export default function PaymentMethodsPage() {
     paypal: {
       name: "PayPal",
       description: "Digital wallet and payments",
-      status: "active", 
+      status: "active",
       logo: "https://logos-world.net/wp-content/uploads/2020/07/PayPal-Logo.png",
       note: "Popular digital wallet worldwide",
-    },
-    razorpay: {
-      name: "Razorpay",
-      description: "Complete payment solution for India",
-      status: "active",
-      logo: "https://razorpay.com/assets/razorpay-logo.svg",
-      note: "Cards, UPI, NetBanking, Wallets",
-    },
-    cashfree: {
-      name: "Cashfree",
-      description: "Payment gateway for Indian businesses",
-      status: "active",
-      logo: "https://cashfreelogo.cashfree.com/website/landings/homepage/cashfree10Logo.svg",
-      note: "Cards, UPI, NetBanking, EMI",
-    },
-    payu: {
-      name: "PayU",
-      description: "Leading payment processor in India",
-      status: "active",
-      logo: "https://devguide.payu.in/website-assets/uploads/2021/12/new-payu-logo.svg",
-      note: "Cards, UPI, NetBanking, EMI, Wallets",
-    },
-    phonepe: {
-      name: "PhonePe",
-      description: "UPI and digital payments",
-      status: "active",
-      logo: "https://images.ctfassets.net/drk57q8lctrm/2xVzOuwCEAwvno1fx5Ywo/13fbf64e95946dc6164e626392336cfe/phonepe-logo.webp",
-      note: "UPI, Cards, Wallets",
-    },
-    paytm: {
-      name: "Paytm",
-      description: "All-in-one payment gateway",
-      status: "active", 
-      logo: "https://d1.awsstatic.com/Paytm-Logo.516dcbea24a48dc1f0187700fbd0f6a48f9a18c3.png",
-      note: "UPI, Cards, Wallets, NetBanking",
     },
   };
 
@@ -93,11 +53,6 @@ export default function PaymentMethodsPage() {
         setGateways({
           stripe: data.stripe || gateways.stripe,
           paypal: data.paypal || gateways.paypal,
-          razorpay: data.razorpay || gateways.razorpay,
-          cashfree: data.cashfree || gateways.cashfree,
-          payu: data.payu || gateways.payu,
-          phonepe: data.phonepe || gateways.phonepe,
-          paytm: data.paytm || gateways.paytm,
         });
       }
     } catch (err) {
@@ -139,16 +94,6 @@ export default function PaymentMethodsPage() {
         return gateway.publishableKey && gateway.secretKey;
       case "paypal":
         return gateway.clientId && gateway.clientSecret;
-      case "razorpay":
-        return gateway.keyId && gateway.keySecret;
-      case "cashfree":
-        return gateway.appId && gateway.secretKey;
-      case "payu":
-        return gateway.merchantId && gateway.merchantKey && gateway.merchantSalt;
-      case "phonepe":
-        return gateway.merchantId && gateway.saltKey && gateway.saltIndex;
-      case "paytm":
-        return gateway.merchantId && gateway.merchantKey && gateway.industryType && gateway.website;
       default:
         return false;
     }
@@ -419,257 +364,7 @@ export default function PaymentMethodsPage() {
                   </>
                 )}
 
-                {currentEditGateway === "razorpay" && (
-                  <>
-                    <Input
-                      labelPlacement="outside"
-                      label="Key ID"
-                      placeholder="rzp_test_..."
-                      value={editFormData.keyId || ""}
-                      onChange={(e) => handleEditFormChange("keyId", e.target.value)}
-                      description="Razorpay Key ID (starts with rzp_)"
-                    />
-                    <Input
-                      labelPlacement="outside"
-                      label="Key Secret"
-                      placeholder="Your Razorpay Secret"
-                      type="password"
-                      value={editFormData.keySecret || ""}
-                      onChange={(e) => handleEditFormChange("keySecret", e.target.value)}
-                      description="Razorpay Key Secret"
-                    />
-                    <Input
-                      labelPlacement="outside"
-                      label="Webhook Secret (Optional)"
-                      placeholder="Webhook Secret"
-                      type="password"
-                      value={editFormData.webhookSecret || ""}
-                      onChange={(e) => handleEditFormChange("webhookSecret", e.target.value)}
-                      description="Webhook secret for payment verification"
-                    />
-                  </>
-                )}
 
-                {currentEditGateway === "cashfree" && (
-                  <>
-                    <Input
-                      labelPlacement="outside"
-                      label="App ID"
-                      placeholder="Your Cashfree App ID"
-                      value={editFormData.appId || ""}
-                      onChange={(e) => handleEditFormChange("appId", e.target.value)}
-                      description="Cashfree Application ID"
-                    />
-                    <Input
-                      labelPlacement="outside"
-                      label="Secret Key"
-                      placeholder="Your Cashfree Secret Key"
-                      type="password"
-                      value={editFormData.secretKey || ""}
-                      onChange={(e) => handleEditFormChange("secretKey", e.target.value)}
-                      description="Cashfree Secret Key"
-                    />
-                    <div className="space-y-2">
-                      <label className="text-sm font-medium text-gray-700">Environment</label>
-                      <div className="flex gap-4">
-                        <label className="flex items-center gap-2 cursor-pointer">
-                          <input
-                            type="radio"
-                            name="cashfree-modal-mode"
-                            checked={editFormData.mode === "sandbox"}
-                            onChange={() => handleEditFormChange("mode", "sandbox")}
-                            className="text-blue-500"
-                          />
-                          <span className="text-sm">Sandbox</span>
-                        </label>
-                        <label className="flex items-center gap-2 cursor-pointer">
-                          <input
-                            type="radio"
-                            name="cashfree-modal-mode"
-                            checked={editFormData.mode === "production"}
-                            onChange={() => handleEditFormChange("mode", "production")}
-                            className="text-blue-500"
-                          />
-                          <span className="text-sm">Production</span>
-                        </label>
-                      </div>
-                    </div>
-                  </>
-                )}
-
-                {currentEditGateway === "payu" && (
-                  <>
-                    <Input
-                      labelPlacement="outside"
-                      label="Merchant ID"
-                      placeholder="Your PayU Merchant ID"
-                      value={editFormData.merchantId || ""}
-                      onChange={(e) => handleEditFormChange("merchantId", e.target.value)}
-                      description="PayU Merchant ID"
-                    />
-                    <Input
-                      labelPlacement="outside"
-                      label="Merchant Key"
-                      placeholder="Your PayU Merchant Key"
-                      type="password"
-                      value={editFormData.merchantKey || ""}
-                      onChange={(e) => handleEditFormChange("merchantKey", e.target.value)}
-                      description="PayU Merchant Key"
-                    />
-                    <Input
-                      labelPlacement="outside"
-                      label="Merchant Salt"
-                      placeholder="Your PayU Merchant Salt"
-                      type="password"
-                      value={editFormData.merchantSalt || ""}
-                      onChange={(e) => handleEditFormChange("merchantSalt", e.target.value)}
-                      description="PayU Merchant Salt for hash generation"
-                    />
-                    <div className="space-y-2">
-                      <label className="text-sm font-medium text-gray-700">Environment</label>
-                      <div className="flex gap-4">
-                        <label className="flex items-center gap-2 cursor-pointer">
-                          <input
-                            type="radio"
-                            name="payu-modal-mode"
-                            checked={editFormData.mode === "test"}
-                            onChange={() => handleEditFormChange("mode", "test")}
-                            className="text-blue-500"
-                          />
-                          <span className="text-sm">Test</span>
-                        </label>
-                        <label className="flex items-center gap-2 cursor-pointer">
-                          <input
-                            type="radio"
-                            name="payu-modal-mode"
-                            checked={editFormData.mode === "live"}
-                            onChange={() => handleEditFormChange("mode", "live")}
-                            className="text-blue-500"
-                          />
-                          <span className="text-sm">Live</span>
-                        </label>
-                      </div>
-                    </div>
-                  </>
-                )}
-
-                {currentEditGateway === "phonepe" && (
-                  <>
-                    <Input
-                      labelPlacement="outside"
-                      label="Merchant ID"
-                      placeholder="Your PhonePe Merchant ID"
-                      value={editFormData.merchantId || ""}
-                      onChange={(e) => handleEditFormChange("merchantId", e.target.value)}
-                      description="PhonePe Merchant ID"
-                    />
-                    <Input
-                      labelPlacement="outside"
-                      label="Salt Key"
-                      placeholder="Your PhonePe Salt Key"
-                      type="password"
-                      value={editFormData.saltKey || ""}
-                      onChange={(e) => handleEditFormChange("saltKey", e.target.value)}
-                      description="PhonePe Salt Key for API calls"
-                    />
-                    <Input
-                      labelPlacement="outside"
-                      label="Salt Index"
-                      placeholder="Salt Index (usually 1)"
-                      value={editFormData.saltIndex || ""}
-                      onChange={(e) => handleEditFormChange("saltIndex", e.target.value)}
-                      description="Salt Index (typically 1)"
-                    />
-                    <div className="space-y-2">
-                      <label className="text-sm font-medium text-gray-700">Environment</label>
-                      <div className="flex gap-4">
-                        <label className="flex items-center gap-2 cursor-pointer">
-                          <input
-                            type="radio"
-                            name="phonepe-modal-mode"
-                            checked={editFormData.mode === "sandbox"}
-                            onChange={() => handleEditFormChange("mode", "sandbox")}
-                            className="text-blue-500"
-                          />
-                          <span className="text-sm">Sandbox</span>
-                        </label>
-                        <label className="flex items-center gap-2 cursor-pointer">
-                          <input
-                            type="radio"
-                            name="phonepe-modal-mode"
-                            checked={editFormData.mode === "production"}
-                            onChange={() => handleEditFormChange("mode", "production")}
-                            className="text-blue-500"
-                          />
-                          <span className="text-sm">Production</span>
-                        </label>
-                      </div>
-                    </div>
-                  </>
-                )}
-
-                {currentEditGateway === "paytm" && (
-                  <>
-                    <Input
-                      labelPlacement="outside"
-                      label="Merchant ID"
-                      placeholder="Your Paytm Merchant ID"
-                      value={editFormData.merchantId || ""}
-                      onChange={(e) => handleEditFormChange("merchantId", e.target.value)}
-                      description="Paytm Merchant ID"
-                    />
-                    <Input
-                      labelPlacement="outside"
-                      label="Merchant Key"
-                      placeholder="Your Paytm Merchant Key"
-                      type="password"
-                      value={editFormData.merchantKey || ""}
-                      onChange={(e) => handleEditFormChange("merchantKey", e.target.value)}
-                      description="Paytm Merchant Key"
-                    />
-                    <Input
-                      labelPlacement="outside"
-                      label="Industry Type"
-                      placeholder="Retail (or your industry type)"
-                      value={editFormData.industryType || ""}
-                      onChange={(e) => handleEditFormChange("industryType", e.target.value)}
-                      description="Industry type (e.g., Retail, Services)"
-                    />
-                    <Input
-                      labelPlacement="outside"
-                      label="Website"
-                      placeholder="WEBSTAGING (or your website name)"
-                      value={editFormData.website || ""}
-                      onChange={(e) => handleEditFormChange("website", e.target.value)}
-                      description="Website parameter (e.g., WEBSTAGING for test)"
-                    />
-                    <div className="space-y-2">
-                      <label className="text-sm font-medium text-gray-700">Environment</label>
-                      <div className="flex gap-4">
-                        <label className="flex items-center gap-2 cursor-pointer">
-                          <input
-                            type="radio"
-                            name="paytm-modal-mode"
-                            checked={editFormData.mode === "staging"}
-                            onChange={() => handleEditFormChange("mode", "staging")}
-                            className="text-blue-500"
-                          />
-                          <span className="text-sm">Staging</span>
-                        </label>
-                        <label className="flex items-center gap-2 cursor-pointer">
-                          <input
-                            type="radio"
-                            name="paytm-modal-mode"
-                            checked={editFormData.mode === "production"}
-                            onChange={() => handleEditFormChange("mode", "production")}
-                            className="text-blue-500"
-                          />
-                          <span className="text-sm">Production</span>
-                        </label>
-                      </div>
-                    </div>
-                  </>
-                )}
               </div>
             )}
           </ModalBody>
