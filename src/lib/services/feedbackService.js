@@ -69,6 +69,8 @@ export async function getPublicFeedback({ productId = null, featuredOnly = false
       authorName:  true,
       textContent: true,
       mediaUrl:    true,
+      voiceUrl:    true,
+      images:      true,
       productId:   true,
       product:     { select: { id: true, title: true } },
     },
@@ -265,8 +267,7 @@ export async function verifyFeedback(id, isVerified) {
  * New fields (phone, productName, voiceUrl, images, isVerified) pass through safely.
  */
 export async function updateFeedback(id, data) {
-  // eslint-disable-next-line no-unused-vars
-  const { _id, id: bodyId, createdAt, updatedAt, product, ...safe } = data;
+  const { _id, id: _bodyId, createdAt: _createdAt, updatedAt: _updatedAt, product: _product, ...safe } = data;
 
   // Ensure images is always an array if provided
   if (safe.images !== undefined && !Array.isArray(safe.images)) {

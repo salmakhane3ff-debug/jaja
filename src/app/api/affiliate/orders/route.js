@@ -19,7 +19,7 @@ async function getHandler(req, _ctx, decoded) {
   }
 }
 
-async function putHandler(req, _ctx, decoded) {
+async function putHandler(req, _ctx, _decoded) {
   try {
     const { id, status } = await req.json();
 

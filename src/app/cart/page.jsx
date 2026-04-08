@@ -37,7 +37,7 @@ export default function CartPage() {
 
     const fetchProducts = async () => {
       try {
-        const res = await fetch("/api/product", {
+        const res = await fetch("/api/products", {
           cache: "force-cache",
           next: { revalidate: 300 }
         });
@@ -183,16 +183,17 @@ export default function CartPage() {
     const buyNowData = selectedCartItems.map((item) => ({
       productId: item.productId,
       title: item.title,
-      quantity: item.quantity,
+      quantity: item._isGift || item.free ? 1 : item.quantity,
       color: item.color || null,
       size: item.size || null,
       image: item.image,
-      price: item.price,
+      price: item._isGift || item.free ? 0 : item.price,
       currency: "MAD",
+      isFreeGift: !!(item._isGift || item.free),
     }));
 
     localStorage.setItem("buyNow", JSON.stringify(buyNowData));
-    window.location.href = "/checkout";
+    window.location.href = "/checkout/address";
   };
 
   return (

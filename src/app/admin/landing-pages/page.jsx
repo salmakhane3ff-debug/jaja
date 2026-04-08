@@ -134,7 +134,7 @@ export default function LandingPagesPage() {
 
   const fetchProducts = async () => {
     try {
-      const res  = await fetch("/api/product?status=all");
+      const res  = await fetch("/api/products?status=all");
       const data = await res.json();
       setProducts(Array.isArray(data) ? data : []);
     } catch {}

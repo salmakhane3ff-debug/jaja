@@ -29,7 +29,7 @@ export default function AdminGiftsPage() {
       try {
         const [giftsRes, productsRes] = await Promise.all([
           fetch("/api/gifts"),
-          fetch("/api/product"),
+          fetch("/api/products"),
         ]);
         if (giftsRes.ok)    setGifts(await giftsRes.json());
         if (productsRes.ok) setProducts(await productsRes.json());

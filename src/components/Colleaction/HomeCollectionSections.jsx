@@ -98,17 +98,15 @@ function CollectionSection({ collection, allProducts, formatPrice, t, getDiscoun
 
       {products.length > 0 && (
         <>
-          <div className="max-w-7xl mx-auto px-4">
-            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 2xl:grid-cols-5 gap-3 md:gap-4">
-              {products.map((product) => (
-                <ProductCard
-                  key={product._id || product.id}
-                  product={product}
-                  formatPrice={formatPrice}
-                  getDiscount={getDiscount}
-                />
-              ))}
-            </div>
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3 md:gap-4">
+            {products.map((product) => (
+              <ProductCard
+                key={product._id || product.id}
+                product={product}
+                formatPrice={formatPrice}
+                getDiscount={getDiscount}
+              />
+            ))}
           </div>
           <div className="flex justify-center mt-8">
             <Link href={`/products?collection=${encodeURIComponent(collection.title)}`}>
@@ -137,7 +135,7 @@ export function SingleCollectionSection({ collectionTitle, collectionId, product
     if (!collectionTitle && !collectionId) { setLoading(false); return; }
     Promise.all([
       fetch("/api/collection", { cache: "no-store" }).then(r => r.ok ? r.json() : []),
-      fetch("/api/product",    { cache: "no-store" }).then(r => r.ok ? r.json() : []),
+      fetch("/api/products",    { cache: "no-store" }).then(r => r.ok ? r.json() : []),
     ])
       .then(([cols, prods]) => {
         const col = cols.find(c =>
@@ -173,19 +171,15 @@ export function SingleCollectionSection({ collectionTitle, collectionId, product
       </div>
 
       {products.length === 0 ? (
-        <div className="max-w-7xl mx-auto px-4">
-          <p className="text-sm text-gray-400 italic">
-            No products assigned to &quot;{collection.title}&quot; yet.
-          </p>
-        </div>
+        <p className="text-sm text-gray-400 italic">
+          No products assigned to &quot;{collection.title}&quot; yet.
+        </p>
       ) : (
         <>
-          <div className="max-w-7xl mx-auto px-4">
-            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 2xl:grid-cols-5 gap-3 md:gap-4">
-              {products.map(product => (
-                <ProductCard key={product._id || product.id} product={product} formatPrice={formatPrice} getDiscount={getDiscount} />
-              ))}
-            </div>
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3 md:gap-4">
+            {products.map(product => (
+              <ProductCard key={product._id || product.id} product={product} formatPrice={formatPrice} getDiscount={getDiscount} />
+            ))}
           </div>
           {showViewMore && (
             <div className="flex justify-center mt-8">
@@ -216,7 +210,7 @@ export default function HomeCollectionSections() {
       try {
         const [colRes, prodRes] = await Promise.all([
           fetch("/api/collection?homepage=true", { cache: "no-store" }),
-          fetch("/api/product",                  { cache: "no-store" }),
+          fetch("/api/products",                  { cache: "no-store" }),
         ]);
         if (colRes.ok)  setCollections(await colRes.json());
         if (prodRes.ok) setAllProducts(await prodRes.json());

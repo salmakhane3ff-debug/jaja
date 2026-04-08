@@ -9,7 +9,7 @@ import {
   getAffiliateById,
   updateAffiliateBank,
   updateAffiliateProfile,
-  loginAffiliate,
+  loginAffiliate as _loginAffiliate,
   getAffiliateDashboardStats,
   computeGamification,
   getAffiliateTeam,

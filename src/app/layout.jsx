@@ -13,7 +13,9 @@ import AffiliateRefCapture from "@/components/AffiliateRefCapture";
 import TrackingCapture from "@/components/tracking/TrackingCapture";
 import SpinWheelProvider from "@/components/SpinWheel/SpinWheelProvider";
 import GiftSystemInit from "@/components/GiftSystem/GiftSystemInit";
+import PreloaderWrapper from "@/components/PreloaderWrapper";
 import { getStoreSettings } from "@/lib/getStoreSettings";
+import { getPreloaderSettings } from "@/lib/getPreloaderSettings";
 import { Suspense } from "react";
 
 // Rubik supports both Latin and Arabic scripts — load both subsets.
@@ -43,7 +45,8 @@ export async function generateMetadata() {
   };
 }
 
-export default function RootLayout({ children }) {
+export default async function RootLayout({ children }) {
+  const preloaderConfig = await getPreloaderSettings();
   return (
     // suppressHydrationWarning: LanguageProvider updates lang/dir client-side.
     // Default to Arabic (RTL) — matches the default language setting.
@@ -59,15 +62,26 @@ export default function RootLayout({ children }) {
       <head />
       <body className="antialiased">
         <Providers>
+          {/*
+            PreloaderWrapper wraps ALL visible content so it can:
+            1. Keep content hidden (opacity-0) while the preloader is shown
+            2. Crossfade both simultaneously once the page is ready
+            Non-visual providers (trackers, scripts) stay outside so they
+            are never blocked by the opacity wrapper.
+          */}
           <AffiliateRefCapture />
           <UtmTracker />
           <Suspense fallback={null}>
             <TrackingCapture />
           </Suspense>
           <ScriptInjector />
-          <MainHeaderWrapper />
-          {children}
-          <MainFooterWrapper />
+          <Suspense fallback={null}>
+            <PreloaderWrapper config={preloaderConfig}>
+              <MainHeaderWrapper />
+              {children}
+              <MainFooterWrapper />
+            </PreloaderWrapper>
+          </Suspense>
           <SpinWheelProvider />
           <GiftSystemInit />
         </Providers>

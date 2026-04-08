@@ -105,7 +105,7 @@ export default function GiftSystemInit() {
       try {
         const [giftsRes, productsRes] = await Promise.all([
           fetch("/api/gifts"),
-          fetch("/api/product"),
+          fetch("/api/products"),
         ]);
         if (giftsRes.ok) gifts = await giftsRes.json();
         if (productsRes.ok) products = await productsRes.json();

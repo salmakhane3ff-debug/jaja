@@ -13,8 +13,8 @@ const Header = ({ sidebarOpen, setSidebarOpen }) => {
   // Quick navigation links from sidebar
   const quickLinks = [
     { href: "/admin", icon: <Home size={14} />, label: "Dashboard" },
-    { href: "/admin/product", icon: <Tags size={14} />, label: "Products" },
-    { href: "/admin/product/new", icon: <Plus size={14} />, label: "Add Product" },
+    { href: "/admin/products", icon: <Tags size={14} />, label: "Products" },
+    { href: "/admin/products/new", icon: <Plus size={14} />, label: "Add Product" },
     { href: "/admin/orders", icon: <ShoppingCart size={14} />, label: "Orders" },
     { href: "/admin/analytics", icon: <BarChart2 size={14} />, label: "Analytics" },
   ];
@@ -110,7 +110,7 @@ const Header = ({ sidebarOpen, setSidebarOpen }) => {
                   <Home size={14} />
                   Dashboard
                 </Link>
-                <Link href="/admin/product" className="flex items-center gap-2 w-full px-3 py-2 text-sm text-gray-700 hover:bg-gray-50">
+                <Link href="/admin/products" className="flex items-center gap-2 w-full px-3 py-2 text-sm text-gray-700 hover:bg-gray-50">
                   <Tags size={14} />
                   Products
                 </Link>

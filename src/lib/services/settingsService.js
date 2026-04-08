@@ -34,8 +34,7 @@ export async function getSettings(type) {
  */
 export async function upsertSettings(type, data) {
   // Remove any meta keys that shouldn't be persisted
-  // eslint-disable-next-line no-unused-vars
-  const { _id, id, createdAt, updatedAt, ...clean } = data ?? {};
+  const { _id, id: _id2, createdAt: _createdAt, updatedAt: _updatedAt, ...clean } = data ?? {};
 
   const row = await prisma.setting.upsert({
     where:  { id: type },

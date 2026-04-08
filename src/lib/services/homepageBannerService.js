@@ -16,12 +16,12 @@ export async function getActiveBanners(position) {
 }
 
 export async function createBanner(body) {
-  const { id, createdAt, updatedAt, ...data } = body ?? {};
+  const { id: _id, createdAt: _createdAt, updatedAt: _updatedAt, ...data } = body ?? {};
   return prisma.homepageBanner.create({ data });
 }
 
 export async function updateBanner(id, body) {
-  const { id: bodyId, createdAt, updatedAt, ...data } = body ?? {};
+  const { id: _bodyId, createdAt: _createdAt, updatedAt: _updatedAt, ...data } = body ?? {};
   try {
     return await prisma.homepageBanner.update({ where: { id }, data });
   } catch (err) {

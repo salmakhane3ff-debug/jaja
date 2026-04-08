@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useEffect, useState } from "react";
+import Container         from "@/components/Container";
 import Slider            from "@/components/Slider/Slider";
 import SliderCollection  from "@/components/Colleaction/SliderCollection";
 import ProductGrid       from "@/components/Product/ProductGrid";
@@ -185,24 +186,22 @@ const RENDERERS = {
   contact:            ({ data }) => <ContactSection data={data} />,
 };
 
-const PADDING = {
-  hero: "px-2 sm:px-4",
-  slider: "",
-  image: "px-2 sm:px-4",
-  cta: "px-4",
-  countdown: "px-4",
-  contact: "px-4",
-  text: "px-4",
-  video: "px-4",
-  products: "",
-  collection_slider: "",
-  collection_section: "",
-  reviews: "",
-  support: "",
-  before_after: "",
-  reels: "",
-  shoppable_reels: "",
-};
+// Sections that should be wrapped in the shared Container (max-w-7xl, centered).
+// Sections not listed here render full-width (e.g. video reels, support bar).
+const CONTAINER_SECTIONS = new Set([
+  "hero",
+  "slider",
+  "image",
+  "cta",
+  "countdown",
+  "contact",
+  "text",
+  "video",
+  "products",
+  "collection_slider",
+  "collection_section",
+  "before_after",
+]);
 
 // ── Main renderer ─────────────────────────────────────────────────────────────
 // PERF: Accepts `sections` as an optional prop.
@@ -230,12 +229,10 @@ export default function HomeSectionRenderer({ sections: initialSections } = {}) 
       {sections.filter(s => s.visible !== false).map(sec => {
         const Renderer = RENDERERS[sec.type];
         if (!Renderer) return null;
-        const pad = PADDING[sec.type] ?? "px-4";
-        return (
-          <div key={sec.id} className={`w-full ${pad}`}>
-            <Renderer data={sec.data || {}} />
-          </div>
-        );
+        const content = <Renderer data={sec.data || {}} />;
+        return CONTAINER_SECTIONS.has(sec.type)
+          ? <Container key={sec.id}>{content}</Container>
+          : <div key={sec.id} className="w-full">{content}</div>;
       })}
     </div>
   );

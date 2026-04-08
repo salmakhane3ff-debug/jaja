@@ -37,8 +37,7 @@ function makeSlug(title, prefix = 'post') {
  *   extra    — everything else (stored in JSONB `data`)
  */
 function splitBody(body) {
-  // eslint-disable-next-line no-unused-vars
-  const { _id, id, title, slug, category, status, createdAt, updatedAt, ...extra } = body ?? {};
+  const { _id, id: _id2, title, slug, category, status, createdAt: _createdAt, updatedAt: _updatedAt, ...extra } = body ?? {};
   return {
     promoted: { title, slug, category, status },
     extra,

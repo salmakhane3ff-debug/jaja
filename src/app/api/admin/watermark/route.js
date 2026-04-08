@@ -14,7 +14,7 @@ import {
   applyWatermark,
   processFileWithWatermark,
 } from '@/lib/services/watermarkService.js';
-import prisma from '@/lib/prisma.js';
+import _prisma from '@/lib/prisma.js';
 
 export async function GET() {
   try {
@@ -30,7 +30,7 @@ export async function PUT(req) {
   try {
     const body = await req.json();
     // Strip id/timestamps before saving
-    const { id, createdAt, updatedAt, ...data } = body;
+    const { id: _id, createdAt: _createdAt, updatedAt: _updatedAt, ...data } = body;
     const s = await saveWatermarkSettings(data);
     return Response.json(s);
   } catch (err) {

@@ -22,7 +22,7 @@ export default function StyleOne() {
   useEffect(() => {
     async function fetchProducts() {
       try {
-        const res = await fetch("/api/product");
+        const res = await fetch("/api/products");
         if (!res.ok) throw new Error("Network response was not ok");
         const data = await res.json();
         setProducts(Array.isArray(data) && data.length > 0 ? data : []);
@@ -145,8 +145,8 @@ export default function StyleOne() {
 
   if (loading) {
     return (
-      <div className="max-w-7xl mx-auto px-4">
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 2xl:grid-cols-5 gap-3 md:gap-4">
+      <div className="container mx-auto md:px-20 px-4">
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3 md:gap-4">
           {[...Array(10)].map((_, i) => (
             <div key={i} className="bg-white rounded-3xl border border-purple-50 p-2">
               <Skeleton className="w-full rounded-2xl" style={{ height: 220 }} />
@@ -169,14 +169,14 @@ export default function StyleOne() {
   const hasMoreProducts = products.length > 10;
 
   return (
-    <div className="max-w-7xl mx-auto px-4">
+    <div className="container mx-auto md:px-20">
       {/* Section header */}
       <div className="text-center mb-8">
         <h1 className="text-xl md:text-2xl font-bold text-gray-900 mb-2">{t("nav_products")}</h1>
         <p className="text-sm text-gray-500">{t("product_grid_subtitle")}</p>
       </div>
 
-      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 2xl:grid-cols-5 gap-3 md:gap-4">
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3 md:gap-4 px-4">
         {displayProducts.map((product, index) => {
           const discount    = calculateDiscount(product.regularPrice, product.salePrice);
           const VIDEO_EXT = /\.(mp4|webm|mov|avi|mkv|ogv)(\?.*)?$/i;
@@ -251,11 +251,6 @@ export default function StyleOne() {
 
               {/* Info */}
               <div className="px-2 pb-2 flex flex-col flex-1">
-                {colName && (
-                  <p className="text-xs font-semibold text-gray-400 uppercase tracking-wide mb-1 truncate">
-                    {colName}
-                  </p>
-                )}
 
                 <a href={productHref} onClick={(e) => navigateProduct(product, e)}>
                   <h2 className="text-sm font-bold text-gray-900 line-clamp-1 leading-tight">

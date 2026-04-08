@@ -11,7 +11,7 @@
 
 import {
   getAllAffiliates,
-  getAffiliateById,
+  getAffiliateById as _getAffiliateById,
   getAffiliateByUsername,
   createAffiliate,
   updateAffiliate,

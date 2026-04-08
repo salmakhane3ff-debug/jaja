@@ -201,7 +201,7 @@ export async function trackOrderHandler(req) {
 
 // ── Templates ─────────────────────────────────────────────────────────────────
 
-export async function getTemplatesHandler(req) {
+export async function getTemplatesHandler(_req) {
   try {
     const templates = await getAllTemplates();
     return Response.json(templates);

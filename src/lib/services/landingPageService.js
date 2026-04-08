@@ -152,8 +152,7 @@ export async function createLandingPage({
  */
 export async function updateLandingPage(id, body) {
   // Strip server-managed / relational fields — everything else is fair game
-  // eslint-disable-next-line no-unused-vars
-  const { _id, id: bodyId, createdAt, updatedAt, products, landingEvents, views, clicks, sales, ...safe } = body;
+  const { _id, id: _bodyId, createdAt: _createdAt, updatedAt: _updatedAt, products: _products, landingEvents: _landingEvents, views: _views, clicks: _clicks, sales: _sales, ...safe } = body;
 
   if (safe.title && !safe.slug) {
     safe.slug = makeSlug(safe.title);
@@ -251,8 +250,7 @@ export async function createTemplate({ name, description, templateType, content,
 
 /** Update an existing template. */
 export async function updateTemplate(id, data) {
-  // eslint-disable-next-line no-unused-vars
-  const { id: _id, createdAt, updatedAt, ...safe } = data;
+  const { id: _id, createdAt: _createdAt, updatedAt: _updatedAt, ...safe } = data;
   try {
     return await prisma.landingTemplate.update({ where: { id }, data: safe });
   } catch (err) {

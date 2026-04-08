@@ -262,13 +262,13 @@ function FeedbackCard({ item }) {
           <div className="flex gap-1.5">
             {images.slice(0, 2).map((img, i) => (
               <button key={i} type="button" onClick={() => setViewerIdx(i)}
-                className="flex-shrink-0 w-20 h-20 rounded-xl overflow-hidden border border-gray-100 hover:opacity-90 hover:scale-105 transition-transform active:scale-95 focus:outline-none">
+                className="flex-shrink-0 w-24 h-24 rounded-xl overflow-hidden border border-gray-100 hover:opacity-90 hover:scale-105 transition-transform active:scale-95 focus:outline-none">
                 <img src={img} alt="" loading="lazy" className="w-full h-full object-cover" />
               </button>
             ))}
             {images.length > 2 && (
               <button type="button" onClick={() => setViewerIdx(2)}
-                className="flex-shrink-0 w-20 h-20 rounded-xl overflow-hidden border border-gray-100 relative focus:outline-none hover:opacity-90">
+                className="flex-shrink-0 w-24 h-24 rounded-xl overflow-hidden border border-gray-100 relative focus:outline-none hover:opacity-90">
                 <img src={images[2]} alt="" loading="lazy" className="w-full h-full object-cover opacity-40" />
                 <span className="absolute inset-0 bg-black/50 flex items-center justify-center text-white text-sm font-bold">
                   +{images.length - 2}

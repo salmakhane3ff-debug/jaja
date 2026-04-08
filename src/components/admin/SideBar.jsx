@@ -47,6 +47,7 @@ import {
   Languages,
   TrendingUp,
   Gift,
+  LoaderCircle,
 } from "lucide-react";
 
 const SideBar = ({ onItemClick }) => {
@@ -56,8 +57,8 @@ const SideBar = ({ onItemClick }) => {
   const links = [
     { href: "/admin", icon: <Home size={16} />, label: "Dashboard" },
     { href: "/admin/dashboard", icon: <LayoutDashboard size={16} />, label: "Growth Overview" },
-    { href: "/admin/product", icon: <Tags size={16} />, label: "Products" },
-    { href: "/admin/product/new", icon: <Plus size={16} />, label: "Add Product" },
+    { href: "/admin/products", icon: <Tags size={16} />, label: "Products" },
+    { href: "/admin/products/new", icon: <Plus size={16} />, label: "Add Product" },
     { href: "/admin/collection", icon: <LayoutGrid size={16} />, label: "Collections" },
     { href: "/admin/blog", icon: <BookOpen size={16} />, label: "Blog Posts" },
     { href: "/admin/blog/new", icon: <PenTool size={16} />, label: "Add Blog Post" },
@@ -71,7 +72,8 @@ const SideBar = ({ onItemClick }) => {
     { href: "/admin/product-analytics", icon: <BarChart2 size={16} />, label: "Product Analytics" },
     { href: "/admin/tracker",    icon: <MousePointerClick size={16} />, label: "Click Tracker" },
     { href: "/admin/campaigns",  icon: <Link2 size={16} />,            label: "Campaigns" },
-    { href: "/admin/ui-control", icon: <ToggleRight size={16} />,      label: "UI Control" },
+    { href: "/admin/ui-control",  icon: <ToggleRight    size={16} />, label: "UI Control" },
+    { href: "/admin/preloader",  icon: <LoaderCircle  size={16} />, label: "Preloader" },
     { href: "/admin/conversion-optimization", icon: <TrendingUp size={16} />, label: "Conversion Optimization" },
     { href: "/admin/affiliates", icon: <Users size={16} />, label: "Affiliates" },
     { href: "/admin/promo", icon: <Tag size={16} />, label: "Promo Codes" },

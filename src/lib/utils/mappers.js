@@ -110,7 +110,7 @@ export function mapOrder(order) {
  */
 export function parseOrderBody(body) {
   const {
-    _id, id,
+    _id, id: _id2,
     // Frontend field names
     name, email, phone, shipping,
     // Prisma field names (may arrive on PUT)
@@ -130,9 +130,9 @@ export function parseOrderBody(body) {
     campaignSource,
     userId,
     // Strip timestamps — we manage these ourselves
-    createdAt, updatedAt,
+    createdAt: _createdAt, updatedAt: _updatedAt,
     // Anything else is ignored (prevents unknown-field errors in Prisma)
-    ...ignored
+    ..._ignored
   } = body;
 
   const pymtDetails = paymentDetails && typeof paymentDetails === 'object'
@@ -159,8 +159,8 @@ export function parseOrderBody(body) {
     campaignSource:  campaignSource             || null,
     userId:          userId                     || null,
     // Timestamp overrides (PUT only)
-    ...(createdAt ? { createdAt: new Date(createdAt) } : {}),
-    ...(updatedAt ? { updatedAt: new Date(updatedAt) } : {}),
+    ...(_createdAt ? { createdAt: new Date(_createdAt) } : {}),
+    ...(_updatedAt ? { updatedAt: new Date(_updatedAt) } : {}),
     // Items extracted separately
     _items: orderItems,
   };
@@ -173,8 +173,7 @@ export function parseOrderBody(body) {
  */
 export function mapUserProfile(user) {
   if (!user) return null;
-  // eslint-disable-next-line no-unused-vars
-  const { password, ...rest } = user;
+  const { password: _password, ...rest } = user;
   return {
     ...rest,
     _id: user.id,

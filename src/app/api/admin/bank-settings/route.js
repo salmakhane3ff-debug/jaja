@@ -53,7 +53,7 @@ export const PUT = withAdminAuth(async (req) => {
     }
 
     // Strip meta keys from top-level
-    const { _id, id, createdAt, updatedAt, ...rest } = body;
+    const { _id, id: _id2, createdAt: _createdAt, updatedAt: _updatedAt, ...rest } = body;
 
     const payload = {
       ...rest,

@@ -56,7 +56,7 @@ function engagementLevel(impressions, totalCTRRaw) {
  *   2. totalCTR < 2 % and ≥ 1000 impressions → try variant B
  *   3. ≥ 500 impressions and totalCTR < 1 % → pricing / trust issue
  */
-function buildRecommendations({ impressions, addClicks, buyClicks, addCTR, buyCTR, totalCTR }) {
+function buildRecommendations({ impressions, addClicks: _addClicks, buyClicks: _buyClicks, addCTR, buyCTR, totalCTR }) {
   const recs = [];
 
   if (impressions >= 100 && buyCTR > addCTR * 1.3) {

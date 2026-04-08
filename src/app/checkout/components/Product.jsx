@@ -10,7 +10,7 @@ export default function useBuyNowProducts() {
 
     async function fetchData() {
       try {
-        const productRes = await fetch("/api/product", {
+        const productRes = await fetch("/api/products", {
       
         });
         const allProducts = await productRes.json();

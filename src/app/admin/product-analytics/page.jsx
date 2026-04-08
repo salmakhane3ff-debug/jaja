@@ -146,7 +146,7 @@ export default function ProductAnalyticsDashboard() {
     try {
       const [anaRes, prodRes] = await Promise.all([
         fetch("/api/admin/product-analytics"),
-        fetch("/api/product?status=all"),
+        fetch("/api/products?status=all"),
       ]);
       const [anaMap, prods] = await Promise.all([anaRes.json(), prodRes.json()]);
 

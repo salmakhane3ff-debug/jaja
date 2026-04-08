@@ -219,7 +219,7 @@ export default function PaymentPage() {
     // ── Fetch product payment rules ──────────────────────────────────────────
     const productIds = [...new Set(items.map(i => i.productId).filter(Boolean))];
     if (productIds.length > 0) {
-      fetch("/api/product?status=all")
+      fetch("/api/products?status=all")
         .then(r => r.json())
         .then(allProducts => {
           const cartProds = Array.isArray(allProducts)
@@ -327,6 +327,12 @@ export default function PaymentPage() {
   // ── Continue (prepaid / cod_deposit) ──────────────────────────────────────
   const handleContinue = async () => {
     if (!selectedMethod || prepaidAllowed === false) return;
+    // HARD GUARD: block orders that contain only free gifts (price === 0)
+    const hasPaidItem = cartItems.some((i) => !i.isFreeGift && parseFloat(i.price) > 0);
+    if (!hasPaidItem || cartItems.length === 0) {
+      router.replace("/checkout/address");
+      return;
+    }
     const payMethod = shipping?.paymentType || "prepaid";
     const valid     = await validateWithServer(payMethod);
     if (!valid) return;
@@ -337,6 +343,12 @@ export default function PaymentPage() {
   // ── COD order creation ─────────────────────────────────────────────────────
   const handleCOD = async () => {
     if (codBlockedByRule) return; // double-guard (UI already disabled)
+    // HARD GUARD: block orders that contain only free gifts (price === 0)
+    const hasPaidItem = cartItems.some((i) => !i.isFreeGift && parseFloat(i.price) > 0);
+    if (!hasPaidItem || cartItems.length === 0) {
+      router.replace("/checkout/address");
+      return;
+    }
     const valid = await validateWithServer("cod");
     if (!valid) return;
 

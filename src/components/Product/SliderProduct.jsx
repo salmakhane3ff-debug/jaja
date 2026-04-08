@@ -24,7 +24,7 @@ export default function SliderProduct({ header, products = [], type = "product" 
   useEffect(() => {
     async function fetchProducts() {
       try {
-        const res = await fetch("/api/product");
+        const res = await fetch("/api/products");
         if (!res.ok) throw new Error("Network response was not ok");
         const data = await res.json();
         if (Array.isArray(data) && data.length > 0) {

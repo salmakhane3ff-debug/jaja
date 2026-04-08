@@ -46,7 +46,7 @@ export const CartDrawerProvider = ({ children }) => {
   useEffect(() => {
     const fetchProducts = async () => {
       try {
-        const res = await fetch("/api/product", {
+        const res = await fetch("/api/products", {
           cache: "force-cache",
           next: { revalidate: 300 }
         });

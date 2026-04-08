@@ -21,23 +21,23 @@ export function LanguageProvider({ children }) {
    *           This means the very first client render already uses "fr" (or "ar"),
    *           so React never commits a wrong-language frame to the DOM.
    */
-  const [lang, setLangState] = useState(() => {
-    if (typeof window === "undefined") return DEFAULT_LANG;
-    const fromDom = document.documentElement.getAttribute("data-lang");
-    if (fromDom && SUPPORTED_LANGS.includes(fromDom)) return fromDom;
-    // Fallback: read localStorage directly (handles missing inline script)
-    try {
-      const saved = localStorage.getItem(STORAGE_KEY);
-      if (saved && SUPPORTED_LANGS.includes(saved)) return saved;
-    } catch {}
-    return DEFAULT_LANG;
-  });
-
-  // mounted: false on server, true immediately after first client render.
-  // useEffect (not layout) is fine here — we only need it for downstream
-  // consumers that want to know "are we on the client yet".
+  // Always start with DEFAULT_LANG so the first client render matches the server HTML.
+  // After hydration completes, useEffect reads the stored preference and updates.
+  const [lang, setLangState] = useState(DEFAULT_LANG);
   const [mounted, setMounted] = useState(false);
-  useEffect(() => { setMounted(true); }, []);
+
+  useEffect(() => {
+    const fromDom = document.documentElement.getAttribute("data-lang");
+    if (fromDom && SUPPORTED_LANGS.includes(fromDom)) {
+      setLangState(fromDom);
+    } else {
+      try {
+        const saved = localStorage.getItem(STORAGE_KEY);
+        if (saved && SUPPORTED_LANGS.includes(saved)) setLangState(saved);
+      } catch {}
+    }
+    setMounted(true);
+  }, []);
 
   // Sync HTML attributes and persist whenever lang changes
   useEffect(() => {

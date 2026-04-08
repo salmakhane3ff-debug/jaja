@@ -22,7 +22,7 @@ export default function WishlistPage() {
 
     const fetchProducts = async () => {
       try {
-        const res = await fetch("/api/product");
+        const res = await fetch("/api/products");
         if (!res.ok) throw new Error("Failed to fetch products");
         const allProducts = await res.json();
         const wishlistProductIds = savedWishlist.map((item) => item.productId);

@@ -128,7 +128,7 @@ function ProductPicker({ value, onChange }) {
   // Load selected product name on mount / value change
   useEffect(() => {
     if (!value) { setSelected(null); return; }
-    fetch(`/api/product/${value}`)
+    fetch(`/api/products/${value}`)
       .then((r) => r.json())
       .then((d) => { if (d?._id) setSelected(d); })
       .catch(() => {});
@@ -141,7 +141,7 @@ function ProductPicker({ value, onChange }) {
     timerRef.current = setTimeout(async () => {
       setLoading(true);
       try {
-        const res  = await fetch(`/api/product?search=${encodeURIComponent(q)}&limit=8`);
+        const res  = await fetch(`/api/products?search=${encodeURIComponent(q)}&limit=8`);
         const data = await res.json();
         setResults(Array.isArray(data) ? data : data.products || []);
       } catch { setResults([]); }

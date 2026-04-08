@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback } from "react";
+import { useCallback, useMemo } from "react";
 import { useSetting } from "@/context/SettingsContext";
 
 // ── Apply a rule set to one product ──────────────────────────────────────────
@@ -46,7 +46,10 @@ export function applyDiscountRules(product, rules) {
 // Reads discount rules from the shared SettingsContext — no duplicate fetches.
 export function useDiscountRules() {
   const { data } = useSetting("discount_rules");
-  const rules = Array.isArray(data?.rules) ? data.rules : [];
+  const rules = useMemo(
+    () => (Array.isArray(data?.rules) ? data.rules : []),
+    [data?.rules]
+  );
 
   const getDiscount = useCallback(
     (product) => applyDiscountRules(product, rules),

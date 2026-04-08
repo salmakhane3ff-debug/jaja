@@ -1,5 +1,6 @@
 "use client";
 import React, { useState, useEffect } from "react";
+import { applyGiftsToItems } from "@/lib/giftUtils";
 import { useRouter } from "next/navigation";
 import FunnelTracker from "@/components/tracking/FunnelTracker";
 import {
@@ -277,6 +278,22 @@ export default function CheckoutAddressPage() {
     }
     setCartItems(validItems);
 
+    // Safety net: recalculate gift eligibility for the Buy Now flow.
+    // When the user skips the cart (Buy Now on product page), gifts may
+    // not have been applied yet. Strip any stale gifts first, then
+    // re-apply so the same rules fire here as in the cart flow.
+    (async () => {
+      const nonGiftOnly = validItems.filter((i) => !i.isFreeGift);
+      const withGifts = await applyGiftsToItems(nonGiftOnly);
+      // Only update if eligibility changed (avoids unnecessary re-render)
+      const newGiftIds  = withGifts.filter((i) => i.isFreeGift).map((i) => i._giftId).sort().join(",");
+      const prevGiftIds = validItems.filter((i) => i.isFreeGift).map((i) => i._giftId).sort().join(",");
+      if (newGiftIds !== prevGiftIds) {
+        setCartItems(withGifts);
+        localStorage.setItem("buyNow", JSON.stringify(withGifts));
+      }
+    })();
+
     // Restore saved promo (client-only to avoid hydration mismatch)
     try {
       const savedPromo = JSON.parse(localStorage.getItem("promoCode") || "null");
@@ -341,17 +358,50 @@ export default function CheckoutAddressPage() {
     if (errors[key]) setErrors((e) => ({ ...e, [key]: null }));
   };
 
+  // ── Shared helper: persist items to buyNow + sync non-gift items to cart ──
+  const persistItems = (items) => {
+    localStorage.setItem("buyNow", JSON.stringify(items));
+    // Keep cart key in sync so back-navigation shows the correct state
+    const nonGift = items.filter((i) => !i.isFreeGift);
+    localStorage.setItem("cart", JSON.stringify(nonGift));
+    window.dispatchEvent(new Event("cartUpdated"));
+  };
+
+  // ── Shared helper: recalculate gifts after a paid-item mutation ────────────
+  const recalcGifts = async (paidItems) => {
+    const withGifts = await applyGiftsToItems(paidItems);
+    const newGiftIds  = withGifts.filter((i) => i.isFreeGift).map((i) => i._giftId).sort().join(",");
+    const prevGiftIds = cartItems.filter((i) => i.isFreeGift).map((i) => i._giftId).sort().join(",");
+    if (newGiftIds !== prevGiftIds) {
+      setCartItems(withGifts);
+      persistItems(withGifts);
+    }
+  };
+
   const updateQty = (index, newQty) => {
     if (newQty < 1) return;
+    if (cartItems[index]?.isFreeGift) return;
     const updated = cartItems.map((item, i) => (i === index ? { ...item, quantity: newQty } : item));
     setCartItems(updated);
-    localStorage.setItem("buyNow", JSON.stringify(updated));
+    persistItems(updated);
+    // Re-evaluate gift eligibility (subtotal changed)
+    recalcGifts(updated.filter((i) => !i.isFreeGift));
   };
 
   const removeItem = (index) => {
-    const updated = cartItems.filter((_, i) => i !== index);
-    setCartItems(updated);
-    localStorage.setItem("buyNow", JSON.stringify(updated));
+    const removedItem = cartItems[index];
+    // Never allow removing a free-gift item directly
+    if (removedItem?.isFreeGift) return;
+    const afterRemoval = cartItems.filter((_, i) => i !== index);
+    const paidRemaining = afterRemoval.filter((i) => !i.isFreeGift);
+    // If no paid items remain, strip all gifts immediately — cannot order gifts alone
+    const safeItems = paidRemaining.length > 0 ? afterRemoval : [];
+    setCartItems(safeItems);
+    persistItems(safeItems);
+    // Re-evaluate gift eligibility only when paid items still exist
+    if (paidRemaining.length > 0) {
+      recalcGifts(paidRemaining);
+    }
   };
 
   const handleShippingSelect = (company) => {
@@ -446,16 +496,6 @@ export default function CheckoutAddressPage() {
     <div className="min-h-screen bg-gray-50">
       <FunnelTracker event="checkout_start" />
 
-      {/* ── Top bar ── */}
-      <div className="bg-white border-b border-gray-100 sticky top-0 z-10">
-        <div className="max-w-lg mx-auto px-4 py-3 flex items-center justify-between">
-          <Link href="/" className="flex items-center gap-1.5 text-gray-500 hover:text-gray-700 text-sm transition-colors">
-            <Home className="w-4 h-4" /> {t("checkout_home")}
-          </Link>
-          <span className="text-sm font-bold text-gray-900">{t("checkout_title")}</span>
-          <div className="w-16" />
-        </div>
-      </div>
 
       <div className="max-w-lg mx-auto px-4 py-6">
         <StepsBar />

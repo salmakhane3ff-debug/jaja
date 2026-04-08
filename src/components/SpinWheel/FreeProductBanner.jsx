@@ -48,7 +48,7 @@ export default function FreeProductBanner() {
     if (adding) return;
     setAdding(true);
     try {
-      const res  = await fetch(`/api/product/${r.productId}`);
+      const res  = await fetch(`/api/products/${r.productId}`);
       const prod = await res.json();
       if (!prod?._id) throw new Error("not found");
 

@@ -13,6 +13,7 @@ import { useCart } from "@/hooks/useCart";
 import { useUIControl } from "@/hooks/useUIControl";
 import { useLanguage } from "@/context/LanguageContext";
 import { useSetting } from "@/context/SettingsContext";
+import { applyGiftsToItems } from "@/lib/giftUtils";
 import { useProductScarcity } from "@/hooks/useProductScarcity";
 import { useDiscountRules } from "@/hooks/useDiscountRules";
 
@@ -51,9 +52,21 @@ export default function Product({ data }) {
     convRaw ? (convRaw?.randomStockBar?.enabled !== false) : true
   ), [convRaw]);
 
+  // ── Bundle & Save — parse product bundles once ────────────────────────────
+  const bundles = useMemo(() => {
+    const raw = data.bundles;
+    if (Array.isArray(raw) && raw.length > 0) return raw;
+    if (typeof raw === "string") {
+      try { const p = JSON.parse(raw); return Array.isArray(p) ? p : []; } catch { return []; }
+    }
+    return [];
+  }, [data.bundles]);
+
   const [quantity, setQuantity] = useState(1);
   const [selectedSize, setSelectedSize] = useState(null);
   const [selectedColor, setSelectedColor] = useState(null);
+  // When bundles exist, track the selected bundle (default: first)
+  const [selectedBundle, setSelectedBundle] = useState(() => bundles[0] ?? null);
   const [wishlist, setWishlist] = useState([]);
   const [feedbackStats, setFeedbackStats] = useState({ avg: 0, count: 0 });
   const [globalStats, setGlobalStats] = useState({ avg: 0, count: 0 });
@@ -104,12 +117,24 @@ export default function Product({ data }) {
     else if (type === "decrement" && quantity > 1) setQuantity(quantity - 1);
   };
 
+  // Effective price per "unit" sent to cart/checkout:
+  //   • Bundle selected → bundle.price (the bundle is one "unit" in the cart)
+  //   • No bundle       → discount rule price or sale/regular price
+  const effectivePrice = selectedBundle
+    ? parseFloat(selectedBundle.price)
+    : parseFloat(discountRule ? discountRule.effectivePrice : (data.salePrice || data.regularPrice));
+
   const handleAddToCart = async () => {
-    await addToCart(data, quantity);
+    if (selectedBundle) {
+      // Inject bundle price — addToCart reads data.salePrice, so we pass a patched copy
+      await addToCart({ ...data, salePrice: selectedBundle.price, regularPrice: null }, quantity);
+    } else {
+      await addToCart(data, quantity);
+    }
   };
 
-  const handleBuyNow = () => {
-    const buyNowData = [
+  const handleBuyNow = async () => {
+    const baseItems = [
       {
         productId: data._id,
         title: data.title,
@@ -117,12 +142,14 @@ export default function Product({ data }) {
         color: selectedColor || null,
         size: selectedSize || null,
         image: data.images?.[0] || "",
-        price: parseFloat(discountRule ? discountRule.effectivePrice : (data.salePrice || data.regularPrice)),
+        price: effectivePrice,
         currency: "MAD",
       },
     ];
-    localStorage.setItem("buyNow", JSON.stringify(buyNowData));
-    window.location.href = "/checkout";
+    // Apply gift eligibility before navigating — same logic as cart flow
+    const withGifts = await applyGiftsToItems(baseItems);
+    localStorage.setItem("buyNow", JSON.stringify(withGifts));
+    window.location.href = "/checkout/address";
   };
 
   const handleWishlist = () => {
@@ -223,26 +250,113 @@ export default function Product({ data }) {
               })()}
             </div>
 
-            {/* Price */}
+            {/* Price — shows bundle price when a bundle is selected */}
             <div className="bg-gray-50 rounded-lg p-4">
-              {(discountRule || (data.salePrice && discount > 0)) && (
+              {!selectedBundle && (discountRule || (data.salePrice && discount > 0)) && (
                 <div className="mb-2">
                   <span className="bg-red-500 text-white px-2 py-1 rounded text-xs font-medium">
                     {discountRule ? discountRule.percentage : discount}% {t("product_off_percent")}
                   </span>
                 </div>
               )}
-              <div className="flex items-baseline gap-3 mb-2">
-                <span className="text-3xl font-bold text-gray-900">
-                  {formatPrice(discountRule ? discountRule.effectivePrice : (data.salePrice || data.regularPrice))}
-                </span>
-                {(discountRule || (data.salePrice && data.regularPrice)) && (
-                  <span className="text-sm text-gray-500 line-through">
-                    {formatPrice(discountRule ? discountRule.originalPrice : data.regularPrice)}
+              {selectedBundle ? (
+                /* Bundle-specific pricing */
+                <div className="flex items-baseline gap-3 mb-2">
+                  <span className="text-3xl font-bold text-gray-900">
+                    {formatPrice(selectedBundle.price)}
                   </span>
-                )}
-              </div>
+                  {selectedBundle.originalPrice && (
+                    <span className="text-sm text-gray-500 line-through">
+                      {formatPrice(selectedBundle.originalPrice)}
+                    </span>
+                  )}
+                  {selectedBundle.originalPrice && (
+                    <span className="bg-red-500 text-white px-2 py-1 rounded text-xs font-medium">
+                      {Math.round(((selectedBundle.originalPrice - selectedBundle.price) / selectedBundle.originalPrice) * 100)}% {t("product_off_percent")}
+                    </span>
+                  )}
+                </div>
+              ) : (
+                /* Normal single-unit pricing */
+                <div className="flex items-baseline gap-3 mb-2">
+                  <span className="text-3xl font-bold text-gray-900">
+                    {formatPrice(discountRule ? discountRule.effectivePrice : (data.salePrice || data.regularPrice))}
+                  </span>
+                  {(discountRule || (data.salePrice && data.regularPrice)) && (
+                    <span className="text-sm text-gray-500 line-through">
+                      {formatPrice(discountRule ? discountRule.originalPrice : data.regularPrice)}
+                    </span>
+                  )}
+                </div>
+              )}
             </div>
+
+            {/* ── Bundle & Save ── rendered only when the product has bundles ── */}
+            {bundles.length > 0 && (
+              <div className="space-y-2.5">
+                {/* Section header */}
+                <div className="flex items-center gap-2">
+                  <div className="flex-1 h-px bg-gray-200" />
+                  <span className="text-[11px] font-black text-gray-700 tracking-widest px-1">
+                    BUNDLE &amp; SAVE
+                  </span>
+                  <div className="flex-1 h-px bg-gray-200" />
+                </div>
+
+                {/* Bundle options */}
+                <div className="space-y-2">
+                  {bundles.map((bundle) => {
+                    const isSelected = selectedBundle?.id === bundle.id;
+                    return (
+                      <button
+                        key={bundle.id}
+                        type="button"
+                        onClick={() => setSelectedBundle(bundle)}
+                        className={`relative w-full flex items-center gap-3 px-3 py-3 rounded-xl border-2 text-left transition-all duration-150 ${
+                          isSelected
+                            ? "border-teal-600 bg-teal-50/50"
+                            : "border-gray-200 bg-white hover:border-gray-300"
+                        }`}
+                      >
+                        {/* Radio circle */}
+                        <div className={`shrink-0 w-5 h-5 rounded-full border-2 flex items-center justify-center transition-colors ${
+                          isSelected ? "border-teal-600" : "border-gray-300"
+                        }`}>
+                          {isSelected && <div className="w-2.5 h-2.5 rounded-full bg-teal-600" />}
+                        </div>
+
+                        {/* Label */}
+                        <div className="flex-1 text-sm font-semibold text-gray-900 flex items-center gap-2 flex-wrap min-w-0">
+                          <span className="truncate">{bundle.label}</span>
+                          {bundle.badge === "free_shipping" && (
+                            <span className="shrink-0 text-[10px] font-bold text-green-700 bg-green-50 border border-green-200 px-2 py-0.5 rounded-full">
+                              {t("bundle_free_shipping") || "Free Shipping"}
+                            </span>
+                          )}
+                        </div>
+
+                        {/* Price block */}
+                        <div className="shrink-0 text-right ml-1">
+                          <p className="text-sm font-bold text-gray-900">{formatPrice(bundle.price)}</p>
+                          {bundle.originalPrice && (
+                            <p className="text-xs text-gray-400 line-through leading-tight">
+                              {formatPrice(bundle.originalPrice)}
+                            </p>
+                          )}
+                        </div>
+
+                        {/* Most-popular badge — overhangs the card top edge */}
+                        {bundle.badge === "most_popular" && (
+                          <span className="absolute -top-3 right-3 text-[10px] font-black text-white bg-teal-600 px-3 py-0.5 rounded-full shadow-sm">
+                            {t("bundle_most_popular") || "Most popular"}
+                          </span>
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
 
             {/* ── Stock Progress Bar — controlled by /admin/conversion-optimization ── */}
             {scarcity && randomBarEnabled && (() => {

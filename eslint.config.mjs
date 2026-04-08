@@ -14,12 +14,24 @@ const eslintConfig = [
   // and unused vars that are intentional and outside our control.
   { ignores: ["src/generated/**"] },
   ...compat.extends("next/core-web-vitals", "next/typescript"),
-  // Downgrade unused-vars rules to warnings so pre-existing lib patterns
-  // (destructured _id, unused catch bindings, etc.) don't block the build.
+  // Suppress unused-vars noise for intentionally-ignored variables:
+  //   • Variables prefixed with _ (e.g. _id, _ctx) — destructured to exclude
+  //     them from a rest spread but not read directly.
+  //   • Catch-clause bindings (err, e) that are swallowed intentionally.
   {
     rules: {
-      "@typescript-eslint/no-unused-vars": "warn",
-      "no-unused-vars": "warn",
+      "no-unused-vars": ["warn", {
+        varsIgnorePattern: "^_",
+        argsIgnorePattern: "^_",
+        caughtErrorsIgnorePattern: "^_?err|^_?e$",
+        destructuredArrayIgnorePattern: "^_",
+      }],
+      "@typescript-eslint/no-unused-vars": ["warn", {
+        varsIgnorePattern: "^_",
+        argsIgnorePattern: "^_",
+        caughtErrorsIgnorePattern: "^_?err|^_?e$",
+        destructuredArrayIgnorePattern: "^_",
+      }],
     },
   },
 ];

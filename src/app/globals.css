@@ -144,6 +144,31 @@ body {
   display: none;
 }
 
+/* ─── Preloader animations ───────────────────────────────────────────────── */
+@keyframes pl-fade-img {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.15; }
+}
+.pl-fade-img { animation: pl-fade-img 1.2s ease-in-out infinite; }
+
+@keyframes pl-scale-img {
+  0%, 100% { transform: scale(1); }
+  50%       { transform: scale(1.15); }
+}
+.pl-scale-img { animation: pl-scale-img 1s ease-in-out infinite; }
+
+@keyframes pl-fadeout {
+  from { opacity: 1; }
+  to   { opacity: 0; }
+}
+.pl-fadeout { animation: pl-fadeout 0.5s ease forwards; }
+
+@keyframes pl-bounce-dot {
+  0%, 80%, 100% { transform: translateY(0); }
+  40%           { transform: translateY(-10px); }
+}
+.pl-dot { animation: pl-bounce-dot 0.9s ease-in-out infinite; }
+
 /* PERF: Full .prose typography block (~3 KB) removed from global CSS.
          Moved to src/app/prose.css — import it only in blog/offer/landing layouts.
          See: src/app/blog/layout.jsx, src/app/offer/[slug]/layout.jsx */

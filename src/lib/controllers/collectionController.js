@@ -10,7 +10,7 @@
 import {
   getAllCollections,
   getHomepageCollections,
-  getCollectionById,
+  getCollectionById as _getCollectionById,
   createCollection,
   updateCollection,
   deleteCollection,

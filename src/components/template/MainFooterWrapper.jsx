@@ -10,7 +10,8 @@ const MainFooterWrapper = () => {
     pathname === "/admin" ||
     pathname === "/login" ||
     pathname.startsWith("/admin/") ||
-    pathname.startsWith("/checkout/")
+    pathname.startsWith("/checkout/") ||
+    pathname.startsWith("/offer/")
   ) {
     return null;
   }

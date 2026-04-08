@@ -29,6 +29,18 @@ const FR_CITIES = ["Casablanca", "Rabat", "Marrakech", "Fès", "Tanger", "Agadir
 function rand(arr) { return arr[Math.floor(Math.random() * arr.length)]; }
 function randInt(min, max) { return Math.floor(Math.random() * (max - min + 1)) + min; }
 
+// Extract the first usable image URL from a product record
+function extractProductImage(product) {
+  const imgs = product?.images;
+  if (!imgs) return null;
+  if (typeof imgs === "string") return imgs;
+  if (Array.isArray(imgs) && imgs.length > 0) {
+    const first = imgs[0];
+    return first?.url || first?.src || (typeof first === "string" ? first : null);
+  }
+  return null;
+}
+
 // ── Default fallback (nothing enabled) ────────────────────────────────────────
 const DEFAULTS = {
   soldCounter:   { enabled: false, count: 7,  hours: 6 },
@@ -74,10 +86,12 @@ function StockBar({ sold, total, t }) {
  * other overlay so the notification is always fully readable.
  */
 function PurchasePopup({ settings, lang, dir, t }) {
-  const [visible, setVisible] = useState(false);
-  const [buyer,   setBuyer]   = useState({ name: "", city: "", mins: 5 });
-  const timerRef              = useRef(null);
-  const hideRef               = useRef(null);
+  const [visible,    setVisible]    = useState(false);
+  const [buyer,      setBuyer]      = useState({ name: "", city: "", mins: 5 });
+  const [popupImage, setPopupImage] = useState(null);   // current random product image
+  const timerRef   = useRef(null);
+  const hideRef    = useRef(null);
+  const imgPoolRef = useRef([]);   // pre-loaded image URLs — fetched once, never re-fetched
 
   const isRtl  = dir === "rtl";
   const names  = lang === "ar" ? AR_NAMES  : FR_NAMES;
@@ -88,10 +102,30 @@ function PurchasePopup({ settings, lang, dir, t }) {
   // LTR → sidebar on left  → popup on right  (bottom-6 right-4)
   const cornerClass = isRtl ? "bottom-6 left-4" : "bottom-6 right-4";
 
+  // Fetch product images ONCE on mount — store URLs in a ref so it never
+  // triggers a re-render and is never re-fetched on interval ticks.
+  useEffect(() => {
+    if (!settings.enabled) return;
+    fetch("/api/products")
+      .then((r) => r.ok ? r.json() : [])
+      .then((products) => {
+        if (!Array.isArray(products)) return;
+        const urls = products
+          .map(extractProductImage)
+          .filter(Boolean);           // drop nulls
+        imgPoolRef.current = urls;
+      })
+      .catch(() => {});               // silently ignore — falls back to emoji
+  }, [settings.enabled]);
+
   const showNext = () => {
     // Clear any pending hide timer before showing the next one
     clearTimeout(hideRef.current);
     setBuyer({ name: rand(names), city: rand(cities), mins: randInt(2, 30) });
+    // Pick a different random image from the pool on every popup show
+    if (imgPoolRef.current.length > 0) {
+      setPopupImage(rand(imgPoolRef.current));
+    }
     setVisible(true);
     // Auto-hide after 5 s
     hideRef.current = setTimeout(() => setVisible(false), 5000);
@@ -129,9 +163,21 @@ function PurchasePopup({ settings, lang, dir, t }) {
       `}</style>
 
       <div className="bg-white rounded-2xl shadow-2xl border border-gray-100 p-3 flex items-center gap-3 pointer-events-auto">
-        {/* Icon */}
-        <div className="w-10 h-10 rounded-full bg-green-100 flex items-center justify-center flex-shrink-0 text-xl select-none">
-          🛒
+        {/* Product image — falls back to cart emoji if pool is empty */}
+        <div className="w-10 h-10 rounded-full flex-shrink-0 overflow-hidden bg-gray-100">
+          {popupImage ? (
+            <img
+              src={popupImage}
+              alt=""
+              className="w-full h-full object-cover"
+              loading="eager"
+              draggable={false}
+            />
+          ) : (
+            <div className="w-full h-full bg-green-100 flex items-center justify-center text-xl select-none">
+              🛒
+            </div>
+          )}
         </div>
 
         {/* Text */}
@@ -156,6 +202,27 @@ function PurchasePopup({ settings, lang, dir, t }) {
       </div>
     </div>
   );
+}
+
+// ── Standalone popup — drop this anywhere outside the product page ─────────────
+/**
+ * PurchasePopupStandalone
+ * Self-contained: fetches its own conversion-settings and language.
+ * Use it on the home page, landing page, or any route that does not already
+ * render <ConversionBadges /> (which includes the popup internally).
+ */
+export function PurchasePopupStandalone() {
+  const { t, lang, dir }          = useLanguage();
+  const { data: rawCfg, loaded }  = useSetting("conversion-settings");
+
+  const settings = useMemo(() => {
+    if (!loaded) return null;
+    const src = (!rawCfg || rawCfg.error) ? {} : (rawCfg.purchasePopup || {});
+    return { ...DEFAULTS.purchasePopup, ...src };
+  }, [rawCfg, loaded]);
+
+  if (!settings) return null;
+  return <PurchasePopup settings={settings} lang={lang} dir={dir} t={t} />;
 }
 
 // ── Main component ─────────────────────────────────────────────────────────────

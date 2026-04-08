@@ -180,7 +180,7 @@ function ProductWinPopup({ winner, cartTotal, onAddToCart, onStartShopping, onCl
 
   useEffect(() => {
     if (!winner.productId) return;
-    fetch(`/api/product/${winner.productId}`)
+    fetch(`/api/products/${winner.productId}`)
       .then((r) => r.json())
       .then((d) => { if (d?._id) setProduct(d); })
       .catch(() => {});

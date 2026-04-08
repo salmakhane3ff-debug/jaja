@@ -186,6 +186,12 @@ export default function ConfirmPage() {
       setSubmitError(t("checkout_upload_required"));
       return;
     }
+    // HARD GUARD: block orders that contain only free gifts (price === 0)
+    const hasPaidItem = cartItems.some((i) => !i.isFreeGift && parseFloat(i.price) > 0);
+    if (!hasPaidItem || cartItems.length === 0) {
+      router.replace("/checkout/address");
+      return;
+    }
     setSubmitError("");
     setSubmitting(true);
 

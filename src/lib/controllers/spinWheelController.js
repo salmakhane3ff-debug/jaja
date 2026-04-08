@@ -19,7 +19,7 @@ import { badRequest, serverError } from '../utils/apiResponse.js';
 
 // ── GET /api/spin-wheel ───────────────────────────────────────────────────────
 
-export async function getSpinWheelHandler(req) {
+export async function getSpinWheelHandler(_req) {
   try {
     const stats = await getSpinStats();
     return Response.json(stats);

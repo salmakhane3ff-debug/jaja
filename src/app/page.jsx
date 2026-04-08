@@ -3,12 +3,14 @@
 import React, { useEffect, useState } from "react";
 import dynamic from "next/dynamic";
 import HomeSectionRenderer from "@/components/HomeBuilder/HomeSectionRenderer";
+import { PurchasePopupStandalone } from "@/components/ConversionBadges";
 
 // Above-fold components — imported normally so they appear in the initial bundle
 // and are server-side rendered (or hydrated immediately client-side).
 import Slider           from "@/components/Slider/Slider";
 import SliderCollection from "@/components/Colleaction/SliderCollection";
 import ProductGrid      from "@/components/Product/ProductGrid";
+import Container        from "@/components/Container";
 
 // PERF: Below-fold components — loaded with next/dynamic so their JS is only
 //       downloaded after the above-fold content has painted.
@@ -34,17 +36,19 @@ function DefaultHome({ topOfferBanner }) {
   return (
     <div className="pb-10 space-y-10 md:space-y-16">
       {topOfferBanner?.image && (
-        <a href={topOfferBanner.url || "#"} className="block">
-          <img
-            className="w-full md:h-[80px]"
-            src={topOfferBanner.image}
-            alt={topOfferBanner.title || "Top Offer"}
-          />
-        </a>
+        <Container>
+          <a href={topOfferBanner.url || "#"} className="block">
+            <img
+              className="w-full rounded-xl md:h-[80px] object-cover"
+              src={topOfferBanner.image}
+              alt={topOfferBanner.title || "Top Offer"}
+            />
+          </a>
+        </Container>
       )}
-      <div className="px-2 sm:px-4"><Slider /></div>
-      <SliderCollection />
-      <div className="px-4"><ProductGrid /></div>
+      <Container><Slider /></Container>
+      <Container><SliderCollection /></Container>
+      <Container><ProductGrid /></Container>
       {/* PERF: dynamic imports below — JS for these sections loads after LCP */}
       <HomeCollectionSections />
       <VideoReels />
@@ -85,8 +89,18 @@ export default function Home() {
 
   // Custom layout saved → pass sections as prop so HomeSectionRenderer
   // can skip its own duplicate fetch of homepage_layout.
-  if (layout !== null) return <HomeSectionRenderer sections={layout} />;
+  if (layout !== null) return (
+    <>
+      <HomeSectionRenderer sections={layout} />
+      <PurchasePopupStandalone />
+    </>
+  );
 
   // No custom layout → fallback
-  return <DefaultHome topOfferBanner={topOfferBanner} />;
+  return (
+    <>
+      <DefaultHome topOfferBanner={topOfferBanner} />
+      <PurchasePopupStandalone />
+    </>
+  );
 }

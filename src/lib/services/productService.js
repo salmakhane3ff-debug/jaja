@@ -30,6 +30,8 @@ const PRODUCT_COLUMNS = new Set([
   'sections',
   // ── Per-product conversion / scarcity ─────────────────────────────────────
   'conversionEnabled', 'conversionSold', 'conversionStock',
+  // ── Bundle & Save offers ───────────────────────────────────────────────────
+  'bundles',
   // feedbackCount is intentionally excluded — incremented by the feedback system
 ]);
 
@@ -132,6 +134,7 @@ export async function getAllProducts(statusFilter) {
     limitedTimeDeal: true,
     allowCOD: true, allowPrepaid: true,
     conversionEnabled: true, conversionSold: true, conversionStock: true,
+    bundles: true,
     createdAt: true,
   };
 

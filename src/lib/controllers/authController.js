@@ -15,7 +15,7 @@ import {
   updateUser,
 } from '../services/authService.js';
 import { mapUserProfile } from '../utils/mappers.js';
-import { badRequest, unauthorized, notFound, serverError } from '../utils/apiResponse.js';
+import { badRequest, unauthorized, notFound as _notFound, serverError } from '../utils/apiResponse.js';
 
 const COOKIE_MAX_AGE = 7 * 24 * 60 * 60; // 7 days in seconds
 

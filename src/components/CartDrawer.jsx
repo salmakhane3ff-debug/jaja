@@ -38,7 +38,7 @@ export default function CartDrawer({ isOpen, onClose }) {
 
     try {
       const [productsRes, giftsRes] = await Promise.all([
-        fetch("/api/product", { cache: "force-cache", next: { revalidate: 300 } }),
+        fetch("/api/products", { cache: "force-cache", next: { revalidate: 300 } }),
         fetch("/api/gifts"),
       ]);
       if (!productsRes.ok) throw new Error("Failed to fetch products");

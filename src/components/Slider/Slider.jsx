@@ -84,11 +84,7 @@ export default function StyleOne() {
   };
 
   if (isLoading) {
-    return (
-      <div className="w-full px-2 sm:px-4">
-        <Skeleton className="w-full h-[200px] md:h-[400px] lg:h-[500px] rounded-3xl" />
-      </div>
-    );
+    return <Skeleton className="w-full h-[200px] md:h-[400px] lg:h-[500px] rounded-3xl" />;
   }
 
   if (images.length === 0) {
@@ -97,9 +93,8 @@ export default function StyleOne() {
   }
 
   return (
-    <div className="w-full">
-      <div className="px-2 sm:px-4">
-        <div className="relative">
+    <div>
+      <div className="relative">
           <Swiper
             modules={[Autoplay, Pagination, Navigation]}
             slidesPerView={1}
@@ -216,7 +211,6 @@ export default function StyleOne() {
           {images.length > 1 && (
             <div className="slider-pagination flex justify-center mt-4" />
           )}
-        </div>
       </div>
 
       {/* Promo bar */}

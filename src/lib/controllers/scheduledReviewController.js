@@ -18,7 +18,7 @@ import { badRequest, notFound, serverError } from '../utils/apiResponse.js';
 
 // ── GET /api/scheduled-reviews ────────────────────────────────────────────────
 
-export async function getScheduledReviewsHandler(req) {
+export async function getScheduledReviewsHandler(_req) {
   try {
     const rows = await getScheduledReviews();
     return Response.json(rows);

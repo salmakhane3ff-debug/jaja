@@ -29,7 +29,7 @@ function AllProductsPage() {
   useEffect(() => {
     async function fetchProducts() {
       try {
-        const res = await fetch("/api/product", {
+        const res = await fetch("/api/products", {
           cache: "force-cache",
           next: { revalidate: 300 },
         });
@@ -203,7 +203,7 @@ function AllProductsPage() {
       </div>
 
       {loading ? (
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 md:gap-6 gap-3 px-4">
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3 md:gap-4 px-4">
           {Array.from({ length: 10 }).map((_, idx) => (
             <div key={idx} className="bg-white rounded-xl overflow-hidden">
               <Skeleton className="w-full aspect-square rounded-none" />
@@ -215,7 +215,7 @@ function AllProductsPage() {
           ))}
         </div>
       ) : (
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 md:gap-6 gap-3 px-4">
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3 md:gap-4 px-4">
           {filteredProducts.map((product) => {
             const discount      = calculateDiscount(product.regularPrice, product.salePrice);
             const discountRule  = getDiscount(product);

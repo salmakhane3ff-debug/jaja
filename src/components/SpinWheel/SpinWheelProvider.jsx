@@ -55,6 +55,8 @@ export default function SpinWheelProvider() {
   // Determine if we should show on this page / device
   const shouldShow = (cfg) => {
     if (!cfg?.isEnabled) return false;
+    // Never show on offer / landing pages — they are standalone conversion pages
+    if (pathname?.startsWith("/offer/")) return false;
     // Already spun this session
     if (sessionStorage.getItem("spinDone")) return false;
 

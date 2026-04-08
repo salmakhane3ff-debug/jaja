@@ -63,6 +63,8 @@ model Product {
   conversionEnabled Boolean           @default(false)
   conversionSold    Int?
   conversionStock   Int?
+  // ── Bundle & Save offers (optional, JSON array of bundle objects) ──────────
+  bundles           Json              @default("[]")
   feedbacks        Feedback[]
   orderItems       OrderItem[]
   analytics        ProductAnalytics?

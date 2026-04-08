@@ -133,7 +133,7 @@ export async function createOrder(body) {
   }
 
   // ── Parse body into Prisma-compatible fields ─────────────────────────────
-  const { _items, createdAt, updatedAt, ...orderData } = parseOrderBody(body);
+  const { _items, createdAt: _createdAt, updatedAt: _updatedAt, ...orderData } = parseOrderBody(body);
 
   const order = await prisma.order.create({
     data: {
@@ -144,9 +144,9 @@ export async function createOrder(body) {
           // productSnapshot captures title/images/variants at purchase time, so
           // order display never depends on the product row still existing.
           productId:       item.productId || item._id || null,
-          quantity:        item.quantity  || 1,
-          price:           item.price     || item.sellingPrice || 0,
-          regularPrice:    item.regularPrice || null,
+          quantity:        item.isFreeGift ? 1 : (item.quantity || 1),
+          price:           item.isFreeGift ? 0 : (item.price || item.sellingPrice || 0),
+          regularPrice:    item.isFreeGift ? 0 : (item.regularPrice || null),
           productSnapshot: {
             title:    item.title,
             images:   item.images   || [],
@@ -178,12 +178,12 @@ export async function createOrder(body) {
 export async function updateOrder(id, body) {
   // Pull out all known fields; ignore the rest
   const {
-    _id, id: bodyId,
+    _id, id: _bodyId,
     name, customerName,
     email, customerEmail,
     phone, customerPhone,
     shipping, shippingAddress,
-    products,
+    products: _products,
     paymentDetails,
     paymentMethod,
     paymentStatus,
@@ -194,8 +194,8 @@ export async function updateOrder(id, body) {
     affiliateId,
     campaignSource,
     userId,
-    createdAt,
-    updatedAt,
+    createdAt: _createdAt,
+    updatedAt: _updatedAt,
   } = body;
 
   const pymtDetails =
@@ -233,8 +233,8 @@ export async function updateOrder(id, body) {
   if (userId        !== undefined) data.userId    = userId;
 
   // Timestamp overrides (admin backdating)
-  if (createdAt !== undefined) data.createdAt = new Date(createdAt);
-  if (updatedAt !== undefined) data.updatedAt = new Date(updatedAt);
+  if (_createdAt !== undefined) data.createdAt = new Date(_createdAt);
+  if (_updatedAt !== undefined) data.updatedAt = new Date(_updatedAt);
 
   try {
     const order = await prisma.order.update({

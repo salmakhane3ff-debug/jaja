@@ -6,7 +6,12 @@ import { usePathname } from "next/navigation";
 const MainHeader = () => {
   const pathname = usePathname();
 
-  if (pathname === "/admin" || pathname === "/login" || pathname.startsWith("/admin/")) {
+  if (
+    pathname === "/admin" ||
+    pathname === "/login" ||
+    pathname.startsWith("/admin/") ||
+    pathname.startsWith("/offer/")
+  ) {
     return null;
   }
 

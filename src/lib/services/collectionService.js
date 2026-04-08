@@ -68,7 +68,7 @@ export async function createCollection(body) {
  */
 export async function updateCollection(id, body) {
   const {
-    _id, id: bodyId, createdAt, updatedAt,
+    _id, id: _bodyId, createdAt: _createdAt, updatedAt: _updatedAt,
     title, description, image, banner, slug,
     isActive, showOnHomepage, homepageOrder, homepageProductLimit,
   } = body ?? {};

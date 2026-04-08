@@ -54,6 +54,7 @@ const BLOCK_TYPES = [
   { type: "orderForm",    label: "Order Form (COD)",  emoji: "🧾", color: "bg-green-50  text-green-700  border-green-200"  },
   { type: "upsell",       label: "Upsell",            emoji: "💰", color: "bg-amber-50  text-amber-700  border-amber-200"  },
   { type: "feedbackBlock",label: "Feedback Block",    emoji: "💬", color: "bg-rose-50   text-rose-700   border-rose-200"   },
+  { type: "menu",         label: "Menu / Navbar",     emoji: "🧭", color: "bg-slate-50  text-slate-700  border-slate-200"  },
 ];
 
 function blockMeta(type) {
@@ -89,6 +90,7 @@ function defaultConfig(type) {
     case "orderForm":     return { productId: "", buttonText: "اطلب الآن", showAddress: true, successMessage: "تم استلام طلبك بنجاح! 🎉 سنتصل بك قريباً" };
     case "upsell":        return { productId: "", discountPrice: "", title: "عرض خاص — أضفه لطلبك", description: "" };
     case "feedbackBlock": return { title: "آراء عملائنا الحقيقيين", productId: "", showImages: true, showVoice: true, limit: 6 };
+    case "menu":          return { logoText: "اسم المتجر", logoImage: "", links: [{ label: "الرئيسية", url: "/" }, { label: "تواصل معنا", url: "#contact" }], bgColor: "#ffffff", textColor: "#111827", sticky: false };
     default:            return {};
   }
 }
@@ -740,6 +742,47 @@ function BlockSettingsForm({ block, onUpdate }) {
       </div>
     );
 
+    case "menu": return (
+      <div className="space-y-3">
+        <p className="text-xs text-gray-500">Optional top navbar — appears once at the top of the page.</p>
+        <FieldRow label="Logo text">
+          <TextInput value={cfg.logoText} onChange={(v) => set("logoText", v)} placeholder="اسم المتجر" />
+        </FieldRow>
+        <FieldRow label="Logo image URL (overrides text)">
+          <TextInput value={cfg.logoImage} onChange={(v) => set("logoImage", v)} placeholder="https://…" />
+          <UploadImageButton onUploaded={(u) => set("logoImage", u)} label="Upload logo" />
+        </FieldRow>
+        <FieldRow label="Nav links">
+          <ArrayItemEditor
+            items={cfg.links || []}
+            onChange={(links) => set("links", links)}
+            createEmpty={() => ({ label: "رابط", url: "/" })}
+            renderItem={(item, upd) => (
+              <div className="grid grid-cols-2 gap-1">
+                <TextInput value={item.label} onChange={(v) => upd({ ...item, label: v })} placeholder="Label" />
+                <TextInput value={item.url}   onChange={(v) => upd({ ...item, url: v })}   placeholder="URL or #section" />
+              </div>
+            )}
+          />
+        </FieldRow>
+        <div className="grid grid-cols-2 gap-2">
+          <FieldRow label="Background">
+            <div className="flex gap-2 items-center">
+              <input type="color" value={cfg.bgColor || "#ffffff"} onChange={(e) => set("bgColor", e.target.value)} className="w-8 h-7 rounded border border-gray-200 cursor-pointer" />
+              <TextInput value={cfg.bgColor} onChange={(v) => set("bgColor", v)} className="flex-1" />
+            </div>
+          </FieldRow>
+          <FieldRow label="Text color">
+            <div className="flex gap-2 items-center">
+              <input type="color" value={cfg.textColor || "#111827"} onChange={(e) => set("textColor", e.target.value)} className="w-8 h-7 rounded border border-gray-200 cursor-pointer" />
+              <TextInput value={cfg.textColor} onChange={(v) => set("textColor", v)} className="flex-1" />
+            </div>
+          </FieldRow>
+        </div>
+        <Toggle checked={!!cfg.sticky} onChange={(v) => set("sticky", v)} label="Sticky (stays at top on scroll)" />
+      </div>
+    );
+
     default: return <p className="text-xs text-gray-400 italic">No settings for this block type.</p>;
   }
 }
@@ -940,6 +983,8 @@ function BlockMiniPreview({ block }) {
       return <div className="flex items-center gap-2 h-10 bg-amber-50 rounded-lg px-2 text-[9px] text-amber-700">💰 {cfg.title || "Upsell offer"}</div>;
     case "feedbackBlock":
       return <div className="flex items-center gap-1 text-[9px] text-rose-700">💬 {cfg.title || "Customer Feedback"} · max {cfg.limit || 6}</div>;
+    case "menu":
+      return <div className="flex items-center gap-2 h-8 bg-white rounded-lg border border-gray-100 px-2 text-[9px] text-gray-700">🧭 {cfg.logoText || "Menu"}{cfg.sticky ? " · sticky" : ""}</div>;
     default:
       return null;
   }
@@ -1138,7 +1183,7 @@ export default function BuilderPage() {
     if (!id) return;
     Promise.all([
       fetch(`/api/landing-page?id=${id}`).then((r) => r.json()),
-      fetch("/api/product?status=all").then((r) => r.json()),
+      fetch("/api/products?status=all").then((r) => r.json()),
     ]).then(([lp, prods]) => {
       if (lp && !lp.error) {
         setLandingPage(lp);

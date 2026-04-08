@@ -325,7 +325,7 @@ function ShoppableVideosTab() {
 
   // Fetch products on mount
   useEffect(() => {
-    fetch("/api/product?status=Active")
+    fetch("/api/products?status=Active")
       .then(r => r.json())
       .then(d => setProducts(Array.isArray(d) ? d : []))
       .catch(() => {});
@@ -648,7 +648,7 @@ function BeforeAfterTab() {
   useEffect(() => { fetchItems(); }, []);
 
   useEffect(() => {
-    fetch("/api/product?status=Active&limit=200")
+    fetch("/api/products?status=Active&limit=200")
       .then(r => r.json())
       .then(d => setProducts(Array.isArray(d) ? d : d.products || []))
       .catch(() => {});

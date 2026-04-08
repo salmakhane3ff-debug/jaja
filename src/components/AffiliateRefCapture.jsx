@@ -18,7 +18,7 @@
  *                 → track click (if page is trackable)
  *
  * Click tracking rules (prevents overcounting):
- *  - Only tracked on "/" and "/product/*" pages
+ *  - Only tracked on "/" and "/products/*" pages
  *  - One click per page per browser session (sessionStorage dedup)
  *  - Minimum 10 seconds between any two tracked clicks (throttle)
  *
@@ -103,14 +103,14 @@ export default function AffiliateRefCapture() {
 // ── Click tracking helpers ────────────────────────────────────────────────────
 
 /**
- * Only track clicks on "/" and "/product/*".
+ * Only track clicks on "/" and "/products/*".
  * Applies sessionStorage dedup (one click per page per session) and
  * a 10-second global throttle to prevent burst overcounting.
  */
 function maybeTrackClick(affiliateId, pathname) {
   try {
     // 1. Page filter — only home and product pages
-    const isTrackable = pathname === "/" || pathname.startsWith("/product/");
+    const isTrackable = pathname === "/" || pathname.startsWith("/products/");
     if (!isTrackable) return;
 
     // 2. Per-page dedup — one tracked click per page per session

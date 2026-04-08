@@ -18,7 +18,7 @@ export default function DashboardPage() {
 
   const fetchAnalytics = async () => {
     try {
-      const [ordersRes, productsRes] = await Promise.all([fetch("/api/order"), fetch("/api/product")]);
+      const [ordersRes, productsRes] = await Promise.all([fetch("/api/order"), fetch("/api/products")]);
       const ordersData = await ordersRes.json();
       const productsData = await productsRes.json();
 
