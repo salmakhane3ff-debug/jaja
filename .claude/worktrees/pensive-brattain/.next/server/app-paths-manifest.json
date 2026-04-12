@@ -1,0 +1,12 @@
+{
+  "/api/affiliate/ref/[username]/route": "app/api/affiliate/ref/[username]/route.js",
+  "/api/collection/route": "app/api/collection/route.js",
+  "/api/data/route": "app/api/data/route.js",
+  "/api/gifts/route": "app/api/gifts/route.js",
+  "/api/products/route": "app/api/products/route.js",
+  "/api/setting/route": "app/api/setting/route.js",
+  "/api/spin-wheel-config/route": "app/api/spin-wheel-config/route.js",
+  "/api/ui-control/route": "app/api/ui-control/route.js",
+  "/favicon.ico/route": "app/favicon.ico/route.js",
+  "/page": "app/page.js"
+}

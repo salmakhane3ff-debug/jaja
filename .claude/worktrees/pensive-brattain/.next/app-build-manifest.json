@@ -1,0 +1,40 @@
+{
+  "pages": {
+    "/page": [
+      "static/chunks/node_modules_next_dist_8db7fb1f._.js",
+      "static/chunks/_claude_worktrees_pensive-brattain_src_app_favicon_ico_mjs_81c8b166._.js",
+      "static/chunks/[root-of-the-server]__07d6926a._.css",
+      "static/chunks/_c3d479d1._.js",
+      "static/chunks/_claude_worktrees_pensive-brattain_src_446a198b._.js",
+      "static/chunks/node_modules_@react-aria_interactions_dist_30dcfbfe._.js",
+      "static/chunks/node_modules_framer-motion_dist_es_0c4a050c._.js",
+      "static/chunks/node_modules_lucide-react_dist_esm_82001c2f._.js",
+      "static/chunks/node_modules_react-icons_ri_index_mjs_150b4c77._.js",
+      "static/chunks/node_modules_react-icons_io5_index_mjs_9bce8f6c._.js",
+      "static/chunks/node_modules_react-icons_lib_844c6c50._.js",
+      "static/chunks/node_modules_88618560._.js",
+      "static/chunks/_claude_worktrees_pensive-brattain_src_app_layout_jsx_0a548d63._.js",
+      "static/chunks/node_modules_next_dist_client_components_builtin_global-error_7ecfb1c3.js",
+      "static/chunks/_claude_worktrees_pensive-brattain_src_components_e6f9d703._.js",
+      "static/chunks/_claude_worktrees_pensive-brattain_src_793c3e8a._.js",
+      "static/chunks/node_modules_next_48604ca0._.js",
+      "static/chunks/node_modules_swiper_b27aed52._.js",
+      "static/chunks/node_modules_lucide-react_dist_esm_icons_index_6b37bdeb.js",
+      "static/chunks/node_modules_lucide-react_dist_esm_icons_5c330e67._.js",
+      "static/chunks/node_modules_lucide-react_dist_esm_lucide-react_78492e78.js",
+      "static/chunks/node_modules_lucide-react_dist_esm_lucide-react_10100a17.js",
+      "static/chunks/node_modules_c674e75c._.js",
+      "static/chunks/node_modules_swiper_1cc27f2c._.css",
+      "static/chunks/_claude_worktrees_pensive-brattain_src_app_page_jsx_7ecfb1c3._.js",
+      "static/chunks/[turbopack]_browser_dev_hmr-client_hmr-client_ts_57d40746._.js",
+      "static/chunks/node_modules_next_dist_compiled_react-dom_1e674e59._.js",
+      "static/chunks/node_modules_next_dist_compiled_next-devtools_index_a9cb0712.js",
+      "static/chunks/node_modules_next_dist_compiled_5150ccfd._.js",
+      "static/chunks/node_modules_next_dist_client_cf1d9188._.js",
+      "static/chunks/node_modules_next_dist_b0daae9a._.js",
+      "static/chunks/node_modules_@swc_helpers_cjs_b3dc30d6._.js",
+      "static/chunks/_claude_worktrees_pensive-brattain_a0ff3932._.js",
+      "static/chunks/turbopack-_claude_worktrees_pensive-brattain_cdba956c._.js"
+    ]
+  }
+}
