@@ -90,9 +90,9 @@ const nextConfig: NextConfig = {
     //       Removing it enables automatic format conversion and responsive serving.
   },
 
-  // FIX: Pin the project root so Next.js doesn't pick up the stale
-  // package-lock.json at C:\Users\jhon\ and mis-report the workspace root.
-  outputFileTracingRoot: "C:/Users/jhon/Music/0000",
+  // FIX: Use process.cwd() so the path is always correct on any OS/server.
+  // The old hardcoded Windows path caused "/home/deploy/shop/C:/Users/..." on Linux.
+  outputFileTracingRoot: process.cwd(),
 
   experimental: {
     // PERF: Tree-shake heavy packages — only used symbols ship to the browser.
