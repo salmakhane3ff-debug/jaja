@@ -172,8 +172,8 @@
   "checkout_redirecting": "Redirection vers le paiement...",
 
   "checkout_cod_label": "Paiement à la livraison",
-  "checkout_cod_deposit_label": "Acompte maintenant + reste à la livraison",
-  "checkout_prepaid_label": "Paiement total anticipé",
+  "checkout_cod_deposit_label": "Payez maintenant + reste à la livraison",
+  "checkout_prepaid_label": "Paiement avant envoi",
   "checkout_pay_delivery_row": "Payer à la livraison",
   "checkout_pay_now_deposit_row": "💰 Payer maintenant (acompte)",
   "checkout_pay_delivery_row2": "📦 Payer à la livraison",

@@ -27,8 +27,21 @@ export async function getSettingsHandler(req) {
     const type = searchParams.get('type') || 'store';
 
     const data = await getSettings(type);
-    // Return an object that looks like the old Mongoose document
-    return Response.json({ ...data, _id: type });
+
+    // WHY: Store/payment/delivery settings are read on almost every page load but
+    // changed only occasionally by the admin. A 5-minute public cache cuts DB reads
+    // dramatically under real traffic. Admin POSTs to this endpoint so writes always
+    // bypass cache; the next GET after the TTL expires will fetch fresh data.
+    // Types that are security-sensitive (integrations = API keys) are never cached.
+    const publicTypes = new Set(['store', 'delivery', 'homepage_layout', 'ui-control',
+      'discount_rules', 'conversion_optimization', 'spin_wheel_config']);
+    const cacheHeader = publicTypes.has(type)
+      ? 'public, max-age=300, stale-while-revalidate=60'
+      : 'no-store';
+
+    return Response.json({ ...data, _id: type }, {
+      headers: { 'Cache-Control': cacheHeader },
+    });
   } catch (err) {
     console.error('Settings GET error:', err);
     return serverError('Failed to fetch settings');

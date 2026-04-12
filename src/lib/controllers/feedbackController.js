@@ -39,11 +39,19 @@ export async function getFeedbackHandler(req) {
 
     if (isAdmin) {
       const rows = await getAllFeedback({ status: statusFilter, productId });
-      return Response.json(rows);
+      return Response.json(rows, {
+        headers: { 'Cache-Control': 'no-store' },
+      });
     }
 
     const rows = await getPublicFeedback({ productId, featuredOnly });
-    return Response.json(rows);
+
+    // WHY: Public feedback is displayed on product pages and homepage. A 60-second
+    // cache eliminates redundant DB queries when multiple visitors hit the same page
+    // simultaneously (thundering herd on popular products).
+    return Response.json(rows, {
+      headers: { 'Cache-Control': 'public, max-age=60, stale-while-revalidate=30' },
+    });
   } catch (err) {
     console.error('Feedback GET error:', err);
     return serverError('Failed to fetch feedback');

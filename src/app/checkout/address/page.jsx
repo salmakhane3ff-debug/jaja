@@ -641,7 +641,7 @@ export default function CheckoutAddressPage() {
                     <div
                       key={company._id}
                       onClick={() => !isDepositDisabled && handleShippingSelect(company)}
-                      title={isDepositDisabled ? "هذا المنتج لا يدعم الدفع بالعربون" : ""}
+                      title={isDepositDisabled ? t("checkout_no_deposit_warning") : ""}
                       className={`relative rounded-2xl border-2 transition-all select-none overflow-hidden
                         ${isDepositDisabled
                           ? "opacity-50 cursor-not-allowed grayscale"
@@ -677,13 +677,13 @@ export default function CheckoutAddressPage() {
                             <div className="flex items-center gap-2 flex-wrap">
                               <span className="font-black text-gray-900 text-sm">{company.name}</span>
                               {company.paymentType === "cod" && (
-                                <span className="text-[10px] px-2 py-0.5 rounded-full font-bold bg-orange-100 text-orange-600">الدفع عند الاستلام</span>
+                                <span className="text-[10px] px-2 py-0.5 rounded-full font-bold bg-orange-100 text-orange-600">{t("checkout_cod_label")}</span>
                               )}
                               {company.paymentType === "cod_deposit" && (
-                                <span className="text-[10px] px-2 py-0.5 rounded-full font-bold bg-amber-100 text-amber-700">عربون + الباقي عند الاستلام</span>
+                                <span className="text-[10px] px-2 py-0.5 rounded-full font-bold bg-amber-100 text-amber-700">{t("checkout_cod_deposit_label")}</span>
                               )}
                               {company.paymentType === "prepaid" && (
-                                <span className="text-[10px] px-2 py-0.5 rounded-full font-bold bg-blue-100 text-blue-600">الدفع المسبق</span>
+                                <span className="text-[10px] px-2 py-0.5 rounded-full font-bold bg-blue-100 text-blue-600">{t("checkout_prepaid_label")}</span>
                               )}
                             </div>
                             {company.description && (

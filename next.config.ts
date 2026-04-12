@@ -62,8 +62,12 @@ const nextConfig: NextConfig = {
   },
 
   images: {
-    // PERF: Serve AVIF first (60-70% smaller than JPEG), WebP as fallback
-    formats: ["image/avif", "image/webp"],
+    // PERF: WebP only — AVIF encoding is 10x more CPU-intensive than WebP
+    // and caused 114% CPU usage on the VPS. WebP is still 30-40% smaller than JPEG.
+    formats: ["image/webp"],
+
+    // PERF: Cache converted images for 30 days to avoid repeated re-encoding on disk
+    minimumCacheTTL: 2592000,
 
     // PERF: Responsive image breakpoints aligned to Tailwind container widths
     deviceSizes: [640, 750, 828, 1080, 1200, 1920],

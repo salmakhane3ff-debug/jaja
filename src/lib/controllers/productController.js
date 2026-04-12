@@ -8,6 +8,7 @@
 
 import {
   getAllProducts,
+  getProductsByIds,
   getProductById,
   createProduct,
   updateProduct,
@@ -25,9 +26,31 @@ export async function getProductsHandler(req) {
   try {
     const { searchParams } = new URL(req.url);
     const statusFilter = searchParams.get('status') || null;
+    const idsParam     = searchParams.get('ids')    || null;
+
+    // Fast path: cart requests only need specific products by ID
+    if (idsParam) {
+      const ids = idsParam.split(',').filter(Boolean).slice(0, 100); // hard cap at 100
+      const products = await getProductsByIds(ids);
+      return Response.json(products, {
+        headers: { 'Cache-Control': 'public, max-age=120, stale-while-revalidate=60' },
+      });
+    }
 
     const products = await getAllProducts(statusFilter);
-    return Response.json(products);
+
+    // WHY: Public active-product list rarely changes; 5-min browser/CDN cache eliminates
+    // repeated DB round-trips on every page load. stale-while-revalidate lets the CDN
+    // serve the old response instantly while it fetches a fresh one in the background.
+    // Admin requests include ?status=all and are excluded from public caching.
+    const isPublic = !statusFilter || statusFilter === 'Active';
+    const cacheHeader = isPublic
+      ? 'public, max-age=300, stale-while-revalidate=60'
+      : 'no-store';
+
+    return Response.json(products, {
+      headers: { 'Cache-Control': cacheHeader },
+    });
   } catch (err) {
     console.error('Product GET error:', err);
     return serverError('Failed to fetch products');

@@ -29,7 +29,16 @@ export async function getShippingCompaniesHandler(req) {
       ? await getAllShippingCompanies()
       : await getActiveShippingCompanies();
 
-    return Response.json(rows);
+    // WHY: Shipping companies change very rarely (only when admin edits them).
+    // A 1-hour cache dramatically reduces DB load — every checkout page load
+    // was triggering a fresh DB query for data that almost never changes.
+    const cacheHeader = isAdmin
+      ? 'no-store'
+      : 'public, max-age=3600, stale-while-revalidate=300';
+
+    return Response.json(rows, {
+      headers: { 'Cache-Control': cacheHeader },
+    });
   } catch (err) {
     console.error('ShippingCompany GET error:', err);
     return serverError('Failed to fetch shipping companies');

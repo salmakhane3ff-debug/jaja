@@ -147,6 +147,42 @@ export async function getAllProducts(statusFilter) {
 }
 
 /**
+ * Fetch a set of products by their Prisma UUIDs.
+ * Used by the cart page so it only downloads the products it needs instead of
+ * fetching the entire catalogue and filtering client-side.
+ *
+ * WHY: Cart page was fetching ALL products (~4 MB JSON) then filtering 2-3 matches
+ *      in the browser. This replaces that with a targeted query returning only the
+ *      products in the cart (typically < 10 KB).
+ */
+export async function getProductsByIds(ids) {
+  if (!ids?.length) return [];
+
+  const LIST_SELECT = {
+    id: true, title: true, shortDescription: true,
+    regularPrice: true, salePrice: true,
+    images: true, collections: true,
+    sku: true, stockStatus: true, stockQuantity: true,
+    productLabel: true, tags: true, brand: true,
+    rating: true, ratingsCount: true, reviewsCount: true,
+    isActive: true, status: true,
+    redirectMode: true, redirectUrl: true,
+    limitedTimeDeal: true,
+    allowCOD: true, allowPrepaid: true,
+    conversionEnabled: true, conversionSold: true, conversionStock: true,
+    bundles: true,
+    createdAt: true,
+  };
+
+  const [products, storeSettings] = await Promise.all([
+    prisma.product.findMany({ where: { id: { in: ids } }, select: LIST_SELECT }),
+    getStoreSettings(),
+  ]);
+
+  return products.map((p) => mapProduct(p, storeSettings));
+}
+
+/**
  * Fetch a single product by its Prisma UUID.
  * Returns null if not found.
  */

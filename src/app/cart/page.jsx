@@ -37,16 +37,27 @@ export default function CartPage() {
 
     const fetchProducts = async () => {
       try {
-        const res = await fetch("/api/products", {
+        const cartProductIds = localCart
+          .map((item) => item.productId)
+          .filter(Boolean);
+
+        if (cartProductIds.length === 0) {
+          setProducts([]);
+          setLoading(false);
+          return;
+        }
+
+        // WHY: ?ids= fetches ONLY the products in the cart instead of the entire
+        // catalogue. Old approach downloaded ~4 MB of JSON then filtered 2-3 matches
+        // in the browser. This new approach downloads <10 KB for a typical cart.
+        const idsQuery = cartProductIds.join(',');
+        const res = await fetch(`/api/products?ids=${idsQuery}`, {
           cache: "force-cache",
-          next: { revalidate: 300 }
+          next: { revalidate: 120 },
         });
         if (!res.ok) throw new Error("Failed to fetch products");
 
-        const allProducts = await res.json();
-        const cartProductIds = localCart.map((item) => item.productId);
-        const matchedProducts = allProducts.filter((p) => cartProductIds.includes(p._id));
-
+        const matchedProducts = await res.json();
         setProducts(matchedProducts);
       } catch (error) {
         console.error("Error loading cart products:", error);

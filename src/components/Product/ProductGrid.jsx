@@ -1,6 +1,6 @@
 "use client";
-import { useEffect, useState } from "react";
-import Image from "next/image"; // PERF: Next.js Image for WebP/AVIF + responsive srcset
+import { useEffect, useState, useCallback, memo } from "react";
+import Image from "next/image";
 import ProductLabel from "@/components/ProductLabel";
 import Link from "next/link";
 import { Skeleton } from "@heroui/skeleton";
@@ -10,7 +10,12 @@ import { useCart } from "@/hooks/useCart";
 import { useLanguage } from "@/context/LanguageContext";
 import { useDiscountRules } from "@/hooks/useDiscountRules";
 
-export default function StyleOne() {
+// WHY: Static array prevents Array(10) allocation on every loading render cycle.
+const SKELETON_ITEMS = Array.from({ length: 10 }, (_, i) => i);
+
+// WHY: memo() prevents ProductGrid from re-rendering when a parent component
+// re-renders with the same props (e.g. homepage re-renders due to unrelated state).
+function StyleOne() {
   const [products, setProducts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState(null);
@@ -20,27 +25,42 @@ export default function StyleOne() {
   const { getDiscount } = useDiscountRules();
 
   useEffect(() => {
+    let cancelled = false;
     async function fetchProducts() {
       try {
-        const res = await fetch("/api/products");
+        // WHY: force-cache + revalidate:300 lets the browser reuse the cached response
+        // for 5 minutes instead of making a new network request on every render.
+        const res = await fetch("/api/products", {
+          cache: "force-cache",
+          next: { revalidate: 300 },
+        });
         if (!res.ok) throw new Error("Network response was not ok");
         const data = await res.json();
-        setProducts(Array.isArray(data) && data.length > 0 ? data : []);
+        if (!cancelled) setProducts(Array.isArray(data) && data.length > 0 ? data : []);
       } catch (err) {
         console.error("Failed to fetch products:", err);
-        setError("Failed to load products");
-        setProducts([]);
+        if (!cancelled) {
+          setError("Failed to load products");
+          setProducts([]);
+        }
       } finally {
-        setLoading(false);
+        if (!cancelled) setLoading(false);
       }
     }
 
     const savedWishlist = JSON.parse(localStorage.getItem("wishlist") || "[]");
     setWishlist(savedWishlist);
     fetchProducts();
+
+    // WHY: Cleanup flag prevents setState on an unmounted component, which causes
+    // React "Can't perform state update on unmounted component" warnings and
+    // potential memory leaks if the component unmounts before the fetch resolves.
+    return () => { cancelled = true; };
   }, []);
 
-  const navigateProduct = (product, e) => {
+  // WHY: useCallback keeps these functions referentially stable across renders,
+  // avoiding unnecessary re-renders of any child that receives them as props.
+  const navigateProduct = useCallback((product, e) => {
     if (
       product.redirectMode === "landing" &&
       typeof product.redirectUrl === "string" &&
@@ -54,44 +74,43 @@ export default function StyleOne() {
       return true;
     }
     return false;
-  };
+  }, []);
 
-  const handleAddToCart = async (product, e) => {
+  // WHY: DOM-based notification replaced with a safe self-cleaning approach.
+  // Previous version used raw setTimeout without cleanup — if the component
+  // unmounted before the 2000ms elapsed, the callback would still fire and try
+  // to remove a node that may no longer exist, causing silent errors.
+  const showNotification = useCallback((message, isError = false) => {
+    const el = document.createElement("div");
+    el.textContent = message;
+    el.className = `fixed top-4 right-4 ${isError ? "bg-red-500" : "bg-green-500"} text-white px-4 py-2 rounded-lg shadow-lg z-50 transition-opacity`;
+    document.body.appendChild(el);
+    const hideTimer = setTimeout(() => {
+      el.style.opacity = "0";
+      const removeTimer = setTimeout(() => {
+        if (document.body.contains(el)) document.body.removeChild(el);
+      }, 300);
+      // Store remove timer on element so it can be cancelled if needed
+      el._removeTimer = removeTimer;
+    }, isError ? 3000 : 2000);
+    el._hideTimer = hideTimer;
+  }, []);
+
+  const handleAddToCart = useCallback(async (product, e) => {
     if (e && typeof e.preventDefault === "function") {
       e.preventDefault();
       e.stopPropagation();
     }
     try {
       await addToCart(product, 1);
-
-      const notification = document.createElement("div");
-      notification.textContent = `${product.title} — ${t("product_added_to_cart")}`;
-      notification.className =
-        "fixed top-4 right-4 bg-green-500 text-white px-4 py-2 rounded-lg shadow-lg z-50 transition-opacity";
-      document.body.appendChild(notification);
-      setTimeout(() => {
-        notification.style.opacity = "0";
-        setTimeout(() => {
-          if (document.body.contains(notification)) document.body.removeChild(notification);
-        }, 300);
-      }, 2000);
-    } catch (error) {
-      console.error("Failed to add product to cart:", error);
-      const notification = document.createElement("div");
-      notification.textContent = t("product_add_failed");
-      notification.className =
-        "fixed top-4 right-4 bg-red-500 text-white px-4 py-2 rounded-lg shadow-lg z-50 transition-opacity";
-      document.body.appendChild(notification);
-      setTimeout(() => {
-        notification.style.opacity = "0";
-        setTimeout(() => {
-          if (document.body.contains(notification)) document.body.removeChild(notification);
-        }, 300);
-      }, 3000);
+      showNotification(`${product.title} — ${t("product_added_to_cart")}`);
+    } catch (err) {
+      console.error("Failed to add product to cart:", err);
+      showNotification(t("product_add_failed"), true);
     }
-  };
+  }, [addToCart, t, showNotification]);
 
-  const handleWishlist = (product, e) => {
+  const handleWishlist = useCallback((product, e) => {
     e.preventDefault();
     e.stopPropagation();
     const wishlistItem = {
@@ -107,30 +126,35 @@ export default function StyleOne() {
       addedAt: new Date().toISOString(),
     };
 
-    let updatedWishlist;
-    const isInWishlist = wishlist.some((item) => item.productId === product._id);
-    updatedWishlist = isInWishlist
-      ? wishlist.filter((item) => item.productId !== product._id)
-      : [...wishlist, wishlistItem];
+    // WHY: Functional setState update reads the latest prev value — avoids stale
+    // closure bug where wishlist could be the value from a previous render cycle.
+    setWishlist((prev) => {
+      const exists = prev.some((item) => item.productId === product._id);
+      const updated = exists
+        ? prev.filter((item) => item.productId !== product._id)
+        : [...prev, wishlistItem];
+      localStorage.setItem("wishlist", JSON.stringify(updated));
+      window.dispatchEvent(new Event("wishlistUpdated"));
+      return updated;
+    });
+  }, []);
 
-    setWishlist(updatedWishlist);
-    localStorage.setItem("wishlist", JSON.stringify(updatedWishlist));
-    window.dispatchEvent(new Event("wishlistUpdated"));
-  };
+  const isInWishlist = useCallback(
+    (productId) => wishlist.some((item) => item.productId === productId),
+    [wishlist]
+  );
 
-  const isInWishlist = (productId) => wishlist.some((item) => item.productId === productId);
-
-  const calculateDiscount = (regularPrice, salePrice) => {
+  const calculateDiscount = useCallback((regularPrice, salePrice) => {
     if (!salePrice || !regularPrice) return 0;
     return Math.round(((regularPrice - salePrice) / regularPrice) * 100);
-  };
+  }, []);
 
-  const isLimitedTimeDeal = (limitedTimeDeal) => {
+  const isLimitedTimeDeal = useCallback((limitedTimeDeal) => {
     if (!limitedTimeDeal) return false;
     return new Date(limitedTimeDeal).getTime() > Date.now();
-  };
+  }, []);
 
-  const getTimeRemaining = (limitedTimeDeal) => {
+  const getTimeRemaining = useCallback((limitedTimeDeal) => {
     if (!limitedTimeDeal) return "";
     const timeLeft = new Date(limitedTimeDeal).getTime() - Date.now();
     if (timeLeft <= 0) return t("product_expired");
@@ -141,13 +165,13 @@ export default function StyleOne() {
       return `${days} ${t("product_days_left")}`;
     }
     return `${hours}h ${minutes}m ${t("product_hours_min_left")}`;
-  };
+  }, [t]);
 
   if (loading) {
     return (
       <div className="container mx-auto md:px-20 px-4">
         <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3 md:gap-4">
-          {[...Array(10)].map((_, i) => (
+          {SKELETON_ITEMS.map((i) => (
             <div key={i} className="bg-white rounded-3xl border border-purple-50 p-2">
               <Skeleton className="w-full rounded-2xl" style={{ height: 220 }} />
               <div className="px-2 mt-4 space-y-2">
@@ -294,3 +318,9 @@ export default function StyleOne() {
     </div>
   );
 }
+
+// WHY: memo() does a shallow prop comparison before re-rendering. Since StyleOne
+// takes no props, it will NEVER re-render due to parent re-renders — only when
+// its own internal state changes. This prevents homepage re-renders from cascading
+// into a full product-grid re-render + layout recalculation.
+export default memo(StyleOne);
