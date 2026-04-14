@@ -131,31 +131,31 @@ function CartItemCard({ item, onQtyChange, onRemove, formatPrice = (v) => `${v} 
   // Free gift item
   if (item.isFreeGift) {
     return (
-      <div className="flex gap-3 p-3 bg-green-50 border border-green-200 rounded-xl sm:rounded-2xl">
+      <div className="flex gap-3 p-3 bg-[#f3f0ff] border-2 border-[#6e57b2] rounded-xl sm:rounded-2xl">
         <div className="flex-shrink-0">
-          <div className="relative w-16 h-16 rounded-lg overflow-hidden bg-white border border-green-200">
+          <div className="relative w-16 h-16 rounded-lg overflow-hidden bg-white border border-[#b8a9e8]">
             {item.image
               ? <img src={item.image} alt={item.title} className="w-full h-full object-cover" />
-              : <div className="w-full h-full flex items-center justify-center bg-gray-100"><Package className="w-6 h-6 text-gray-300" /></div>}
-            <div className="absolute inset-x-0 bottom-0 bg-green-500 text-white text-[9px] font-black text-center py-0.5">
-              {t("checkout_free_badge")}
+              : <div className="w-full h-full flex items-center justify-center bg-[#f3f0ff]"><span className="text-2xl">🎁</span></div>}
+            <div className="absolute inset-x-0 bottom-0 bg-[#6e57b2] text-white text-[9px] font-black text-center py-0.5">
+              GRATUIT
             </div>
           </div>
         </div>
         <div className="flex-1 min-w-0">
-          <div className="inline-flex items-center gap-1 bg-green-100 text-green-700 text-[10px] font-black px-2 py-0.5 rounded-full mb-1 border border-green-200">
-            {t("checkout_free_gift_tag")}
+          <div className="inline-flex items-center gap-1 bg-[#6e57b2] text-white text-[10px] font-black px-2 py-0.5 rounded-full mb-1">
+            🎁 + 1 article GRATUIT
           </div>
           <h4 className="text-xs sm:text-sm font-medium text-gray-900 line-clamp-2 leading-tight">{item.title}</h4>
           <div className="mt-1.5 flex items-center gap-2">
-            <span className="text-sm font-black text-green-600">{t("checkout_free_word")}</span>
+            <span className="text-sm font-black text-[#6e57b2]">GRATUIT</span>
             <span className="text-[10px] text-gray-400 bg-white border border-gray-200 rounded-full px-2 py-0.5">
               {t("checkout_qty_label").replace("{n}", item.quantity)}
             </span>
           </div>
         </div>
         <div className="flex-shrink-0 flex items-start pt-1">
-          <span className="text-sm font-black text-green-600">{formatPrice(0)}</span>
+          <span className="text-sm font-black text-[#6e57b2]">0 MAD</span>
         </div>
       </div>
     );

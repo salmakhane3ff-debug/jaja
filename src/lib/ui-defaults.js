@@ -1,6 +1,7 @@
 /** Canonical UI Control defaults — shared between API route and Context. */
 export const UI_DEFAULTS = {
   showSpecialOffer:      true,
+  specialOfferSlug:      "",
   showWishlistButton:    true,
   showShareButton:       true,
   showAddToCartButton:   true,

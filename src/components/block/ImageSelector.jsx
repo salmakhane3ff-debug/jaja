@@ -5,19 +5,80 @@ import { Modal, ModalContent, ModalHeader, ModalBody, ModalFooter } from "@herou
 import { Button, Spinner } from "@heroui/react";
 import { FaCheckCircle } from "react-icons/fa";
 
+// ── Detect video URLs ─────────────────────────────────────────────────────────
+function isVideo(url = "") {
+  const u = url.toLowerCase().split("?")[0];
+  return (
+    url.startsWith("data:video/") ||
+    /\.(mp4|webm|ogg|mov|m4v|avi|mkv)$/.test(u) ||
+    u.includes("/video/upload/") ||
+    u.includes("/videos/")
+  );
+}
+
+// ── Media thumbnail: image OR video preview ───────────────────────────────────
+function MediaThumb({ url, alt, onClick, isSelected }) {
+  const video = isVideo(url);
+  return (
+    <div
+      onClick={onClick}
+      className="relative w-full h-[150px] rounded-lg overflow-hidden cursor-pointer bg-gray-100"
+    >
+      {video ? (
+        <>
+          <video
+            src={url}
+            className="w-full h-full object-cover"
+            muted
+            preload="metadata"
+            // show first frame
+            onLoadedMetadata={(e) => { e.target.currentTime = 0.5; }}
+          />
+          {/* Play overlay */}
+          <div className="absolute inset-0 flex items-center justify-center bg-black/30">
+            <div className="w-9 h-9 rounded-full bg-white/90 flex items-center justify-center shadow">
+              <svg className="w-4 h-4 text-gray-800 ml-0.5" viewBox="0 0 24 24" fill="currentColor">
+                <path d="M8 5v14l11-7z" />
+              </svg>
+            </div>
+          </div>
+          {/* MP4 label */}
+          <span className="absolute bottom-1 left-1 text-[9px] font-bold text-white bg-black/60 px-1.5 py-0.5 rounded">
+            MP4
+          </span>
+        </>
+      ) : (
+        <img
+          src={url}
+          alt={alt}
+          className="w-full h-full object-contain object-center"
+        />
+      )}
+
+      {/* Selected checkmark */}
+      {isSelected && (
+        <div className="absolute top-2 right-2 z-50 text-green-500 bg-white rounded-full p-1 shadow-md">
+          <FaCheckCircle className="text-lg" />
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Main component ────────────────────────────────────────────────────────────
 const ImageSelector = ({ isOpen, onClose, onSelectImages, selectType = "multiple" }) => {
-  const [images, setImages] = useState([]);
-  const [loading, setLoading] = useState(false);
+  const [images,    setImages]    = useState([]);
+  const [loading,   setLoading]   = useState(false);
   const [uploading, setUploading] = useState(false);
-  const [selected, setSelected] = useState(new Set());
+  const [selected,  setSelected]  = useState(new Set());
   const fileInputRef = useRef(null);
 
   const fetchImages = async () => {
     try {
       setLoading(true);
-      const res = await fetch("/api/image");
+      const res  = await fetch("/api/image");
       const data = await res.json();
-      setImages(Array.isArray(data) ? data : data.data || []); // expects [{ _id, url, name }]
+      setImages(Array.isArray(data) ? data : data.data || []);
     } catch (err) {
       console.error("Failed to fetch images:", err);
     } finally {
@@ -25,37 +86,24 @@ const ImageSelector = ({ isOpen, onClose, onSelectImages, selectType = "multiple
     }
   };
 
-  const triggerFileSelect = () => {
-    fileInputRef.current?.click();
-  };
+  const triggerFileSelect = () => fileInputRef.current?.click();
 
   const handleFileChange = async (e) => {
     const files = Array.from(e.target.files);
     if (!files.length) return;
-
     setUploading(true);
-
     try {
       const uploaded = [];
-
       for (const file of files) {
         const formData = new FormData();
         formData.append("file", file);
-
-        const res = await fetch("/api/image", {
-          method: "POST",
-          body: formData,
-        });
-
+        const res = await fetch("/api/image", { method: "POST", body: formData });
         if (!res.ok) throw new Error("Upload failed");
-
-        const savedImage = await res.json();
-        uploaded.push(savedImage);
+        uploaded.push(await res.json());
       }
-
       setImages((prev) => [...uploaded, ...prev]);
     } catch (error) {
-      console.error("Multiple image upload error:", error);
+      console.error("Upload error:", error);
     } finally {
       setUploading(false);
     }
@@ -67,9 +115,9 @@ const ImageSelector = ({ isOpen, onClose, onSelectImages, selectType = "multiple
       onClose();
     } else {
       setSelected((prev) => {
-        const newSet = new Set(prev);
-        newSet.has(url) ? newSet.delete(url) : newSet.add(url);
-        return newSet;
+        const next = new Set(prev);
+        next.has(url) ? next.delete(url) : next.add(url);
+        return next;
       });
     }
   };
@@ -81,29 +129,23 @@ const ImageSelector = ({ isOpen, onClose, onSelectImages, selectType = "multiple
   };
 
   const handleDeleteImage = async (_id) => {
-    // Force a microtask to complete before blocking UI with confirm
-    await new Promise((resolve) => setTimeout(resolve, 0));
-
+    await new Promise((r) => setTimeout(r, 0));
     try {
       const res = await fetch("/api/image", {
-        method: "DELETE",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({ _id }),
+        method:  "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body:    JSON.stringify({ _id }),
       });
-
       if (!res.ok) throw new Error("Delete failed");
-
       setImages((prev) => prev.filter((img) => img._id !== _id));
       setSelected((prev) => {
-        const newSet = new Set(prev);
+        const next    = new Set(prev);
         const deleted = images.find((img) => img._id === _id);
-        if (deleted) newSet.delete(deleted.url);
-        return newSet;
+        if (deleted) next.delete(deleted.url);
+        return next;
       });
     } catch (error) {
-      console.error("Image delete error:", error);
+      console.error("Delete error:", error);
     }
   };
 
@@ -117,7 +159,15 @@ const ImageSelector = ({ isOpen, onClose, onSelectImages, selectType = "multiple
         <ModalHeader className="flex justify-between items-center">
           <span>Select {selectType === "multiple" ? "Images" : "Image"}</span>
           <div className="flex items-center gap-2">
-            <input type="file" accept="image/*" multiple ref={fileInputRef} style={{ display: "none" }} onChange={handleFileChange} />
+            {/* Accept images + videos */}
+            <input
+              type="file"
+              accept="image/*,video/mp4,video/webm,video/ogg,video/quicktime"
+              multiple
+              ref={fileInputRef}
+              style={{ display: "none" }}
+              onChange={handleFileChange}
+            />
             <Button size="sm" className="bg-black text-white" onPress={triggerFileSelect} isLoading={uploading}>
               Upload
             </Button>
@@ -131,32 +181,22 @@ const ImageSelector = ({ isOpen, onClose, onSelectImages, selectType = "multiple
             </div>
           ) : (
             <div className="grid grid-cols-4 gap-4">
-              {Array.isArray(images) && images.map((image) => {
-                const isSelected = selected.has(image.url);
-                return (
-                  <div key={image._id} className="relative rounded-lg overflow-hidden group">
-                    <img
-                      src={image.url}
-                      alt={image.name}
-                      onClick={() => handleClickImage(image.url)}
-                      className="object-contain object-center w-full h-[150px] rounded-lg cursor-pointer"
-                    />
-
-                    {selectType === "multiple" && isSelected && (
-                      <div className="absolute top-2 right-2 z-50 text-green-500 bg-white rounded-full p-1 shadow-md">
-                        <FaCheckCircle className="text-lg" />
-                      </div>
-                    )}
-
-                    <button
-                      className="absolute top-2 left-2 text-white bg-red-600 rounded-full cursor-pointer text-xs px-2 py-1 hidden group-hover:block"
-                      onClick={() => handleDeleteImage(image._id)}
-                    >
-                      Delete
-                    </button>
-                  </div>
-                );
-              })}
+              {Array.isArray(images) && images.map((image) => (
+                <div key={image._id} className="relative rounded-lg overflow-hidden group">
+                  <MediaThumb
+                    url={image.url}
+                    alt={image.name}
+                    isSelected={selected.has(image.url)}
+                    onClick={() => handleClickImage(image.url)}
+                  />
+                  <button
+                    className="absolute top-2 left-2 text-white bg-red-600 rounded-full cursor-pointer text-xs px-2 py-1 hidden group-hover:block z-10"
+                    onClick={() => handleDeleteImage(image._id)}
+                  >
+                    Delete
+                  </button>
+                </div>
+              ))}
             </div>
           )}
         </ModalBody>

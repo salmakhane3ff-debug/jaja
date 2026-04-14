@@ -19,9 +19,15 @@ export default function CartDrawer({ isOpen, onClose }) {
   const { t, formatPrice } = useLanguage();
 
   useEffect(() => {
-    if (isOpen) {
-      loadCartData();
-    }
+    if (isOpen) loadCartData();
+  }, [isOpen]);
+
+  // Reload whenever cart is mutated while the drawer is open
+  useEffect(() => {
+    if (!isOpen) return;
+    const onUpdate = () => loadCartData();
+    window.addEventListener("cartUpdated", onUpdate);
+    return () => window.removeEventListener("cartUpdated", onUpdate);
   }, [isOpen]);
 
   const loadCartData = async () => {
@@ -62,7 +68,11 @@ export default function CartDrawer({ isOpen, onClose }) {
   const getProductDetails = (productId) => products.find((p) => p._id === productId);
 
   const handleRemove = (productId) => {
-    const updatedCart = cartItems.filter((item) => item.productId !== productId);
+    // Also remove the linked cadeau if the parent paid item is removed
+    const cadeauId = productId + "::cadeau";
+    const updatedCart = cartItems.filter(
+      (item) => item.productId !== productId && item.productId !== cadeauId
+    );
     localStorage.setItem("cart", JSON.stringify(updatedCart));
     setCartItems(updatedCart);
     window.dispatchEvent(new CustomEvent("cartUpdated"));
@@ -85,11 +95,30 @@ export default function CartDrawer({ isOpen, onClose }) {
 
   const handleQuantityChange = (productId, newQuantity) => {
     if (newQuantity < 1) return;
-    const updatedCart = cartItems.map((item) =>
+
+    // ── 2+1 bundle sync ────────────────────────────────────────────────────────
+    // The cadeau item for this product has id = productId + "::cadeau"
+    const cadeauId = productId + "::cadeau";
+
+    let updated = cartItems.map((item) =>
       item.productId === productId ? { ...item, quantity: newQuantity } : item
     );
-    localStorage.setItem("cart", JSON.stringify(updatedCart));
-    setCartItems(updatedCart);
+
+    if (newQuantity < 2) {
+      // Less than 2 paid units → remove the cadeau entirely
+      updated = updated.filter((item) => item.productId !== cadeauId);
+    } else {
+      // Maintain ratio: 1 cadeau per 2 paid units
+      const expectedCadeauQty = Math.floor(newQuantity / 2);
+      const cadeauIndex = updated.findIndex((item) => item.productId === cadeauId);
+      if (cadeauIndex !== -1) {
+        updated[cadeauIndex] = { ...updated[cadeauIndex], quantity: expectedCadeauQty };
+      }
+    }
+    // ──────────────────────────────────────────────────────────────────────────
+
+    localStorage.setItem("cart", JSON.stringify(updated));
+    setCartItems(updated);
     window.dispatchEvent(new CustomEvent("cartUpdated"));
   };
 
@@ -168,17 +197,22 @@ export default function CartDrawer({ isOpen, onClose }) {
     const selectedCartItems = cartItems.filter(
       (item) => selectedItems[item.productId] || item._isGift
     );
-    const buyNowData = selectedCartItems.map((item) => ({
-      productId: item.productId,
-      title: item.title,
-      quantity: item.quantity,
-      color: item.color || null,
-      size: item.size || null,
-      image: item.image,
-      price: item.price,
-      currency: "MAD",
-      isFreeGift: !!(item._isGift || item.free),
-    }));
+    const buyNowData = selectedCartItems.map((item) => {
+      const isGift = !!(item._isGift || item.free);
+      return {
+        productId: item.productId,
+        title: isGift && !item.title?.includes("CADEAU GRATUIT")
+          ? item.title + " (CADEAU GRATUIT)"
+          : item.title,
+        quantity: item.quantity,
+        color: item.color || null,
+        size: item.size || null,
+        image: item.image,
+        price: isGift ? 0 : item.price,
+        currency: "MAD",
+        isFreeGift: isGift,
+      };
+    });
 
     localStorage.setItem("buyNow", JSON.stringify(buyNowData));
     onClose();
@@ -271,8 +305,9 @@ export default function CartDrawer({ isOpen, onClose }) {
             <div className="px-2 space-y-4">
               {cartItems.map((item, index) => {
                 const product  = getProductDetails(item.productId);
-                if (!product) return null;
-                const imageUrl  = item.image || product.images?.[0] || "https://placehold.co/400x500?text=No+Image";
+                // Gift items with synthetic IDs (::cadeau) won't match a product — use cart item data
+                if (!product && !item._isGift) return null;
+                const imageUrl  = item.image || product?.images?.[0] || "https://placehold.co/400x500?text=No+Image";
                 const isFreeItem = !!item.free || !!item._isGift;
 
                 return (
@@ -280,16 +315,18 @@ export default function CartDrawer({ isOpen, onClose }) {
                     key={`${item.productId}-${index}`}
                     className={`bg-white rounded-lg shadow transition-all duration-200 overflow-hidden
                       ${isFreeItem
-                        ? "border-2 border-indigo-300 bg-indigo-50/30"
+                        ? item._isGift
+                          ? "border-2 border-[#6e57b2] bg-[#f3f0ff]"
+                          : "border-2 border-pink-300 bg-pink-50/30"
                         : `border border-gray-200 ${selectedItems[item.productId] ? "" : "opacity-50 bg-gray-50"}`
                       }`}
                   >
                     {/* Free Gift / Reward banner */}
                     {isFreeItem && (
-                      <div className="bg-gradient-to-r from-pink-500 to-rose-500 px-3 py-1 flex items-center gap-1.5">
+                      <div className={`px-3 py-1.5 flex items-center gap-1.5 ${item._isGift ? "bg-[#6e57b2]" : "bg-gradient-to-r from-pink-500 to-rose-500"}`}>
                         <span className="text-xs">🎁</span>
                         <span className="text-xs font-bold text-white tracking-wide">
-                          {item._isGift ? t("gift_free_label") : t("spin_free_label")}
+                          {item._isGift ? "+ 1 article GRATUIT" : t("spin_free_label")}
                         </span>
                       </div>
                     )}
@@ -313,7 +350,7 @@ export default function CartDrawer({ isOpen, onClose }) {
                         <Link href={`/products/${item.productId}`} onClick={onClose}>
                           <div className="relative w-14 h-14 rounded-md overflow-hidden bg-gray-50 flex-shrink-0 border border-gray-100">
                             <img src={imageUrl} alt={item.title} className="w-full h-full object-cover" />
-                            {product.productLabel && !isFreeItem && (
+                            {product?.productLabel && !isFreeItem && (
                               <div className="absolute -top-1 -right-1">
                                 <ProductLabel label={product.productLabel} size="xs" />
                               </div>
@@ -332,10 +369,11 @@ export default function CartDrawer({ isOpen, onClose }) {
                           <div className="space-y-1">
                             {isFreeItem ? (
                               <div className="flex items-center gap-1.5">
-                                <span className="font-bold text-pink-600 text-sm">0 {CURRENCY}</span>
-                                <span className="text-xs bg-pink-100 text-pink-700 px-1.5 py-0.5 rounded font-medium">
-                                  {item._isGift ? t("gift_free_label") : t("spin_free_label")}
-                                </span>
+                                {item._isGift ? (
+                                  <span className="font-black text-[#6e57b2] text-sm">GRATUIT</span>
+                                ) : (
+                                  <span className="font-bold text-pink-600 text-sm">0 {CURRENCY}</span>
+                                )}
                               </div>
                             ) : null}
                             {!isFreeItem && ((() => {
@@ -463,20 +501,6 @@ export default function CartDrawer({ isOpen, onClose }) {
                           }
                         }
 
-                        if (discountedUnits > 0) {
-                          return (
-                            <div className="mt-3 pt-3 border-t border-gray-100">
-                              <div className="bg-gradient-to-r from-blue-50 to-cyan-50 border border-blue-200 rounded-md px-3 py-2">
-                                <div className="flex items-center justify-between">
-                                  <span className="text-xs text-blue-700 font-medium">{t("cart_buy2get1")}</span>
-                                  <span className="text-xs text-blue-600 font-semibold">
-                                    {discountedUnits} {discountedUnits > 1 ? t("cart_units_free") : t("cart_unit_free")}
-                                  </span>
-                                </div>
-                              </div>
-                            </div>
-                          );
-                        }
                         return null;
                       })()}
                     </div>
@@ -581,14 +605,6 @@ export default function CartDrawer({ isOpen, onClose }) {
                     <div className="flex justify-between text-xs text-gray-700">
                       <span>{t("cart_total_price")}</span>
                       <span className="font-semibold">{formatPrice(Number(totalMRP - discountOnMRP).toFixed(0))}</span>
-                    </div>
-                  )}
-                  {Number(buy2Get1Discount) > 0 && (
-                    <div className="bg-gradient-to-r from-blue-50 to-cyan-50 border border-blue-200 rounded-md p-2 mt-2">
-                      <div className="flex justify-between text-blue-600 mb-1">
-                        <span className="text-xs font-medium">{t("cart_buy2get1_applied")}</span>
-                        <span className="text-xs font-semibold">-{formatPrice(Number(buy2Get1Discount).toFixed(0))}</span>
-                      </div>
                     </div>
                   )}
                   <div className="flex justify-between items-center border-t border-gray-200 pt-2 mt-2">

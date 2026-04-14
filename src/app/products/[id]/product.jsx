@@ -52,21 +52,13 @@ export default function Product({ data }) {
     convRaw ? (convRaw?.randomStockBar?.enabled !== false) : true
   ), [convRaw]);
 
-  // ── Bundle & Save — parse product bundles once ────────────────────────────
-  const bundles = useMemo(() => {
-    const raw = data.bundles;
-    if (Array.isArray(raw) && raw.length > 0) return raw;
-    if (typeof raw === "string") {
-      try { const p = JSON.parse(raw); return Array.isArray(p) ? p : []; } catch { return []; }
-    }
-    return [];
-  }, [data.bundles]);
-
   const [quantity, setQuantity] = useState(1);
   const [selectedSize, setSelectedSize] = useState(null);
   const [selectedColor, setSelectedColor] = useState(null);
-  // When bundles exist, track the selected bundle (default: first)
-  const [selectedBundle, setSelectedBundle] = useState(() => bundles[0] ?? null);
+  // null = 1 Pack, "2+1" = Buy 2 Get 1 Free bundle
+  const [selectedBundle, setSelectedBundle] = useState(null);
+  // Gift product fetched from specialOfferSlug (ui-control setting)
+  const [giftProduct, setGiftProduct] = useState(null);
   const [wishlist, setWishlist] = useState([]);
   const [feedbackStats, setFeedbackStats] = useState({ avg: 0, count: 0 });
   const [globalStats, setGlobalStats] = useState({ avg: 0, count: 0 });
@@ -100,6 +92,24 @@ export default function Product({ data }) {
     }
   }, [fbSettings.starClickAction]);
 
+  // Fetch gift product by slug from ui-control setting
+  useEffect(() => {
+    const slug = ui.specialOfferSlug;
+    if (!slug) { setGiftProduct(null); return; }
+    fetch(`/api/products?slug=${encodeURIComponent(slug)}`)
+      .then((r) => r.ok ? r.json() : null)
+      .then((d) => {
+        if (!d) return;
+        const p = Array.isArray(d) ? d[0] : d;
+        if (p) setGiftProduct({
+          _id:   p._id,
+          image: p.images?.[0]?.url || p.images?.[0] || "",
+          title: p.title || slug,
+        });
+      })
+      .catch(() => {});
+  }, [ui.specialOfferSlug]);
+
   const handleFbStats = useCallback((avg, count) => {
     setFeedbackStats({ avg, count });
   }, []);
@@ -112,41 +122,105 @@ export default function Product({ data }) {
     }
   };
 
+  // Auto-sync quantity when bundle option changes
+  useEffect(() => {
+    setQuantity(selectedBundle === "2+1" ? 3 : 1);
+  }, [selectedBundle]);
+
   const handleQuantityChange = (type) => {
+    if (selectedBundle === "2+1") return; // locked when bundle active
     if (type === "increment") setQuantity(quantity + 1);
     else if (type === "decrement" && quantity > 1) setQuantity(quantity - 1);
   };
 
-  // Effective price per "unit" sent to cart/checkout:
-  //   • Bundle selected → bundle.price (the bundle is one "unit" in the cart)
-  //   • No bundle       → discount rule price or sale/regular price
-  const effectivePrice = selectedBundle
-    ? parseFloat(selectedBundle.price)
-    : parseFloat(discountRule ? discountRule.effectivePrice : (data.salePrice || data.regularPrice));
+  // Base unit price (single item)
+  const unitPrice = parseFloat(discountRule ? discountRule.effectivePrice : (data.salePrice || data.regularPrice));
+
+  // Effective price sent to cart:
+  //   bundle "2+1" → pay for 2 units total (unit price adjusted so 3×unitInCart = 2×unitPrice)
+  //   single       → normal unit price
+  const bundleUnitPrice = selectedBundle === "2+1"
+    ? parseFloat(((unitPrice * 2) / 3).toFixed(2))
+    : unitPrice;
+
+  const effectivePrice = bundleUnitPrice;
 
   const handleAddToCart = async () => {
-    if (selectedBundle) {
-      // Inject bundle price — addToCart reads data.salePrice, so we pass a patched copy
-      await addToCart({ ...data, salePrice: selectedBundle.price, regularPrice: null }, quantity);
+    if (selectedBundle === "2+1") {
+      // Line 1 — Pack de 2 at full unit price
+      await addToCart({ ...data, salePrice: unitPrice, regularPrice: data.regularPrice }, 2);
+
+      // Line 2 — 1 article GRATUIT at 0 DH
+      const freeItemBase = giftProduct?._id
+        ? {
+            _id:    giftProduct._id,
+            title:  giftProduct.title,
+            images: [{ url: giftProduct.image }],
+            salePrice: "0",
+            regularPrice: null,
+            _isGift: true,
+          }
+        : {
+            // fallback: same product but with a cadeau suffix key
+            ...data,
+            _id:     data._id + "::cadeau",
+            title:   data.title + " (CADEAU GRATUIT)",
+            salePrice: "0",
+            regularPrice: null,
+            _isGift: true,
+          };
+      await addToCart(freeItemBase, 1);
     } else {
       await addToCart(data, quantity);
     }
   };
 
   const handleBuyNow = async () => {
-    const baseItems = [
-      {
-        productId: data._id,
-        title: data.title,
-        quantity,
-        color: selectedColor || null,
-        size: selectedSize || null,
-        image: data.images?.[0] || "",
-        price: effectivePrice,
-        currency: "MAD",
-      },
-    ];
-    // Apply gift eligibility before navigating — same logic as cart flow
+    let baseItems;
+    if (selectedBundle === "2+1") {
+      const freeTitle = giftProduct?.title
+        ? giftProduct.title + " (CADEAU GRATUIT)"
+        : data.title + " (CADEAU GRATUIT)";
+      const freeImage = giftProduct?.image || data.images?.[0] || "";
+      const freeProdId = giftProduct?._id || (data._id + "::cadeau");
+      baseItems = [
+        {
+          productId: data._id,
+          title: data.title,
+          quantity: 2,
+          color: selectedColor || null,
+          size: selectedSize || null,
+          image: data.images?.[0] || "",
+          price: unitPrice,
+          currency: "MAD",
+        },
+        {
+          productId: freeProdId,
+          title: freeTitle,
+          quantity: 1,
+          color: null,
+          size: null,
+          image: freeImage,
+          price: 0,
+          currency: "MAD",
+          _isGift: true,
+          isFreeGift: true,
+        },
+      ];
+    } else {
+      baseItems = [
+        {
+          productId: data._id,
+          title: data.title,
+          quantity,
+          color: selectedColor || null,
+          size: selectedSize || null,
+          image: data.images?.[0] || "",
+          price: effectivePrice,
+          currency: "MAD",
+        },
+      ];
+    }
     const withGifts = await applyGiftsToItems(baseItems);
     localStorage.setItem("buyNow", JSON.stringify(withGifts));
     window.location.href = "/checkout/address";
@@ -250,113 +324,26 @@ export default function Product({ data }) {
               })()}
             </div>
 
-            {/* Price — shows bundle price when a bundle is selected */}
+            {/* Price */}
             <div className="bg-gray-50 rounded-lg p-4">
-              {!selectedBundle && (discountRule || (data.salePrice && discount > 0)) && (
+              {(discountRule || (data.salePrice && discount > 0)) && (
                 <div className="mb-2">
                   <span className="bg-red-500 text-white px-2 py-1 rounded text-xs font-medium">
                     {discountRule ? discountRule.percentage : discount}% {t("product_off_percent")}
                   </span>
                 </div>
               )}
-              {selectedBundle ? (
-                /* Bundle-specific pricing */
-                <div className="flex items-baseline gap-3 mb-2">
-                  <span className="text-3xl font-bold text-gray-900">
-                    {formatPrice(selectedBundle.price)}
+              <div className="flex items-baseline gap-3 mb-2">
+                <span className="text-3xl font-bold text-gray-900">
+                  {formatPrice(discountRule ? discountRule.effectivePrice : (data.salePrice || data.regularPrice))}
+                </span>
+                {(discountRule || (data.salePrice && data.regularPrice)) && (
+                  <span className="text-sm text-gray-500 line-through">
+                    {formatPrice(discountRule ? discountRule.originalPrice : data.regularPrice)}
                   </span>
-                  {selectedBundle.originalPrice && (
-                    <span className="text-sm text-gray-500 line-through">
-                      {formatPrice(selectedBundle.originalPrice)}
-                    </span>
-                  )}
-                  {selectedBundle.originalPrice && (
-                    <span className="bg-red-500 text-white px-2 py-1 rounded text-xs font-medium">
-                      {Math.round(((selectedBundle.originalPrice - selectedBundle.price) / selectedBundle.originalPrice) * 100)}% {t("product_off_percent")}
-                    </span>
-                  )}
-                </div>
-              ) : (
-                /* Normal single-unit pricing */
-                <div className="flex items-baseline gap-3 mb-2">
-                  <span className="text-3xl font-bold text-gray-900">
-                    {formatPrice(discountRule ? discountRule.effectivePrice : (data.salePrice || data.regularPrice))}
-                  </span>
-                  {(discountRule || (data.salePrice && data.regularPrice)) && (
-                    <span className="text-sm text-gray-500 line-through">
-                      {formatPrice(discountRule ? discountRule.originalPrice : data.regularPrice)}
-                    </span>
-                  )}
-                </div>
-              )}
-            </div>
-
-            {/* ── Bundle & Save ── rendered only when the product has bundles ── */}
-            {bundles.length > 0 && (
-              <div className="space-y-2.5">
-                {/* Section header */}
-                <div className="flex items-center gap-2">
-                  <div className="flex-1 h-px bg-gray-200" />
-                  <span className="text-[11px] font-black text-gray-700 tracking-widest px-1">
-                    BUNDLE &amp; SAVE
-                  </span>
-                  <div className="flex-1 h-px bg-gray-200" />
-                </div>
-
-                {/* Bundle options */}
-                <div className="space-y-2">
-                  {bundles.map((bundle) => {
-                    const isSelected = selectedBundle?.id === bundle.id;
-                    return (
-                      <button
-                        key={bundle.id}
-                        type="button"
-                        onClick={() => setSelectedBundle(bundle)}
-                        className={`relative w-full flex items-center gap-3 px-3 py-3 rounded-xl border-2 text-left transition-all duration-150 ${
-                          isSelected
-                            ? "border-teal-600 bg-teal-50/50"
-                            : "border-gray-200 bg-white hover:border-gray-300"
-                        }`}
-                      >
-                        {/* Radio circle */}
-                        <div className={`shrink-0 w-5 h-5 rounded-full border-2 flex items-center justify-center transition-colors ${
-                          isSelected ? "border-teal-600" : "border-gray-300"
-                        }`}>
-                          {isSelected && <div className="w-2.5 h-2.5 rounded-full bg-teal-600" />}
-                        </div>
-
-                        {/* Label */}
-                        <div className="flex-1 text-sm font-semibold text-gray-900 flex items-center gap-2 flex-wrap min-w-0">
-                          <span className="truncate">{bundle.label}</span>
-                          {bundle.badge === "free_shipping" && (
-                            <span className="shrink-0 text-[10px] font-bold text-green-700 bg-green-50 border border-green-200 px-2 py-0.5 rounded-full">
-                              {t("bundle_free_shipping") || "Free Shipping"}
-                            </span>
-                          )}
-                        </div>
-
-                        {/* Price block */}
-                        <div className="shrink-0 text-right ml-1">
-                          <p className="text-sm font-bold text-gray-900">{formatPrice(bundle.price)}</p>
-                          {bundle.originalPrice && (
-                            <p className="text-xs text-gray-400 line-through leading-tight">
-                              {formatPrice(bundle.originalPrice)}
-                            </p>
-                          )}
-                        </div>
-
-                        {/* Most-popular badge — overhangs the card top edge */}
-                        {bundle.badge === "most_popular" && (
-                          <span className="absolute -top-3 right-3 text-[10px] font-black text-white bg-teal-600 px-3 py-0.5 rounded-full shadow-sm">
-                            {t("bundle_most_popular") || "Most popular"}
-                          </span>
-                        )}
-                      </button>
-                    );
-                  })}
-                </div>
+                )}
               </div>
-            )}
+            </div>
 
             {/* ── Stock Progress Bar — controlled by /admin/conversion-optimization ── */}
             {scarcity && randomBarEnabled && (() => {
@@ -404,18 +391,125 @@ export default function Product({ data }) {
               <ConversionBadges />
             </Suspense>
 
-            {/* Special Offer */}
-            {ui.showSpecialOffer && (
-              <div className="bg-blue-50 rounded-lg p-4 border border-blue-100">
-                <div className="flex items-start gap-3">
-                  <Tag className="w-5 h-5 text-blue-600 mt-0.5 shrink-0" />
-                  <div>
-                    <h3 className="text-sm font-semibold text-blue-900 mb-1">{t("product_special_offer_title")}</h3>
-                    <p className="text-xs text-blue-700">{t("product_special_offer_desc")}</p>
+            {/* ── Bundle Selector ── */}
+            {ui.showSpecialOffer && (() => {
+              const thumbSrc = data.images?.[0]?.url || data.images?.[0] || "";
+              // Gift item: fetched from specialOfferSlug, or fallback to product image
+              const giftImage = giftProduct?.image || thumbSrc;
+              const singleSave = data.regularPrice ? Math.round(data.regularPrice - unitPrice) : 0;
+              const bundleSave = Math.round(unitPrice); // 1 free unit = unitPrice saved
+
+              return (
+                <div className="space-y-2">
+                  {/* ── 1 Pack ── */}
+                  <button
+                    type="button"
+                    onClick={() => setSelectedBundle(null)}
+                    className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-2xl border-2 text-left transition-all duration-150 ${
+                      selectedBundle === null
+                        ? "border-gray-300 bg-white"
+                        : "border-gray-200 bg-white hover:border-gray-300"
+                    }`}
+                  >
+                    {/* Radio */}
+                    <div className={`shrink-0 w-[18px] h-[18px] rounded-full border-2 flex items-center justify-center transition-colors ${
+                      selectedBundle === null ? "border-gray-800" : "border-gray-300"
+                    }`}>
+                      {selectedBundle === null && <div className="w-2 h-2 rounded-full bg-gray-800" />}
+                    </div>
+
+                    {/* Thumb — 1 image */}
+                    {thumbSrc && (
+                      <div className="shrink-0 w-9 h-9 rounded-xl overflow-hidden bg-gray-100">
+                        <img src={thumbSrc} alt="" className="w-full h-full object-cover" />
+                      </div>
+                    )}
+
+                    {/* Label */}
+                    <div className="flex-1 flex items-center gap-2 min-w-0">
+                      <span className="text-sm font-bold text-gray-900">1 Pack</span>
+                      {singleSave > 0 && (
+                        <span className="text-[11px] font-semibold text-gray-500 bg-gray-100 px-2 py-0.5 rounded-full whitespace-nowrap">
+                          {t("bundle_save")} {formatPrice(singleSave)}
+                        </span>
+                      )}
+                    </div>
+
+                    {/* Price */}
+                    <div className="shrink-0 text-right">
+                      <p className="text-base font-bold text-gray-900 leading-tight">{formatPrice(unitPrice)}</p>
+                      {data.regularPrice && data.regularPrice > unitPrice && (
+                        <p className="text-xs text-gray-400 line-through leading-tight">{formatPrice(data.regularPrice)}</p>
+                      )}
+                    </div>
+                  </button>
+
+                  {/* ── 3 Packs — 2+1 Gratuit ── */}
+                  <div className={`rounded-2xl border-2 overflow-hidden transition-all duration-150 ${
+                    selectedBundle === "2+1"
+                      ? "border-[#6e57b2]"
+                      : "border-gray-200 hover:border-[#b8a9e8]"
+                  }`}>
+                    <button
+                      type="button"
+                      onClick={() => setSelectedBundle("2+1")}
+                      className={`w-full flex items-center gap-3 px-3 py-2.5 text-left transition-colors ${
+                        selectedBundle === "2+1" ? "bg-[#f0ecff]" : "bg-white hover:bg-gray-50"
+                      }`}
+                    >
+                      {/* Radio */}
+                      <div className={`shrink-0 w-[18px] h-[18px] rounded-full border-2 flex items-center justify-center transition-colors ${
+                        selectedBundle === "2+1" ? "border-[#6e57b2]" : "border-gray-300"
+                      }`}>
+                        {selectedBundle === "2+1" && <div className="w-2 h-2 rounded-full bg-[#6e57b2]" />}
+                      </div>
+
+                      {/* Thumbs — 2 overlapping images */}
+                      {thumbSrc && (
+                        <div className="shrink-0 relative w-12 h-9">
+                          <div className="absolute left-0 top-0 w-9 h-9 rounded-xl overflow-hidden bg-gray-100 border-2 border-white">
+                            <img src={thumbSrc} alt="" className="w-full h-full object-cover" />
+                          </div>
+                          <div className="absolute left-3 top-0 w-9 h-9 rounded-xl overflow-hidden bg-gray-100 border-2 border-white">
+                            <img src={thumbSrc} alt="" className="w-full h-full object-cover" />
+                          </div>
+                        </div>
+                      )}
+
+                      {/* Label */}
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <span className="text-sm font-bold text-gray-900">2 Packs</span>
+                          <span className="text-[11px] font-semibold text-gray-500 bg-gray-100 px-2 py-0.5 rounded-full whitespace-nowrap">
+                            {t("bundle_save")} {formatPrice(bundleSave)}
+                          </span>
+                        </div>
+                      </div>
+
+                      {/* Price */}
+                      <div className="shrink-0 text-right">
+                        <p className="text-base font-bold text-gray-900 leading-tight">{formatPrice(unitPrice * 2)}</p>
+                        <p className="text-xs text-gray-400 line-through leading-tight">{formatPrice(unitPrice * 3)}</p>
+                      </div>
+                    </button>
+
+                    {/* Free bonus banner */}
+                    <div className="flex items-center gap-3 px-3 py-2.5 bg-[#6e57b2]">
+                      {giftImage && (
+                        <a
+                          href={ui.specialOfferSlug ? `/products/${ui.specialOfferSlug}` : undefined}
+                          onClick={(e) => !ui.specialOfferSlug && e.preventDefault()}
+                          className="shrink-0 w-12 h-12 rounded-xl overflow-hidden bg-[#8b76c9] border-2 border-white/30 block hover:opacity-80 transition-opacity"
+                        >
+                          <img src={giftImage} alt="" className="w-full h-full object-cover" />
+                        </a>
+                      )}
+                      <p className="text-sm font-bold text-white">+ {t("bundle_free_item_banner")}</p>
+                    </div>
                   </div>
                 </div>
-              </div>
-            )}
+              );
+            })()}
 
             {/* Size Selector */}
             {data.sizes && data.sizes.length > 0 && (
@@ -457,13 +551,13 @@ export default function Product({ data }) {
               </div>
             )}
 
-            {/* Quantity */}
-            <div className="space-y-2">
+            {/* Quantity — locked to 3 when bundle "2+1" is active */}
+            <div className={`space-y-2 transition-opacity ${selectedBundle === "2+1" ? "opacity-50" : ""}`}>
               <span className="text-sm font-medium text-gray-900">{t("product_quantity")}:</span>
               <div className="flex items-center gap-3">
                 <button
                   onClick={() => handleQuantityChange("decrement")}
-                  disabled={quantity <= 1}
+                  disabled={quantity <= 1 || selectedBundle === "2+1"}
                   className="w-10 h-10 rounded-full bg-gray-100 hover:bg-gray-200 text-gray-700 font-medium transition-all disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   −
@@ -471,7 +565,8 @@ export default function Product({ data }) {
                 <span className="text-sm font-medium text-gray-900 min-w-[2rem] text-center">{quantity}</span>
                 <button
                   onClick={() => handleQuantityChange("increment")}
-                  className="w-10 h-10 rounded-full bg-gray-100 hover:bg-gray-200 text-gray-700 font-medium transition-all"
+                  disabled={selectedBundle === "2+1"}
+                  className="w-10 h-10 rounded-full bg-gray-100 hover:bg-gray-200 text-gray-700 font-medium transition-all disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   +
                 </button>

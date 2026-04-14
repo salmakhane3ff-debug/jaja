@@ -232,8 +232,8 @@ export default function CheckoutOrderSummary({ billingDetails, setErrors }) {
                 <div>
                   <p className="font-medium text-gray-900">{item.title}</p>
                   {item.isFreeGift && (
-                    <span className="inline-flex items-center gap-1 text-[10px] font-bold text-green-700 bg-green-100 px-2 py-0.5 rounded-full mt-0.5">
-                      🎁 {t("gift_free_label")}
+                    <span className="inline-flex items-center gap-1 text-[10px] font-bold text-white bg-[#6e57b2] px-2 py-0.5 rounded-full mt-0.5">
+                      🎁 + 1 article GRATUIT
                     </span>
                   )}
                   <p className="text-xs text-gray-500">{t("product_quantity")}: {item.quantity}</p>
@@ -243,7 +243,7 @@ export default function CheckoutOrderSummary({ billingDetails, setErrors }) {
               </div>
               <div className="text-right font-medium">
                 {item.isFreeGift
-                  ? <span className="text-green-600 font-bold">{t("checkout_free_word")}</span>
+                  ? <span className="text-[#6e57b2] font-black text-sm">GRATUIT</span>
                   : <span className="text-gray-900">{formatPrice((item.salePrice || item.regularPrice) * item.quantity)}</span>
                 }
               </div>

@@ -18,6 +18,7 @@ import {
 // ── Default values (must match API defaults) ──────────────────────────────────
 const DEFAULTS = {
   showSpecialOffer:    true,
+  specialOfferSlug:    "",
   showWishlistButton:  true,
   showShareButton:     true,
   showAddToCartButton: true,
@@ -44,6 +45,7 @@ const GROUPS = [
     color: "indigo",
     controls: [
       { key: "showSpecialOffer",    label: "Special Offer Banner",   type: "toggle", desc: 'Shows "Buy 2 Get 1 Free" banner on product page' },
+      { key: "specialOfferSlug",   label: "Cadeau Offert — Slug",   type: "text",   desc: "Slug du produit à afficher dans la bannière 2+1 gratuit (ex: creme-hydratante)" },
       { key: "showWishlistButton",  label: "Wishlist Button",        type: "toggle", desc: "Heart button to save product to wishlist" },
       { key: "showShareButton",     label: "Share Button",           type: "toggle", desc: "Share product link via native share or clipboard" },
       { key: "showAddToCartButton", label: "Add to Cart Button",     type: "toggle", desc: "Main add-to-cart CTA button on product page" },
@@ -339,6 +341,17 @@ export default function UIControlPage() {
                         <p className="text-xs text-gray-400">{ctrl.desc}</p>
                         <code className="text-[10px] text-gray-300 font-mono mt-0.5 block">{ctrl.key}</code>
                       </div>
+
+                      {/* Text */}
+                      {ctrl.type === "text" && (
+                        <input
+                          type="text"
+                          value={settings[ctrl.key] || ""}
+                          onChange={(e) => handleChange(ctrl.key, e.target.value)}
+                          placeholder="slug-du-produit"
+                          className="border border-gray-200 rounded-xl px-3 py-1.5 text-xs font-mono text-gray-700 bg-white focus:outline-none focus:border-indigo-300 w-44"
+                        />
+                      )}
 
                       {/* Toggle */}
                       {ctrl.type === "toggle" && (

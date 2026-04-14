@@ -25,135 +25,6 @@ function isVideoUrl(url) {
   );
 }
 
-// ── Bundle & Save editor ──────────────────────────────────────────────────────
-
-const BUNDLE_BADGES = [
-  { value: "",              label: "No badge" },
-  { value: "most_popular",  label: "🏆 Most popular" },
-  { value: "free_shipping", label: "🚚 Free Shipping" },
-];
-
-const EMPTY_BUNDLE_DRAFT = { label: "", units: "1", price: "", originalPrice: "", badge: "" };
-
-function BundlesEditor({ bundles, onChange }) {
-  const [draft,    setDraft]    = useState(EMPTY_BUNDLE_DRAFT);
-  const [draftErr, setDraftErr] = useState("");
-
-  const setD = (k, v) => setDraft((d) => ({ ...d, [k]: v }));
-
-  const add = () => {
-    if (!draft.label.trim())                        { setDraftErr("Bundle label is required"); return; }
-    const price = parseFloat(draft.price);
-    if (isNaN(price) || price <= 0)                 { setDraftErr("A valid discounted price is required"); return; }
-    setDraftErr("");
-    const id = crypto?.randomUUID?.() ?? Math.random().toString(36).slice(2);
-    onChange([...bundles, {
-      id,
-      label:         draft.label.trim(),
-      units:         Math.max(1, parseInt(draft.units, 10) || 1),
-      price,
-      originalPrice: draft.originalPrice !== "" ? (parseFloat(draft.originalPrice) || null) : null,
-      badge:         draft.badge || null,
-    }]);
-    setDraft(EMPTY_BUNDLE_DRAFT);
-  };
-
-  const remove = (id) => onChange(bundles.filter((b) => b.id !== id));
-
-  return (
-    <div className="bg-white rounded-xl p-6 space-y-4">
-      <div>
-        <h2 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
-          🎁 Bundle &amp; Save
-        </h2>
-        <p className="text-xs text-gray-400 mt-1">
-          Optional — add bundle offers that appear on the product page. Leave empty to hide the section.
-        </p>
-      </div>
-
-      {/* Existing bundles */}
-      {bundles.length > 0 && (
-        <div className="space-y-2">
-          {bundles.map((b, i) => (
-            <div key={b.id || i} className="flex items-start gap-3 bg-teal-50 border border-teal-100 rounded-xl px-3 py-2.5">
-              <div className="flex-1 min-w-0">
-                <p className="text-sm font-semibold text-gray-800 truncate">{b.label}</p>
-                <p className="text-xs text-gray-500 mt-0.5">
-                  {b.units} unit{b.units !== 1 ? "s" : ""} · {b.price} MAD
-                  {b.originalPrice ? ` (orig: ${b.originalPrice} MAD)` : ""}
-                  {b.badge === "most_popular"  ? " · 🏆" : ""}
-                  {b.badge === "free_shipping" ? " · 🚚" : ""}
-                </p>
-              </div>
-              <button type="button" onClick={() => remove(b.id)}
-                className="mt-0.5 text-gray-300 hover:text-red-500 transition-colors shrink-0">
-                <X className="w-4 h-4" />
-              </button>
-            </div>
-          ))}
-        </div>
-      )}
-
-      {/* Add-new form */}
-      <div className="border border-dashed border-gray-200 rounded-xl p-4 space-y-3 bg-gray-50/60">
-        <p className="text-xs font-bold text-gray-500 uppercase tracking-wide">Add bundle offer</p>
-
-        {draftErr && <p className="text-xs text-red-500">{draftErr}</p>}
-
-        <div>
-          <label className="block text-xs font-semibold text-gray-600 mb-1">Bundle label</label>
-          <input
-            type="text"
-            value={draft.label}
-            onChange={(e) => setD("label", e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && (e.preventDefault(), add())}
-            placeholder='e.g. "BUY 1 GET 1 FREE 😍 2 pcs 🔥"'
-            className="w-full text-sm border border-gray-200 rounded-xl px-3 py-2 focus:outline-none focus:border-gray-400 bg-white"
-          />
-        </div>
-
-        <div className="grid grid-cols-3 gap-2">
-          <div>
-            <label className="block text-xs font-semibold text-gray-600 mb-1">Units</label>
-            <input type="number" min="1" value={draft.units}
-              onChange={(e) => setD("units", e.target.value)}
-              placeholder="2"
-              className="w-full text-sm border border-gray-200 rounded-xl px-3 py-2 focus:outline-none focus:border-gray-400 bg-white" />
-          </div>
-          <div>
-            <label className="block text-xs font-semibold text-gray-600 mb-1">Sale price (MAD)</label>
-            <input type="number" min="0" step="0.01" value={draft.price}
-              onChange={(e) => setD("price", e.target.value)}
-              placeholder="39.97"
-              className="w-full text-sm border border-gray-200 rounded-xl px-3 py-2 focus:outline-none focus:border-gray-400 bg-white" />
-          </div>
-          <div>
-            <label className="block text-xs font-semibold text-gray-600 mb-1">Orig. price (MAD)</label>
-            <input type="number" min="0" step="0.01" value={draft.originalPrice}
-              onChange={(e) => setD("originalPrice", e.target.value)}
-              placeholder="79.98"
-              className="w-full text-sm border border-gray-200 rounded-xl px-3 py-2 focus:outline-none focus:border-gray-400 bg-white" />
-          </div>
-        </div>
-
-        <div>
-          <label className="block text-xs font-semibold text-gray-600 mb-1">Badge (optional)</label>
-          <select value={draft.badge} onChange={(e) => setD("badge", e.target.value)}
-            className="w-full text-sm border border-gray-200 rounded-xl px-3 py-2 focus:outline-none focus:border-gray-400 bg-white">
-            {BUNDLE_BADGES.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-          </select>
-        </div>
-
-        <button type="button" onClick={add}
-          className="flex items-center gap-1.5 px-4 py-2 bg-gray-900 text-white text-xs rounded-xl hover:bg-gray-700 transition-colors">
-          <Plus className="w-3.5 h-3.5" />
-          Add bundle
-        </button>
-      </div>
-    </div>
-  );
-}
-
 // ── Drag-and-drop image/video grid with direct file upload ───────────────────
 function DraggableImageGrid({ images, onChange, onLibrary }) {
   const fileInputRef = useRef(null);
@@ -414,7 +285,6 @@ function ProductForm() {
 
   const [variantInput, setVariantInput] = useState({ name: "", options: "" });
   const [sections, setSections] = useState([]);
-  const [bundles,  setBundles]  = useState([]);
   const { symbol: currencySymbol, code: currencyCode, loading: currencyLoading } = useStoreCurrency();
 
   const fetchCollection = async () => {
@@ -520,10 +390,7 @@ function ProductForm() {
         if (Array.isArray(raw)) setSections(raw);
         else if (typeof raw === "string") { try { setSections(JSON.parse(raw)); } catch { setSections([]); } }
 
-        // Load bundles
-        const rawBundles = data.bundles;
-        if (Array.isArray(rawBundles)) setBundles(rawBundles);
-        else if (typeof rawBundles === "string") { try { setBundles(JSON.parse(rawBundles)); } catch { setBundles([]); } }
+
       } catch (error) {
         console.error("❌ Failed to fetch product:", error);
       }
@@ -580,7 +447,6 @@ function ProductForm() {
           collections:   Array.from(categories),
           images:        selectedImages.filter(img => !String(img).startsWith("blob:")),
           sections,
-          bundles,
         }),
       });
 
@@ -830,9 +696,6 @@ function ProductForm() {
             </p>
             <SectionBuilder sections={sections} onChange={setSections} />
           </div>
-
-          {/* Bundle & Save */}
-          <BundlesEditor bundles={bundles} onChange={setBundles} />
 
         </div>
 

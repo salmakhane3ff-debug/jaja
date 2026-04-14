@@ -46,11 +46,14 @@ export const useCart = () => {
           const cart = JSON.parse(localStorage.getItem("cart") || "[]");
           const existingIndex = cart.findIndex((item) => item.productId === product._id);
 
-          // Apply discount rule if one is active for this product
-          const discountRule = getDiscount(product);
-          const effectivePrice = discountRule
-            ? discountRule.effectivePrice
-            : parseFloat(product.salePrice || product.regularPrice || 0);
+          // Gift items always cost 0 — skip discount rules
+          const isGift = !!product._isGift;
+          const discountRule = isGift ? null : getDiscount(product);
+          const effectivePrice = isGift
+            ? 0
+            : discountRule
+              ? discountRule.effectivePrice
+              : parseFloat(product.salePrice || product.regularPrice || 0);
 
           const cartItem = {
             productId: product._id,
@@ -61,6 +64,7 @@ export const useCart = () => {
             image: product.images?.[0]?.url || product.images?.[0] || "",
             price: effectivePrice,
             currency: product.currencySymbol || process.env.NEXT_PUBLIC_CURRENCY_SYMBOL || "$",
+            ...(isGift && { _isGift: true }),
           };
 
           if (existingIndex !== -1) {

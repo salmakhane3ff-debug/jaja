@@ -38,6 +38,14 @@
   "product_link_copied": "Lien copié !",
   "product_special_offer_title": "Offre spéciale : Achetez 2, obtenez 1 gratuit !",
   "product_special_offer_desc": "Ajoutez 3 articles au panier et obtenez le moins cher gratuitement",
+  "bundle_choose_offer": "Choisissez votre offre",
+  "bundle_single_unit": "1 article",
+  "bundle_best_value": "Meilleure offre",
+  "bundle_price_per_unit": "Prix à l'unité",
+  "bundle_stock_urgency": "Plus que 12 offres disponibles !",
+  "bundle_save": "ÉCONOMISEZ",
+  "bundle_free_shipping_included": "Livraison GRATUITE incluse",
+  "bundle_free_item_banner": "1 article GRATUIT",
   "product_trust_premium": "Qualité Premium",
   "product_trust_shipping": "Livraison Gratuite",
   "product_trust_best_price": "Meilleur Prix Garanti",
@@ -391,9 +399,9 @@
 
   "spin_free_label": "Gratuit 🎁",
 
-  "checkout_free_badge": "Gratuit 🎁",
-  "checkout_free_gift_tag": "🎁 Cadeau offert avec la commande",
-  "checkout_free_word": "Gratuit",
+  "checkout_free_badge": "GRATUIT",
+  "checkout_free_gift_tag": "🎁 CADEAU GRATUIT",
+  "checkout_free_word": "GRATUIT",
   "checkout_qty_label": "Qté : {n}",
   "checkout_color_label": "Couleur : {c}",
   "checkout_size_label": "Taille : {s}",
@@ -402,7 +410,7 @@
 
   "product_grid_subtitle": "Découvrez notre gamme complète de produits",
 
-  "gift_free_label": "Cadeau Gratuit",
+  "gift_free_label": "CADEAU GRATUIT",
   "gift_progress_title": "Ajoutez {amount} MAD pour débloquer votre cadeau gratuit",
   "gift_progress_unlocked": "Votre cadeau est débloqué ! 🎁",
 
