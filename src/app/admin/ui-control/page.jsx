@@ -45,7 +45,7 @@ const GROUPS = [
     color: "indigo",
     controls: [
       { key: "showSpecialOffer",    label: "Special Offer Banner",   type: "toggle", desc: 'Shows "Buy 2 Get 1 Free" banner on product page' },
-      { key: "specialOfferSlug",   label: "Cadeau Offert — Slug",   type: "text",   desc: "Slug du produit à afficher dans la bannière 2+1 gratuit (ex: creme-hydratante)" },
+      { key: "specialOfferSlug",   label: "Cadeau Offert — Product IDs",   type: "text",   desc: "Un ou plusieurs IDs séparés par des virgules — un cadeau aléatoire sera choisi à chaque visite (ex: id1,id2,id3)" },
       { key: "showWishlistButton",  label: "Wishlist Button",        type: "toggle", desc: "Heart button to save product to wishlist" },
       { key: "showShareButton",     label: "Share Button",           type: "toggle", desc: "Share product link via native share or clipboard" },
       { key: "showAddToCartButton", label: "Add to Cart Button",     type: "toggle", desc: "Main add-to-cart CTA button on product page" },

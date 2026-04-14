@@ -82,7 +82,7 @@ const nextConfig: NextConfig = {
       },
       { protocol: "https", hostname: "res.cloudinary.com" },
       { protocol: "https", hostname: "**.cloudinary.com" },
-      { protocol: "https", hostname: "placehold.co" },
+      { protocol: "https", hostname: "placehold.co", dangerouslyAllowSVG: true, contentDispositionType: "attachment" },
       { protocol: "https", hostname: "img.youtube.com" },
     ],
     // PERF: REMOVED "unoptimized: true" — that single flag disabled ALL image optimization:

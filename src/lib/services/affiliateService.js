@@ -133,6 +133,9 @@ export async function recordClick({
   landingPage  = null,
   referer      = null,
 }) {
+  const exists = await prisma.affiliate.findUnique({ where: { id: affiliateId }, select: { id: true } });
+  if (!exists) return null;
+
   const [click] = await prisma.$transaction([
     prisma.affiliateClick.create({
       data: { affiliateId, ipAddress, userAgent, source: source || null, landingPage, referer },

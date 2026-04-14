@@ -92,19 +92,21 @@ export default function Product({ data }) {
     }
   }, [fbSettings.starClickAction]);
 
-  // Fetch gift product by slug from ui-control setting
+  // Fetch a random gift product from the comma-separated IDs in ui-control
   useEffect(() => {
-    const slug = ui.specialOfferSlug;
-    if (!slug) { setGiftProduct(null); return; }
-    fetch(`/api/products?slug=${encodeURIComponent(slug)}`)
+    const raw = ui.specialOfferSlug;
+    if (!raw) { setGiftProduct(null); return; }
+    const ids = raw.split(",").map((s) => s.trim()).filter(Boolean);
+    if (!ids.length) { setGiftProduct(null); return; }
+    const randomId = ids[Math.floor(Math.random() * ids.length)];
+    fetch(`/api/products/${encodeURIComponent(randomId)}`)
       .then((r) => r.ok ? r.json() : null)
-      .then((d) => {
-        if (!d) return;
-        const p = Array.isArray(d) ? d[0] : d;
-        if (p) setGiftProduct({
+      .then((p) => {
+        if (!p || p.error) return;
+        setGiftProduct({
           _id:   p._id,
           image: p.images?.[0]?.url || p.images?.[0] || "",
-          title: p.title || slug,
+          title: p.title || "",
         });
       })
       .catch(() => {});
@@ -124,7 +126,7 @@ export default function Product({ data }) {
 
   // Auto-sync quantity when bundle option changes
   useEffect(() => {
-    setQuantity(selectedBundle === "2+1" ? 3 : 1);
+    setQuantity(selectedBundle === "2+1" ? 2 : 1);
   }, [selectedBundle]);
 
   const handleQuantityChange = (type) => {
@@ -497,8 +499,8 @@ export default function Product({ data }) {
                     <div className="flex items-center gap-3 px-3 py-2.5 bg-[#6e57b2]">
                       {giftImage && (
                         <a
-                          href={ui.specialOfferSlug ? `/products/${ui.specialOfferSlug}` : undefined}
-                          onClick={(e) => !ui.specialOfferSlug && e.preventDefault()}
+                          href={giftProduct?._id ? `/products/${giftProduct._id}` : undefined}
+                          onClick={(e) => !giftProduct?._id && e.preventDefault()}
                           className="shrink-0 w-12 h-12 rounded-xl overflow-hidden bg-[#8b76c9] border-2 border-white/30 block hover:opacity-80 transition-opacity"
                         >
                           <img src={giftImage} alt="" className="w-full h-full object-cover" />
