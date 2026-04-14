@@ -79,7 +79,8 @@ export async function getStatsHandler(req) {
     const startDate = searchParams.get('startDate') || null;
     const endDate   = searchParams.get('endDate')   || null;
     const view      = searchParams.get('view')      || 'counts';
-    const limit     = parseInt(searchParams.get('limit') || '100', 10);
+    const limitRaw  = parseInt(searchParams.get('limit') || '100', 10);
+    const limit     = Number.isFinite(limitRaw) ? Math.min(Math.max(1, limitRaw), 500) : 100;
     const event     = searchParams.get('event')     || null;
 
     const range = { startDate, endDate };

@@ -348,6 +348,8 @@
   "feedback_form_error_content": "Veuillez écrire un commentaire ou enregistrer un message vocal",
   "feedback_form_error_submit": "Une erreur s'est produite lors de l'envoi, veuillez réessayer",
   "feedback_form_error_mic": "Impossible d'accéder au microphone",
+  "feedback_form_error_mic_permission": "Accès au microphone refusé. Autorisez le microphone dans les paramètres du navigateur.",
+  "feedback_form_error_mic_notfound": "Aucun microphone détecté sur cet appareil.",
   "feedback_form_success_title": "Merci !",
   "feedback_form_success_msg": "Votre avis a été envoyé avec succès. Il sera visible après modération.",
   "feedback_form_success_another": "Ajouter un autre avis",

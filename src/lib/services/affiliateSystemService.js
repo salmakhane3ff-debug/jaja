@@ -331,18 +331,21 @@ export async function updateAffiliateOrderStatus(affiliateOrderId, status) {
 /**
  * Get affiliate's available balance:
  *   balance = sum(commissionAmount for delivered orders) - sum(paid payouts)
+ *
+ * @param {string} affiliateId
+ * @param {object} [db=prisma]  — pass a Prisma transaction client for atomic reads
  */
-export async function getAffiliateBalance(affiliateId) {
+export async function getAffiliateBalance(affiliateId, db = prisma) {
   const [earned, paid, aff] = await Promise.all([
-    prisma.affiliateOrder.aggregate({
+    db.affiliateOrder.aggregate({
       where: { affiliateId, status: 'delivered' },
       _sum:  { commissionAmount: true },
     }),
-    prisma.affiliatePayout.aggregate({
+    db.affiliatePayout.aggregate({
       where: { affiliateId, status: 'paid' },
       _sum:  { amount: true },
     }),
-    prisma.affiliate.findUnique({ where: { id: affiliateId }, select: { bonusBalance: true } }),
+    db.affiliate.findUnique({ where: { id: affiliateId }, select: { bonusBalance: true } }),
   ]);
 
   const totalEarned  = earned._sum.commissionAmount ?? 0;
@@ -360,17 +363,24 @@ export async function getAffiliatePayouts(affiliateId) {
 }
 
 export async function requestPayout(affiliateId, amount) {
-  const balance = await getAffiliateBalance(affiliateId);
-  if (amount > balance) {
-    throw Object.assign(new Error('Montant supérieur au solde disponible'), { code: 'INSUFFICIENT_BALANCE' });
-  }
-  if (amount <= 0) {
+  // Validate inputs before entering the transaction
+  const parsedAmount = parseFloat(amount);
+  if (!isFinite(parsedAmount) || isNaN(parsedAmount) || parsedAmount <= 0) {
     throw Object.assign(new Error('Montant invalide'), { code: 'INVALID_AMOUNT' });
   }
 
-  const payout = await prisma.affiliatePayout.create({
-    data: { affiliateId, amount: parseFloat(amount), status: 'pending' },
-  });
+  // Use a serializable transaction so the balance read and payout insert
+  // are atomic — prevents double-withdrawal under concurrent requests.
+  const payout = await prisma.$transaction(async (tx) => {
+    const balance = await getAffiliateBalance(affiliateId, tx);
+    if (parsedAmount > balance) {
+      throw Object.assign(new Error('Montant supérieur au solde disponible'), { code: 'INSUFFICIENT_BALANCE' });
+    }
+    return tx.affiliatePayout.create({
+      data: { affiliateId, amount: parsedAmount, status: 'pending' },
+    });
+  }, { isolationLevel: 'Serializable' });
+
   return payout;
 }
 
@@ -666,16 +676,27 @@ export async function claimTeamBonus(affiliateId) {
     prisma.affiliate.count({ where: { parentId: affiliateId, referralStatus: 'active' } }),
   ]);
 
-  if (!affiliate)          throw Object.assign(new Error('Affilié introuvable'),              { code: 'NOT_FOUND' });
+  if (!affiliate)
+    throw Object.assign(new Error('Affilié introuvable'), { code: 'NOT_FOUND' });
   if (affiliate.teamBonusClaimed)
-                           throw Object.assign(new Error('Bonus déjà réclamé'),               { code: 'ALREADY_CLAIMED' });
+    throw Object.assign(new Error('Bonus déjà réclamé'), { code: 'ALREADY_CLAIMED' });
   if (validReferrals < config.requiredActiveAffiliates)
-                           throw Object.assign(new Error(`Objectif non atteint : ${validReferrals} / ${config.requiredActiveAffiliates} parrainages valides`), { code: 'GOAL_NOT_MET' });
+    throw Object.assign(
+      new Error(`Objectif non atteint : ${validReferrals} / ${config.requiredActiveAffiliates} parrainages valides`),
+      { code: 'GOAL_NOT_MET' }
+    );
 
-  await prisma.affiliate.update({
-    where: { id: affiliateId },
+  // Atomic check-and-set: updateMany only matches rows where teamBonusClaimed is
+  // still false, eliminating the TOCTOU window between the read above and the write.
+  // If count === 0 a concurrent request already claimed it.
+  const { count } = await prisma.affiliate.updateMany({
+    where: { id: affiliateId, teamBonusClaimed: false },
     data:  { teamBonusClaimed: true, bonusBalance: { increment: config.bonusAmount } },
   });
+
+  if (count === 0) {
+    throw Object.assign(new Error('Bonus déjà réclamé'), { code: 'ALREADY_CLAIMED' });
+  }
 
   return { ok: true, bonus: config.bonusAmount };
 }

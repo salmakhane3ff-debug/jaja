@@ -185,7 +185,19 @@ export default function PaymentPage() {
   const [codAllowed,     setCodAllowed]     = useState(null);
   const [prepaidAllowed, setPrepaidAllowed] = useState(null);
 
+  // FIX #3: isHydrated distinguishes "not yet read localStorage" (show spinner,
+  // no redirect) from "read localStorage, data is valid" (show UI).
+  // Previously the guard was `!address || !shipping`, which is identical in both
+  // states — so a redirect could fire before the effect even ran.
+  const [isHydrated, setIsHydrated] = useState(false);
+
   // ── Load data ──────────────────────────────────────────────────────────────
+  // FIX #2: dependency array changed from [router] to [].
+  // This effect must run exactly once on mount. Using [router] caused it to
+  // re-run whenever Next.js 15 App Router updated the router reference during
+  // a navigation transition (React 19 concurrent rendering), which could hit
+  // the redirect guard on a second execution when the checkout state was
+  // already cleared by a prior session's clearCheckoutStorage().
   useEffect(() => {
     const addr = localStorage.getItem("checkoutAddress");
     const ship = localStorage.getItem("selectedShipping");
@@ -197,6 +209,14 @@ export default function PaymentPage() {
       parsedAddr = JSON.parse(addr);
       parsedShip = JSON.parse(ship);
     } catch {
+      router.replace("/checkout/address"); return;
+    }
+
+    // FIX #4: JSON.stringify(null) === "null" is truthy, so !addr / !ship
+    // pass the check above, but JSON.parse("null") === null. Explicitly guard
+    // against null/non-object values to avoid an infinite spinner.
+    if (!parsedAddr || typeof parsedAddr !== "object" ||
+        !parsedShip || typeof parsedShip !== "object") {
       router.replace("/checkout/address"); return;
     }
 
@@ -215,6 +235,9 @@ export default function PaymentPage() {
       const prev = localStorage.getItem("selectedPaymentMethod");
       if (prev) setSelectedMethod(JSON.parse(prev));
     } catch {}
+
+    // Mark hydration complete — UI can now render safely.
+    setIsHydrated(true);
 
     // ── Fetch product payment rules ──────────────────────────────────────────
     const productIds = [...new Set(items.map(i => i.productId).filter(Boolean))];
@@ -260,7 +283,8 @@ export default function PaymentPage() {
     } else {
       setLoadingMethods(false);
     }
-  }, [router]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // ── Auto-switch: if selected method becomes invalid, clear it ──────────────
   useEffect(() => {
@@ -327,8 +351,11 @@ export default function PaymentPage() {
   // ── Continue (prepaid / cod_deposit) ──────────────────────────────────────
   const handleContinue = async () => {
     if (!selectedMethod || prepaidAllowed === false) return;
-    // HARD GUARD: block orders that contain only free gifts (price === 0)
-    const hasPaidItem = cartItems.some((i) => !i.isFreeGift && parseFloat(i.price) > 0);
+    // Guard: cart must contain at least one non-gift item.
+    // We do NOT check client-side price > 0 here — the server recalculates
+    // every price from the DB anyway, so a display price of 0 or undefined
+    // in localStorage would cause a false redirect for legitimate products.
+    const hasPaidItem = cartItems.some((i) => !i.isFreeGift);
     if (!hasPaidItem || cartItems.length === 0) {
       router.replace("/checkout/address");
       return;
@@ -343,8 +370,9 @@ export default function PaymentPage() {
   // ── COD order creation ─────────────────────────────────────────────────────
   const handleCOD = async () => {
     if (codBlockedByRule) return; // double-guard (UI already disabled)
-    // HARD GUARD: block orders that contain only free gifts (price === 0)
-    const hasPaidItem = cartItems.some((i) => !i.isFreeGift && parseFloat(i.price) > 0);
+    // Guard: cart must contain at least one non-gift item.
+    // Same reasoning as handleContinue — don't check client-side price.
+    const hasPaidItem = cartItems.some((i) => !i.isFreeGift);
     if (!hasPaidItem || cartItems.length === 0) {
       router.replace("/checkout/address");
       return;
@@ -375,6 +403,9 @@ export default function PaymentPage() {
             price:        item.price,
             sellingPrice: item.price,
             images:       item.image ? [item.image] : [],
+            // Pass gift fields so the server can skip DB price lookup for free items
+            isFreeGift:   item.isFreeGift || false,
+            giftId:       item._giftId    || item.giftId || undefined,
           })),
         },
         paymentDetails: {
@@ -469,7 +500,12 @@ export default function PaymentPage() {
   };
 
   // ── Loading guard ─────────────────────────────────────────────────────────
-  if (!address || !shipping) {
+  // FIX #3: use isHydrated (set only after localStorage is read and state is
+  // populated) so the spinner appears during the brief window before the effect
+  // fires rather than relying on address/shipping being null — those are null
+  // both before and after a failed localStorage read, making the two cases
+  // indistinguishable and causing a flash-of-spinner before redirect.
+  if (!isHydrated) {
     return (
       <div className="flex items-center justify-center min-h-screen bg-gray-50">
         <div className="w-8 h-8 border-[3px] border-gray-900 border-t-transparent rounded-full animate-spin" />

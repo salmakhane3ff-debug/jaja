@@ -17,6 +17,7 @@ import {
   deleteReview,
 } from '../services/reviewService.js';
 import { badRequest, notFound, serverError } from '../utils/apiResponse.js';
+import { sanitizeText } from '../utils/sanitize.js';
 
 // ── POST /api/reviews ─────────────────────────────────────────────────────────
 
@@ -28,7 +29,18 @@ export async function createReviewHandler(req) {
     if (!body.message?.trim()) return badRequest('message is required');
     if (!body.rating)          return badRequest('rating is required');
 
-    const review = await createReview(body);
+    const rating = parseInt(body.rating, 10);
+    if (!Number.isInteger(rating) || rating < 1 || rating > 5) {
+      return badRequest('rating must be an integer between 1 and 5');
+    }
+
+    const review = await createReview({
+      ...body,
+      rating,
+      name:    sanitizeText(body.name,    100),
+      message: sanitizeText(body.message, 1000),
+      phone:   sanitizeText(body.phone,   30),
+    });
     return Response.json(review, { status: 201 });
   } catch (err) {
     console.error('Review POST error:', err);

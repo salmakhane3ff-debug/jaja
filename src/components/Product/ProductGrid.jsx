@@ -244,25 +244,25 @@ function StyleOne() {
                     quality={80}
                   />
                   {!!product.productLabel && (
-                    <div className="absolute top-2 left-2">
+                    <div className="absolute top-2 start-2">
                       <ProductLabel label={product.productLabel} />
                     </div>
                   )}
                   {product.rating > 0 && (
-                    <div className="absolute bottom-2 left-2 bg-green-600/90 px-2 py-0.5 rounded-md flex items-center gap-1">
+                    <div className="absolute bottom-2 start-2 bg-green-600/90 px-2 py-0.5 rounded-md flex items-center gap-1">
                       <span className="text-xs text-white font-medium">{product.rating}</span>
                       <span className="text-xs text-white">★</span>
                     </div>
                   )}
                   {discountRule && (
-                    <div className="absolute bottom-2 right-2 bg-red-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-md">
+                    <div className="absolute bottom-2 end-2 bg-red-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-md">
                       -{discountRule.percentage}%
                     </div>
                   )}
                   {/* Wishlist */}
                   <button
                     onClick={(e) => handleWishlist(product, e)}
-                    className={`absolute top-2 right-2 p-1.5 rounded-full backdrop-blur-sm transition-all duration-200 hover:scale-110 ${
+                    className={`absolute top-2 end-2 p-1.5 rounded-full backdrop-blur-sm transition-all duration-200 hover:scale-110 ${
                       isInWishlist(product._id)
                         ? "bg-red-500/90 text-white"
                         : "bg-white/80 text-gray-600 hover:text-red-500"

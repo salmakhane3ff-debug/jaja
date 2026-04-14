@@ -4,8 +4,9 @@
  */
 
 import { getTeamBonusConfig, saveTeamBonusConfig } from '@/lib/services/affiliateSystemService';
+import { withAdminAuth } from '@/lib/middleware/withAdminAuth';
 
-export async function GET() {
+export const GET = withAdminAuth(async () => {
   try {
     const config = await getTeamBonusConfig();
     return Response.json(config);
@@ -13,9 +14,9 @@ export async function GET() {
     console.error('team-bonus-config GET error:', err);
     return Response.json({ error: 'Erreur serveur' }, { status: 500 });
   }
-}
+});
 
-export async function POST(req) {
+export const POST = withAdminAuth(async (req) => {
   try {
     const body = await req.json();
     const { requiredActiveAffiliates, bonusAmount, commissionTiers } = body;
@@ -35,4 +36,4 @@ export async function POST(req) {
     console.error('team-bonus-config POST error:', err);
     return Response.json({ error: 'Erreur serveur' }, { status: 500 });
   }
-}
+});

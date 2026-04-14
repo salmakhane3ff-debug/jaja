@@ -407,6 +407,12 @@ export default function CheckoutAddressPage() {
   const handleShippingSelect = (company) => {
     if (anyProductNoDeposit && company.paymentType === "cod_deposit") return;
     setSelectedShipping(company);
+    // FIX: persist selectedShipping immediately on selection, not only in handleContinue.
+    // Without this, if the user navigates to /checkout/payment via any path other than
+    // handleContinue (browser history, direct URL, concurrent render edge case in
+    // React 19 / Next.js 15), the payment page finds no "selectedShipping" key
+    // in localStorage and immediately redirects back here.
+    try { localStorage.setItem("selectedShipping", JSON.stringify(company)); } catch {}
     if (errors.shipping) setErrors((e) => ({ ...e, shipping: null }));
     // Auto-save address if required fields are filled
     if (form.fullName.trim() && form.phone.trim() && form.city.trim()) {

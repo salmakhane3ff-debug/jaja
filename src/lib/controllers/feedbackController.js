@@ -26,6 +26,7 @@ import {
   deleteFeedback,
 } from '../services/feedbackService.js';
 import { badRequest, notFound, serverError } from '../utils/apiResponse.js';
+import { sanitizeText, sanitizeTextOrNull } from '../utils/sanitize.js';
 
 // ── GET /api/feedback ─────────────────────────────────────────────────────────
 
@@ -64,17 +65,19 @@ export async function submitFeedbackHandler(req) {
   try {
     const body = await req.json();
 
+    const rating = Math.min(5, Math.max(1, parseInt(body.rating, 10) || 5));
+
     const feedback = await submitFeedback({
       type:          body.type          || 'TEXT',
-      textContent:   body.textContent   || body.comment || null,
+      textContent:   sanitizeTextOrNull(body.textContent || body.comment, 2000),
       mediaUrl:      body.mediaUrl      || null,
       mediaPublicId: body.mediaPublicId || null,
-      authorName:    body.authorName    || body.name || null,
-      phone:         body.phone         || null,
-      productName:   body.productName   || null,
+      authorName:    sanitizeTextOrNull(body.authorName || body.name, 100),
+      phone:         sanitizeTextOrNull(body.phone, 30),
+      productName:   sanitizeTextOrNull(body.productName, 200),
       voiceUrl:      body.voiceUrl      || null,
       images:        body.images        || [],
-      rating:        body.rating        || 5,
+      rating,
       productId:     body.productId     || null,
       userId:        body.userId        || null,
     });

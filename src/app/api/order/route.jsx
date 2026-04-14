@@ -1,14 +1,10 @@
 /**
  * /api/order
  * ─────────────────────────────────────────────────────────────────────────────
- * GET    ?orderId=&phone=&email=  → all orders (or search results)
- * POST   { ...orderFields }        → create order (sessionId dedup)
- * PUT    { _id, ...updateFields }  → update order by _id
- * DELETE { _id }                   → delete order by _id
- *
- * Response shape is identical to the original MongoDB implementation:
- *   { _id, name, email, phone, shipping, products.items[], paymentDetails,
- *     status, sessionId, utm_source, createdAt, updatedAt }
+ * GET    ?orderId=&phone=&email=  → all orders (or search results)   [admin]
+ * POST   { ...orderFields }        → create order (sessionId dedup)  [public]
+ * PUT    { _id, ...updateFields }  → update order by _id             [admin]
+ * DELETE { _id }                   → delete order by _id             [admin]
  * ─────────────────────────────────────────────────────────────────────────────
  */
 
@@ -18,8 +14,16 @@ import {
   updateOrderHandler,
   deleteOrderHandler,
 } from '@/lib/controllers/orderController';
+import { withAdminAuth } from '@/lib/middleware/withAdminAuth';
+import { rateLimit }     from '@/lib/rateLimit';
 
-export const GET    = getOrdersHandler;
-export const POST   = createOrderHandler;
-export const PUT    = updateOrderHandler;
-export const DELETE = deleteOrderHandler;
+export const GET    = withAdminAuth(getOrdersHandler);
+export const PUT    = withAdminAuth(updateOrderHandler);
+export const DELETE = withAdminAuth(deleteOrderHandler);
+
+// POST is public (checkout), but rate-limited to block order-spam
+export async function POST(req) {
+  const limited = rateLimit(req, 'order', { max: 20, windowMs: 60_000 });
+  if (limited) return limited;
+  return createOrderHandler(req);
+}

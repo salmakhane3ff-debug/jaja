@@ -78,6 +78,19 @@
   right: auto;
 }
 
+/* ─── Product card & detail page direction-aware alignment ───────────────── */
+/* Titles, prices, and descriptions in product cards inherit text-align from  */
+/* <body>. Flex rows naturally reverse in RTL (flex-start = right).           */
+/* Sticky bar notification: always appears on the inline-end side.            */
+[dir="rtl"] .sticky-notification {
+  right: auto;
+  left: 1rem;
+}
+[dir="ltr"] .sticky-notification {
+  left: auto;
+  right: 1rem;
+}
+
 * {
   box-sizing: border-box;
 }

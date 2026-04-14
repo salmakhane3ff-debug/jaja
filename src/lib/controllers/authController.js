@@ -45,37 +45,6 @@ export async function loginHandler(req) {
       return badRequest('Email and password are required');
     }
 
-    // ── Priority env-var login (works with or without a live database) ────────
-    // If LOGIN_EMAIL + LOGIN_PASSWORD are set in .env and match the request,
-    // grant access immediately. This supports:
-    //   1. Dev mode (no PostgreSQL installed)
-    //   2. Emergency admin access when the DB has no admin row yet
-    const devEmail    = process.env.LOGIN_EMAIL?.trim();
-    const devPassword = process.env.LOGIN_PASSWORD?.trim();
-
-    if (devEmail && devPassword && email.trim() === devEmail && password === devPassword) {
-      // Opportunistically try to enrich from DB, but never fail on it
-      let tokenPayload = { userId: 'dev-admin', email: devEmail, role: 'ADMIN' };
-      let userName     = 'Admin';
-      try {
-        const dbUser = await findUserByEmail(devEmail);
-        if (dbUser) {
-          tokenPayload = { userId: dbUser.id, email: dbUser.email, role: dbUser.role };
-          userName     = dbUser.name ?? 'Admin';
-        }
-      } catch { /* DB unreachable — use dev payload */ }
-
-      const token    = signToken(tokenPayload);
-      const response = Response.json({
-        success: true,
-        message: 'Login successful',
-        user: { id: tokenPayload.userId, email: devEmail, name: userName, role: 'ADMIN' },
-      });
-      setAuthCookie(response, token);
-      return response;
-    }
-    // ─────────────────────────────────────────────────────────────────────────
-
     // Normal DB login — seed default admin row on first run
     await getOrCreateAdmin();
 

@@ -73,12 +73,16 @@ async function enrichGeo(ip) {
   }
   try {
     const res = await fetch(
-      `http://ip-api.com/json/${ip}?fields=status,country,city,isp,org`,
+      `https://ipwho.is/${ip}`,
       { signal: AbortSignal.timeout(2000) }  // 2-second timeout
     );
     if (!res.ok) return { country: null, city: null, isp: null, operator: null };
     const d = await res.json();
-    if (d.status !== "success") return { country: null, city: null, isp: null, operator: null };
+    if (!d.success) return { country: null, city: null, isp: null, operator: null };
+    // Normalize ipwho.is response to match expected shape
+    d.status = d.success ? "success" : "fail";
+    d.isp = d.connection?.isp || null;
+    d.org = d.connection?.org || null;
     return {
       country:  d.country || null,
       city:     d.city    || null,

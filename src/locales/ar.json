@@ -340,6 +340,8 @@
   "feedback_form_error_content": "يرجى كتابة تعليق أو تسجيل رسالة صوتية",
   "feedback_form_error_submit": "حدث خطأ أثناء إرسال التقييم، يرجى المحاولة مجدداً",
   "feedback_form_error_mic": "لا يمكن الوصول إلى الميكروفون",
+  "feedback_form_error_mic_permission": "تم رفض الوصول إلى الميكروفون. يرجى السماح به من إعدادات المتصفح.",
+  "feedback_form_error_mic_notfound": "لم يتم اكتشاف أي ميكروفون على هذا الجهاز.",
   "feedback_form_success_title": "شكراً لك!",
   "feedback_form_success_msg": "تم إرسال تقييمك بنجاح. سيظهر بعد المراجعة.",
   "feedback_form_success_another": "إضافة تقييم آخر",

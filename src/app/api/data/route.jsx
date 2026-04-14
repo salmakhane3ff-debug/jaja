@@ -6,10 +6,10 @@
  * (slider, promo-text, menu, support-benefits, contact, collection-section, …)
  * work without any frontend changes.
  *
- * GET    ?collection=<name>            → array of items
- * POST   { collection, ...fields }     → create item  (201)
- * PUT    { collection, _id, ...fields} → update item by _id
- * DELETE { collection, _id }           → delete item by _id
+ * GET    ?collection=<name>            → array of items           (public — CMS rendering)
+ * POST   { collection, ...fields }     → create item  (201)       (admin only)
+ * PUT    { collection, _id, ...fields} → update item by _id       (admin only)
+ * DELETE { collection, _id }           → delete item by _id       (admin only)
  * ─────────────────────────────────────────────────────────────────────────────
  */
 
@@ -19,8 +19,10 @@ import {
   updateItem,
   deleteItem,
 } from '@/lib/services/contentService';
+import { withAdminAuth } from '@/lib/middleware/withAdminAuth';
 
-// ── GET /api/data?collection=<name> ──────────────────────────────────────────
+// ── GET /api/data?collection=<name> ─────────────────────────────────────────
+// Public — storefront pages (slider, menu, etc.) read this without auth
 
 export async function GET(req) {
   try {
@@ -44,7 +46,7 @@ export async function GET(req) {
 
 // ── POST /api/data ────────────────────────────────────────────────────────────
 
-export async function POST(req) {
+async function _POST(req) {
   try {
     const body = await req.json();
     // eslint-disable-next-line no-unused-vars
@@ -67,7 +69,7 @@ export async function POST(req) {
 
 // ── PUT /api/data ─────────────────────────────────────────────────────────────
 
-export async function PUT(req) {
+async function _PUT(req) {
   try {
     const body = await req.json();
     // eslint-disable-next-line no-unused-vars
@@ -94,7 +96,7 @@ export async function PUT(req) {
 
 // ── DELETE /api/data ──────────────────────────────────────────────────────────
 
-export async function DELETE(req) {
+async function _DELETE(req) {
   try {
     const body = await req.json();
     const { _id, id } = body ?? {};
@@ -117,3 +119,7 @@ export async function DELETE(req) {
     return Response.json({ error: 'Failed to delete item' }, { status: 500 });
   }
 }
+
+export const POST   = withAdminAuth(_POST);
+export const PUT    = withAdminAuth(_PUT);
+export const DELETE = withAdminAuth(_DELETE);

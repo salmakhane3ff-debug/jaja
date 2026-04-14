@@ -13,6 +13,9 @@
 import { writeFile } from "fs/promises";
 import path from "path";
 import prisma from "@/lib/prisma";
+import { withAdminAuth } from "@/lib/middleware/withAdminAuth";
+import { validateVideo } from "@/lib/uploadSecurity";
+import { rateLimit } from "@/lib/rateLimit";
 
 function mapVideo(row) {
   if (!row) return null;
@@ -21,7 +24,7 @@ function mapVideo(row) {
 
 // ── GET → list all videos ─────────────────────────────────────────────────────
 
-export async function GET() {
+export const GET = withAdminAuth(async () => {
   try {
     const rows = await prisma.video.findMany({ orderBy: { createdAt: "desc" } });
     return Response.json(rows.map(mapVideo));
@@ -29,11 +32,13 @@ export async function GET() {
     console.error("[/api/video GET]", err);
     return Response.json({ error: "Server error" }, { status: 500 });
   }
-}
+});
 
 // ── POST multipart/form-data → upload + save record ──────────────────────────
 
-export async function POST(req) {
+export const POST = withAdminAuth(async (req) => {
+  const limited = rateLimit(req, "upload", { max: 60, windowMs: 60_000 });
+  if (limited) return limited;
   try {
     const formData = await req.formData();
     const file = formData.get("file");
@@ -42,7 +47,14 @@ export async function POST(req) {
       return Response.json({ error: "No file provided" }, { status: 400 });
     }
 
-    const buffer    = Buffer.from(await file.arrayBuffer());
+    const buffer = Buffer.from(await file.arrayBuffer());
+
+    // ── Security: validate extension + magic bytes + size ─────────────────────
+    const validation = validateVideo(buffer, file.name);
+    if (!validation.ok) {
+      return Response.json({ error: validation.error }, { status: validation.status });
+    }
+
     const safeName  = file.name.replace(/[^a-zA-Z0-9._-]/g, "-");
     const fileName  = `${Date.now()}-${safeName}`;
     const uploadDir = path.join(process.cwd(), "public", "uploads");
@@ -58,11 +70,11 @@ export async function POST(req) {
     console.error("[/api/video POST]", err);
     return Response.json({ error: "Upload failed" }, { status: 500 });
   }
-}
+});
 
 // ── DELETE { _id } ─────────────────────────────────────────────────────────────
 
-export async function DELETE(req) {
+export const DELETE = withAdminAuth(async (req) => {
   try {
     const { _id, id } = await req.json();
     const videoId = _id || id;
@@ -80,4 +92,4 @@ export async function DELETE(req) {
     console.error("[/api/video DELETE]", err);
     return Response.json({ error: "Server error" }, { status: 500 });
   }
-}
+});

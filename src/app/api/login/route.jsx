@@ -12,5 +12,10 @@
  */
 
 import { loginHandler } from '@/lib/controllers/authController';
+import { rateLimit } from '@/lib/rateLimit';
 
-export { loginHandler as POST };
+export async function POST(req) {
+  const limited = rateLimit(req, 'login', { max: 10, windowMs: 60_000 });
+  if (limited) return limited;
+  return loginHandler(req);
+}

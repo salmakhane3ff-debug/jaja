@@ -1,42 +1,53 @@
 /**
  * /api/spin-wheel-config
- * GET  — public config for storefront (isEnabled check)
- * GET  ?admin=true — full config + segments for admin panel
- * PUT  — update config + segments (admin)
+ * GET              — public config for storefront (isEnabled + segments)
+ * GET ?admin=true  — full config + segments for admin panel (admin — requires auth)
+ * PUT              — update config + segments (admin)
  */
 
 import { getConfig, updateConfig, replaceSegments } from '@/lib/services/spinWheelConfigService.js';
 import { serverError } from '@/lib/utils/apiResponse.js';
+import { withAdminAuth } from '@/lib/middleware/withAdminAuth';
 
-export async function GET(req) {
+export function GET(req) {
+  const { searchParams } = new URL(req.url);
+  if (searchParams.get('admin') === 'true') {
+    return withAdminAuth(_getAdmin)(req);
+  }
+  return _getPublic(req);
+}
+
+async function _getPublic(_req) {
   try {
-    const { searchParams } = new URL(req.url);
-    const admin = searchParams.get('admin') === 'true';
     const config = await getConfig();
-
-    if (!admin) {
-      // Storefront only needs enabled status + segments (stripped of internal ids)
-      if (!config.isEnabled) return Response.json({ isEnabled: false });
-      return Response.json({
-        isEnabled:    config.isEnabled,
-        deviceTarget: config.deviceTarget,
-        pageTarget:   config.pageTarget,
-        triggerType:  config.triggerType,
-        triggerValue: config.triggerValue,
-        title:        config.title,
-        subtitle:     config.subtitle,
-        segments:     config.segments,
-      });
-    }
-
-    return Response.json(config);
+    if (!config.isEnabled) return Response.json({ isEnabled: false });
+    return Response.json({
+      isEnabled:    config.isEnabled,
+      deviceTarget: config.deviceTarget,
+      pageTarget:   config.pageTarget,
+      triggerType:  config.triggerType,
+      triggerValue: config.triggerValue,
+      title:        config.title,
+      subtitle:     config.subtitle,
+      segments:     config.segments,
+    });
   } catch (err) {
     console.error('SpinWheelConfig GET error:', err);
     return serverError('Failed to fetch spin wheel config');
   }
 }
 
-export async function PUT(req) {
+async function _getAdmin(_req) {
+  try {
+    const config = await getConfig();
+    return Response.json(config);
+  } catch (err) {
+    console.error('SpinWheelConfig GET (admin) error:', err);
+    return serverError('Failed to fetch spin wheel config');
+  }
+}
+
+async function _PUT(req) {
   try {
     const body = await req.json();
     const config = await getConfig();
@@ -55,3 +66,5 @@ export async function PUT(req) {
     return serverError('Failed to update spin wheel config');
   }
 }
+
+export const PUT = withAdminAuth(_PUT);

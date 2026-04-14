@@ -13,18 +13,33 @@
 
 import bcrypt    from 'bcryptjs';
 import jwt       from 'jsonwebtoken';
+import { timingSafeEqual } from 'crypto';
 import prisma    from '../prisma.js';
 
-const JWT_SECRET  = process.env.JWT_SECRET || 'change-this-to-a-long-random-secret';
 const SALT_ROUNDS = 12;
 
-// ── Default admin seeded on first login attempt ───────────────────────────────
-const DEFAULT_ADMIN = {
-  email:    'admin@gmail.com',
-  password: '123456',
-  name:     'Admin',
-  role:     'ADMIN',
-};
+function getJwtSecret() {
+  const secret = process.env.JWT_SECRET;
+  if (!secret) throw new Error('[authService] JWT_SECRET environment variable is required but not set.');
+  return secret;
+}
+
+// DEFAULT_ADMIN is evaluated lazily at request time (not module load time)
+// so that Next.js build-time page-data collection does not fail when
+// ADMIN_EMAIL / ADMIN_PASSWORD are absent from the build environment.
+function getDefaultAdmin() {
+  if (process.env.NODE_ENV === 'production') {
+    if (!process.env.ADMIN_EMAIL || !process.env.ADMIN_PASSWORD) {
+      throw new Error('[authService] ADMIN_EMAIL and ADMIN_PASSWORD environment variables are required in production.');
+    }
+  }
+  return {
+    email:    process.env.ADMIN_EMAIL    || 'admin@localhost',
+    password: process.env.ADMIN_PASSWORD || 'change-me-now',
+    name:     'Admin',
+    role:     'ADMIN',
+  };
+}
 
 // ── Password helpers ──────────────────────────────────────────────────────────
 
@@ -40,26 +55,38 @@ export async function hashPassword(password) {
  */
 export async function comparePassword(plain, stored) {
   if (!stored) return false;
-  // Legacy plaintext check — allows a one-time migration on next login
+  // Legacy plaintext check — allows a one-time migration on next login.
+  // Uses timingSafeEqual to prevent timing-based information leakage.
   if (!stored.startsWith('$2')) {
-    return plain === stored;
+    try {
+      const a = Buffer.from(plain,   'utf8');
+      const b = Buffer.from(stored,  'utf8');
+      // timingSafeEqual requires same-length buffers; pad to prevent length leak
+      const len = Math.max(a.length, b.length);
+      const pa  = Buffer.concat([a, Buffer.alloc(len - a.length)]);
+      const pb  = Buffer.concat([b, Buffer.alloc(len - b.length)]);
+      return a.length === b.length && timingSafeEqual(pa, pb);
+    } catch {
+      return false;
+    }
   }
   return bcrypt.compare(plain, stored);
 }
 
 // ── JWT helpers ───────────────────────────────────────────────────────────────
 
-/** Sign a JWT valid for 7 days. */
+/** Sign a JWT valid for 7 days using HS256 only. */
 export function signToken(payload) {
-  return jwt.sign(payload, JWT_SECRET, { expiresIn: '7d' });
+  return jwt.sign(payload, getJwtSecret(), { algorithm: 'HS256', expiresIn: '7d' });
 }
 
 /**
  * Verify a JWT and return the decoded payload.
- * Throws if invalid or expired.
+ * Explicitly restricts accepted algorithms to HS256 — rejects alg:none and RS* tokens.
+ * Throws if invalid, expired, or wrong algorithm.
  */
 export function verifyToken(token) {
-  return jwt.verify(token, JWT_SECRET);
+  return jwt.verify(token, getJwtSecret(), { algorithms: ['HS256'] });
 }
 
 // ── Admin user helpers ────────────────────────────────────────────────────────
@@ -68,6 +95,7 @@ export function verifyToken(token) {
 export async function getOrCreateAdmin() {
   let admin = await prisma.user.findFirst({ where: { role: 'ADMIN' } });
   if (!admin) {
+    const DEFAULT_ADMIN = getDefaultAdmin();
     const hashed = await hashPassword(DEFAULT_ADMIN.password);
     admin = await prisma.user.create({
       data: {

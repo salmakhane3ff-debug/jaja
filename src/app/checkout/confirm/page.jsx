@@ -96,8 +96,11 @@ export default function ConfirmPage() {
   const [acctCopied,   setAcctCopied]   = useState(false);
   const [submitting,   setSubmitting]   = useState(false);
   const [submitError,  setSubmitError]  = useState("");
+  const [isHydrated,   setIsHydrated]   = useState(false);
 
   // ── Load + resolve bank info ───────────────────────────────────────────────
+  // Dependency array is [] — must run once on mount only. [router] caused
+  // re-runs on Next.js 15 navigation transitions (React 19 concurrent mode).
   useEffect(() => {
     const addr  = localStorage.getItem("checkoutAddress");
     const ship  = localStorage.getItem("selectedShipping");
@@ -115,6 +118,11 @@ export default function ConfirmPage() {
       router.replace("/checkout/address"); return;
     }
 
+    if (!parsedAddr || typeof parsedAddr !== "object" ||
+        !parsedShip || typeof parsedShip !== "object") {
+      router.replace("/checkout/address"); return;
+    }
+
     setAddress(parsedAddr);
     setShipping(parsedShip);
     setCartItems(JSON.parse(localStorage.getItem("buyNow") || "[]"));
@@ -124,23 +132,23 @@ export default function ConfirmPage() {
       if (pd) setPromoDiscount(JSON.parse(pd).discountAmount || 0);
     } catch {}
 
+    setIsHydrated(true);
+
     // ── Fetch fresh bank data from DB using paymentMethodId ──────────────────
-    // This fixes the bug where bank data from admin was not displayed.
     fetch("/api/setting?type=bank-settings")
       .then(r => r.json())
       .then(data => {
         const methods = Array.isArray(data?.methods) ? data.methods : [];
-        // Find by id — the source of truth is the DB, not localStorage
         const found = parsedMethod?.id
           ? methods.find(m => m.id === parsedMethod.id)
           : null;
-        // Use DB data if found; fall back to localStorage data
         setBankInfo(found || parsedMethod || null);
       })
       .catch(() => {
         setBankInfo(parsedMethod || null);
       });
-  }, [router]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // ── Derived totals ─────────────────────────────────────────────────────────
   const subtotal     = cartItems.reduce((s, i) => s + i.price * (i.quantity || 1), 0);
@@ -172,11 +180,31 @@ export default function ConfirmPage() {
     });
   };
 
-  // ── Screenshot upload ─────────────────────────────────────────────────────
+  // ── Screenshot upload — compress before storing ───────────────────────────
+  // A mobile photo can be 3–5 MB base64; embedding that in the order JSON
+  // payload causes a 413 / body-too-large error. We resize to max 1200 px
+  // and encode at 72 % JPEG quality — more than enough for proof-of-payment.
   const handleFile = (file) => {
     if (!file || !file.type.startsWith("image/")) return;
     const reader = new FileReader();
-    reader.onload = e => setScreenshot(e.target.result);
+    reader.onload = (e) => {
+      const img = new Image();
+      img.onload = () => {
+        const MAX = 1200;
+        let { width, height } = img;
+        if (width > MAX || height > MAX) {
+          if (width > height) { height = Math.round(height * MAX / width);  width = MAX; }
+          else                { width  = Math.round(width  * MAX / height); height = MAX; }
+        }
+        const canvas = document.createElement("canvas");
+        canvas.width  = width;
+        canvas.height = height;
+        canvas.getContext("2d").drawImage(img, 0, 0, width, height);
+        // 72 % quality is plenty for a payment receipt screenshot
+        setScreenshot(canvas.toDataURL("image/jpeg", 0.72));
+      };
+      img.src = e.target.result;
+    };
     reader.readAsDataURL(file);
   };
 
@@ -186,8 +214,10 @@ export default function ConfirmPage() {
       setSubmitError(t("checkout_upload_required"));
       return;
     }
-    // HARD GUARD: block orders that contain only free gifts (price === 0)
-    const hasPaidItem = cartItems.some((i) => !i.isFreeGift && parseFloat(i.price) > 0);
+    // Guard: cart must have at least one non-gift item.
+    // Do NOT check price > 0 here — client-side prices in localStorage may
+    // be 0/undefined for legitimate products; server recalculates from DB.
+    const hasPaidItem = cartItems.some((i) => !i.isFreeGift);
     if (!hasPaidItem || cartItems.length === 0) {
       router.replace("/checkout/address");
       return;
@@ -221,6 +251,9 @@ export default function ConfirmPage() {
             price:        item.price,
             sellingPrice: item.price,
             images:       item.image ? [item.image] : [],
+            // Pass gift fields so the server can skip DB price lookup for free items
+            isFreeGift:   item.isFreeGift || false,
+            giftId:       item._giftId    || item.giftId || undefined,
           })),
         },
         paymentDetails: {
@@ -328,7 +361,7 @@ export default function ConfirmPage() {
   };
 
   // ── Loading guard ─────────────────────────────────────────────────────────
-  if (!address || !shipping) {
+  if (!isHydrated) {
     return (
       <div className="flex items-center justify-center min-h-screen bg-gray-50">
         <div className="w-8 h-8 border-[3px] border-gray-900 border-t-transparent rounded-full animate-spin" />

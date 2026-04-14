@@ -2,7 +2,7 @@
  * /api/admin/watermark
  * GET  — fetch current watermark settings
  * PUT  — save watermark settings
- * POST ?action=preview — apply watermark to uploaded test image, return base64
+ * POST ?action=preview   — apply watermark to uploaded test image, return base64
  * POST ?action=apply-all — reprocess all /public/uploads images
  */
 
@@ -15,8 +15,9 @@ import {
   processFileWithWatermark,
 } from '@/lib/services/watermarkService.js';
 import _prisma from '@/lib/prisma.js';
+import { withAdminAuth } from '@/lib/middleware/withAdminAuth';
 
-export async function GET() {
+export const GET = withAdminAuth(async () => {
   try {
     const s = await getWatermarkSettings();
     return Response.json(s);
@@ -24,9 +25,9 @@ export async function GET() {
     console.error('[watermark GET]', err);
     return Response.json({ error: 'Failed to load settings' }, { status: 500 });
   }
-}
+});
 
-export async function PUT(req) {
+export const PUT = withAdminAuth(async (req) => {
   try {
     const body = await req.json();
     // Strip id/timestamps before saving
@@ -37,14 +38,14 @@ export async function PUT(req) {
     console.error('[watermark PUT]', err);
     return Response.json({ error: 'Failed to save settings' }, { status: 500 });
   }
-}
+});
 
-export async function POST(req) {
+export const POST = withAdminAuth(async (req) => {
   try {
     const { searchParams } = new URL(req.url);
     const action = searchParams.get('action');
 
-    // ── Preview: apply watermark to a test image ────────────────────────────
+    // ── Preview: apply watermark to a test image ──────────────────────────
     if (action === 'preview') {
       const formData = await req.formData();
       const file     = formData.get('file');
@@ -59,7 +60,7 @@ export async function POST(req) {
       return Response.json({ dataUrl: `data:${mime};base64,${b64}` });
     }
 
-    // ── Apply to all existing uploads ───────────────────────────────────────
+    // ── Apply to all existing uploads ─────────────────────────────────────
     if (action === 'apply-all') {
       const settings = await getWatermarkSettings();
       if (!settings.isEnabled) {
@@ -94,4 +95,4 @@ export async function POST(req) {
     console.error('[watermark POST]', err);
     return Response.json({ error: 'Operation failed' }, { status: 500 });
   }
-}
+});

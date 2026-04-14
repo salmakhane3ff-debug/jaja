@@ -81,6 +81,23 @@ function VoicePlayerMini({ src }) {
   );
 }
 
+// ── Pick the best MIME type the current browser can record ───────────────────
+
+function getBestMimeType() {
+  if (typeof MediaRecorder === "undefined") return "audio/webm";
+  const candidates = [
+    "audio/webm;codecs=opus",
+    "audio/webm",
+    "audio/ogg;codecs=opus",
+    "audio/ogg",
+    "audio/mp4",
+  ];
+  for (const t of candidates) {
+    if (MediaRecorder.isTypeSupported(t)) return t;
+  }
+  return ""; // let the browser choose
+}
+
 // ── VoiceRecorder ─────────────────────────────────────────────────────────────
 
 function VoiceRecorder({ onRecorded, onClear, voiceUrl }) {
@@ -92,27 +109,44 @@ function VoiceRecorder({ onRecorded, onClear, voiceUrl }) {
   const timerRef = useRef(null);
 
   const start = async () => {
+    // Guard: API unavailable (HTTP non-localhost, old browser, or blocked by header)
+    if (!navigator?.mediaDevices?.getUserMedia) {
+      alert(t("feedback_form_error_mic"));
+      return;
+    }
     try {
       const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-      const mr = new MediaRecorder(stream);
+      const mimeType = getBestMimeType();
+      const mrOptions = mimeType ? { mimeType } : {};
+      const mr = new MediaRecorder(stream, mrOptions);
+      // The actual MIME used may differ from what we requested (browser may upgrade)
+      const actualMime = mr.mimeType || mimeType || "audio/webm";
+
       chunksRef.current = [];
       mr.ondataavailable = (e) => {
         if (e.data.size > 0) chunksRef.current.push(e.data);
       };
       mr.onstop = () => {
-        const blob = new Blob(chunksRef.current, { type: "audio/webm" });
+        // Use the recorder's actual MIME type so the <audio> element can decode it
+        const blob = new Blob(chunksRef.current, { type: actualMime });
         const reader = new FileReader();
         reader.onloadend = () => onRecorded(reader.result);
         reader.readAsDataURL(blob);
-        stream.getTracks().forEach((t) => t.stop());
+        stream.getTracks().forEach((track) => track.stop());
       };
       mr.start();
       mediaRecorderRef.current = mr;
       setRecording(true);
       setDuration(0);
       timerRef.current = setInterval(() => setDuration((d) => d + 1), 1000);
-    } catch {
-      alert(t("feedback_form_error_mic"));
+    } catch (err) {
+      if (err?.name === "NotAllowedError" || err?.name === "PermissionDeniedError") {
+        alert(t("feedback_form_error_mic_permission"));
+      } else if (err?.name === "NotFoundError" || err?.name === "DevicesNotFoundError") {
+        alert(t("feedback_form_error_mic_notfound"));
+      } else {
+        alert(t("feedback_form_error_mic"));
+      }
     }
   };
 

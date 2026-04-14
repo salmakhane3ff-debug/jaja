@@ -7,6 +7,7 @@
  */
 
 import { recordAffiliateOrder } from '@/lib/services/affiliateSystemService';
+import { rateLimit } from '@/lib/rateLimit';
 
 /** Extract real IP from Next.js request headers */
 function getIp(req) {
@@ -18,6 +19,9 @@ function getIp(req) {
 }
 
 export async function POST(req) {
+  const limited = rateLimit(req, 'affiliate-record', { max: 20, windowMs: 60_000 });
+  if (limited) return limited;
+
   try {
     const body = await req.json();
     const { username, affiliateId, orderId, clientName, clientPhone, productTitle, total } = body;
@@ -25,6 +29,12 @@ export async function POST(req) {
     // Need at least one identifier and a total
     if ((!username?.trim() && !affiliateId?.trim()) || total == null) {
       return Response.json({ error: 'username ou affiliateId requis, ainsi que total' }, { status: 400 });
+    }
+
+    // Validate total: must be a finite, non-negative number
+    const parsedTotal = parseFloat(total);
+    if (!isFinite(parsedTotal) || isNaN(parsedTotal) || parsedTotal < 0) {
+      return Response.json({ error: 'total must be a finite non-negative number' }, { status: 400 });
     }
 
     const ipAddress = getIp(req);
@@ -36,7 +46,7 @@ export async function POST(req) {
       clientName:   clientName   || '',
       clientPhone:  clientPhone  || null,
       productTitle: productTitle || '',
-      total:        parseFloat(total) || 0,
+      total:        parsedTotal,
       ipAddress,
     });
 
@@ -44,7 +54,7 @@ export async function POST(req) {
       return Response.json({ error: 'Affilié introuvable' }, { status: 404 });
     }
 
-    console.log('[Affiliate] Order recorded | affiliateId:', result.affiliateId, '| orderId:', orderId, '| total:', total);
+    console.log('[Affiliate] Order recorded | affiliateId:', result.affiliateId, '| orderId:', orderId, '| total:', parsedTotal);
 
     return Response.json(result, { status: 201 });
   } catch (err) {

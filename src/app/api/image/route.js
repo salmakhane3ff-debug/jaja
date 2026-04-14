@@ -16,6 +16,9 @@ import { existsSync }      from 'fs';
 import path from 'path';
 import prisma from '@/lib/prisma';
 import { getWatermarkSettings, applyWatermark } from '@/lib/services/watermarkService.js';
+import { withAdminAuth } from '@/lib/middleware/withAdminAuth';
+import { validateImage, validateVideo } from '@/lib/uploadSecurity';
+import { rateLimit } from '@/lib/rateLimit';
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -26,7 +29,7 @@ function mapImage(row) {
 
 // ── GET → list all images ────────────────────────────────────────────────────
 
-export async function GET() {
+export const GET = withAdminAuth(async () => {
   try {
     const rows = await prisma.image.findMany({
       orderBy: { createdAt: 'desc' },
@@ -36,11 +39,13 @@ export async function GET() {
     console.error('[/api/image GET]', err);
     return Response.json({ error: 'Server error' }, { status: 500 });
   }
-}
+});
 
 // ── POST multipart/form-data → upload + save record ──────────────────────────
 
-export async function POST(req) {
+export const POST = withAdminAuth(async (req) => {
+  const limited = rateLimit(req, 'upload', { max: 60, windowMs: 60_000 });
+  if (limited) return limited;
   try {
     const formData = await req.formData();
     const file = formData.get('file');
@@ -49,7 +54,18 @@ export async function POST(req) {
       return Response.json({ error: 'No file provided' }, { status: 400 });
     }
 
-    let buffer      = Buffer.from(await file.arrayBuffer());
+    let buffer = Buffer.from(await file.arrayBuffer());
+
+    // ── Security: validate extension + magic bytes + size ─────────────────────
+    const isVideo = file.type?.startsWith('video/') ||
+      /\.(mp4|webm|mov|ogg)$/i.test(file.name);
+    const validation = isVideo
+      ? validateVideo(buffer, file.name)
+      : validateImage(buffer, file.name);
+    if (!validation.ok) {
+      return Response.json({ error: validation.error }, { status: validation.status });
+    }
+
     const safeName  = file.name.replace(/[^a-zA-Z0-9._-]/g, '-');
     const fileName  = `${Date.now()}-${safeName}`;
     const uploadDir = path.join(process.cwd(), 'public', 'uploads');
@@ -79,11 +95,11 @@ export async function POST(req) {
     console.error('[/api/image POST]', err);
     return Response.json({ error: 'Upload failed' }, { status: 500 });
   }
-}
+});
 
 // ── DELETE { _id } ────────────────────────────────────────────────────────────
 
-export async function DELETE(req) {
+export const DELETE = withAdminAuth(async (req) => {
   try {
     const { _id, id } = await req.json();
     const imageId = _id || id;
@@ -101,4 +117,4 @@ export async function DELETE(req) {
     console.error('[/api/image DELETE]', err);
     return Response.json({ error: 'Server error' }, { status: 500 });
   }
-}
+});

@@ -12,6 +12,7 @@ import {
   getProfileHandler,
   updateProfileHandler,
 } from '@/lib/controllers/authController';
+import { withAdminAuth } from '@/lib/middleware/withAdminAuth';
 
-export const GET = getProfileHandler;
-export const PUT = updateProfileHandler;
+export const GET = withAdminAuth(getProfileHandler);
+export const PUT = withAdminAuth(updateProfileHandler);

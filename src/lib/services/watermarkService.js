@@ -123,6 +123,8 @@ export async function applyWatermark(inputBuffer, settings) {
 
   // ── LOGO watermark ──────────────────────────────────────────────────────────
   if (settings.type === 'logo' && settings.logoUrl) {
+    // Security: only allow paths within /uploads/ to prevent path traversal
+    if (!settings.logoUrl.startsWith('/uploads/')) return inputBuffer;
     const logoPath = path.join(process.cwd(), 'public', settings.logoUrl);
     if (!fs.existsSync(logoPath)) return inputBuffer; // logo missing — skip
 

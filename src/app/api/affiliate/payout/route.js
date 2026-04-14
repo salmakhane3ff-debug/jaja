@@ -4,6 +4,7 @@
  */
 
 import { withAffiliateAuth }               from '@/lib/middleware/withAffiliateAuth';
+import { requireFinancialAmount }          from '@/lib/utils/validate';
 import {
   getAffiliatePayouts,
   requestPayout,
@@ -25,13 +26,16 @@ async function getHandler(req, _ctx, decoded) {
 
 async function postHandler(req, _ctx, decoded) {
   try {
-    const { amount } = await req.json();
+    const body = await req.json();
 
-    if (!amount || isNaN(parseFloat(amount))) {
+    let amount;
+    try {
+      amount = requireFinancialAmount(body?.amount, 'amount', { min: 0.01, max: 1_000_000 });
+    } catch {
       return Response.json({ error: 'Montant invalide' }, { status: 400 });
     }
 
-    const payout = await requestPayout(decoded.affiliateId, parseFloat(amount));
+    const payout = await requestPayout(decoded.affiliateId, amount);
     return Response.json(payout, { status: 201 });
   } catch (err) {
     if (err.code === 'INSUFFICIENT_BALANCE' || err.code === 'INVALID_AMOUNT') {

@@ -253,7 +253,7 @@ function AllProductsPage() {
 
                     {/* Product Label */}
                     {product.productLabel && (
-                      <span className={`absolute top-2 left-2 px-1.5 py-0.5 text-xs font-medium rounded-lg backdrop-blur-sm ${
+                      <span className={`absolute top-2 start-2 px-1.5 py-0.5 text-xs font-medium rounded-lg backdrop-blur-sm ${
                         product.productLabel === "New" ? "bg-gradient-to-r from-blue-500 to-blue-600 text-white"
                         : product.productLabel === "Hot" ? "bg-gradient-to-r from-red-500 to-red-600 text-white"
                         : product.productLabel === "Sale" ? "bg-gradient-to-r from-pink-500 to-pink-600 text-white"
@@ -268,14 +268,14 @@ function AllProductsPage() {
 
                     {/* Rating badge */}
                     {product.rating > 0 && (
-                      <div className="absolute bottom-2 left-2 bg-green-600 px-1.5 py-0.5 rounded-md flex items-center gap-1">
+                      <div className="absolute bottom-2 start-2 bg-green-600 px-1.5 py-0.5 rounded-md flex items-center gap-1">
                         <span className="text-xs text-white font-medium">{product.rating}</span>
                         <span className="text-xs text-white font-semibold">★</span>
                       </div>
                     )}
                     {/* Discount badge */}
                     {discountRule && (
-                      <div className="absolute bottom-2 right-2 bg-red-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-md">
+                      <div className="absolute bottom-2 end-2 bg-red-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-md">
                         -{discountRule.percentage}%
                       </div>
                     )}
@@ -283,7 +283,7 @@ function AllProductsPage() {
                     {/* Wishlist button */}
                     <button
                       onClick={(e) => handleWishlist(product, e)}
-                      className={`absolute top-2 right-2 p-1.5 rounded-full backdrop-blur-sm transition-all duration-200 hover:scale-110 ${
+                      className={`absolute top-2 end-2 p-1.5 rounded-full backdrop-blur-sm transition-all duration-200 hover:scale-110 ${
                         isInWishlist(product._id) ? "bg-red-500/90 text-white" : "bg-white/80 text-gray-600 hover:text-red-500"
                       }`}
                     >

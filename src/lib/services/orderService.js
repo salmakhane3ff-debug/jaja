@@ -114,9 +114,18 @@ export async function searchOrders({ orderId, phone, email }) {
  *
  * Returns: { duplicate: boolean, order: MappedOrder }
  */
+/**
+ * Create a new order with FULL server-side price resolution.
+ *
+ * SECURITY MODEL:
+ *   - item.price / item.sellingPrice / item.discount are IGNORED entirely
+ *   - Every paid item's price is fetched from prisma.product
+ *   - Gift items require a valid giftId that resolves in prisma.gift
+ *   - order.status is ALWAYS forced to 'pending'
+ *   - All financial values come from the database, never from the client
+ */
 export async function createOrder(body) {
   const { sessionId, orderSource } = body;
-  // Normalise orderSource — accept only known values, default to undefined
   const validSource = ['product', 'landing', 'affiliate'].includes(orderSource)
     ? orderSource
     : undefined;
@@ -127,40 +136,161 @@ export async function createOrder(body) {
       where:   { sessionId },
       include: { items: true },
     });
-    if (existing) {
-      return { duplicate: true, order: mapOrder(existing) };
+    if (existing) return { duplicate: true, order: mapOrder(existing) };
+  }
+
+  const { _items, createdAt: _createdAt, updatedAt: _updatedAt, ...orderData } = parseOrderBody(body);
+
+  // SECURITY: Force status — never trust client
+  orderData.status = 'pending';
+
+  // ── Validate affiliateId FK to prevent P2003 ──────────────────────────────
+  // The client stores affiliateId in localStorage which can be stale, from a
+  // different environment, or simply wrong. A bad ID causes a FK violation and
+  // kills the entire order. Verify it exists; null it out silently if not.
+  if (orderData.affiliateId) {
+    const affiliateExists = await prisma.affiliate.count({
+      where: { id: orderData.affiliateId },
+    });
+    if (affiliateExists === 0) {
+      console.warn(`[order] affiliateId "${orderData.affiliateId}" not found — cleared`);
+      orderData.affiliateId = null;
     }
   }
 
-  // ── Parse body into Prisma-compatible fields ─────────────────────────────
-  const { _items, createdAt: _createdAt, updatedAt: _updatedAt, ...orderData } = parseOrderBody(body);
+  if (orderData.userId) {
+    const userExists = await prisma.user.count({
+      where: { id: orderData.userId },
+    });
+    if (userExists === 0) {
+      orderData.userId = null;
+    }
+  }
 
-  const order = await prisma.order.create({
-    data: {
-      ...orderData,
-      items: {
-        create: _items.map((item) => ({
-          // productId is nullable — null is safe when no valid UUID is available.
-          // productSnapshot captures title/images/variants at purchase time, so
-          // order display never depends on the product row still existing.
-          productId:       item.productId || item._id || null,
-          quantity:        item.isFreeGift ? 1 : (item.quantity || 1),
-          price:           item.isFreeGift ? 0 : (item.price || item.sellingPrice || 0),
-          regularPrice:    item.isFreeGift ? 0 : (item.regularPrice || null),
-          productSnapshot: {
-            title:    item.title,
-            images:   item.images   || [],
-            variants: item.variants || [],
-          },
-        })),
+  if (!_items || _items.length === 0) {
+    throw Object.assign(new Error('Order must contain at least one item'), { code: 'EMPTY_ORDER' });
+  }
+
+  // ── Batch-fetch gifts first, then all products in one query ─────────────
+  // ORDER: gifts → paid products + gift products together.
+  // This prevents P2003 FK violations: OrderItem.productId must exist in
+  // the products table. Gift items use the productId from the Gift DB record
+  // (not the client-supplied value). We verify it exists before using it.
+  const clientGiftIds = [...new Set(
+    _items.map((i) => i.giftId || i._giftId).filter(Boolean),
+  )];
+
+  const paidProductIds = [...new Set(
+    _items
+      .filter((i) => !(i.isFreeGift && (i.giftId || i._giftId)))
+      .map((i) => i.productId || i._id)
+      .filter(Boolean),
+  )];
+
+  // Step 1: fetch gifts
+  const dbGifts = clientGiftIds.length > 0
+    ? await prisma.gift.findMany({
+        where:  { id: { in: clientGiftIds }, active: true },
+        select: { id: true, productId: true },
+      })
+    : [];
+
+  // Step 2: collect all productIds we need (paid + gift product refs)
+  const giftProductIds = dbGifts.map((g) => g.productId).filter(Boolean);
+  const allProductIds  = [...new Set([...paidProductIds, ...giftProductIds])];
+
+  // Step 3: single product fetch covers both paid items and gift products
+  const dbProducts = allProductIds.length > 0
+    ? await prisma.product.findMany({
+        where:  { id: { in: allProductIds } },
+        select: { id: true, salePrice: true, regularPrice: true, isActive: true },
+      })
+    : [];
+
+  const productMap   = new Map(dbProducts.map((p) => [p.id, p]));
+  const validGiftIds = new Set(dbGifts.map((g) => g.id));
+  // giftId → verified DB productId (null when the product row is missing)
+  const giftProductMap = new Map(
+    dbGifts.map((g) => [g.id, productMap.has(g.productId) ? g.productId : null]),
+  );
+
+  // ── Resolve server-authoritative price for every item ────────────────────
+  const resolvedItems = [];
+
+  for (const item of _items) {
+    const rawId          = item.productId || item._id || null;
+    const resolvedGiftId = item.giftId || item._giftId || null;
+    const isGift         = Boolean(item.isFreeGift && resolvedGiftId && validGiftIds.has(resolvedGiftId));
+
+    if (isGift) {
+      // Use the DB-verified productId from giftProductMap (satisfies FK constraint).
+      // Falls back to null — OrderItem.productId is optional in schema.
+      resolvedItems.push({
+        productId:       giftProductMap.get(resolvedGiftId) ?? null,
+        quantity:        1,
+        price:           0,
+        regularPrice:    null,
+        productSnapshot: { title: item.title, images: item.images || [], variants: item.variants || [] },
+      });
+      continue;
+    }
+
+    // ── Paid item: must have a real productId with a live DB price ────────
+    if (!rawId) {
+      throw Object.assign(
+        new Error('productId is required for all non-gift items'),
+        { code: 'MISSING_PRODUCT_ID' },
+      );
+    }
+
+    const dbProduct = productMap.get(rawId);
+    if (!dbProduct) {
+      throw Object.assign(
+        new Error(`Product not found: ${rawId}`),
+        { code: 'PRODUCT_NOT_FOUND' },
+      );
+    }
+    if (!dbProduct.isActive) {
+      throw Object.assign(
+        new Error(`Product is unavailable: ${rawId}`),
+        { code: 'PRODUCT_INACTIVE' },
+      );
+    }
+
+    // Canonical server-side price: salePrice takes precedence over regularPrice
+    const price = dbProduct.salePrice ?? dbProduct.regularPrice ?? 0;
+    if (!Number.isFinite(price) || price < 0) {
+      throw Object.assign(new Error(`Product has an invalid price: ${rawId}`), { code: 'INVALID_PRICE' });
+    }
+
+    const qty = parseInt(item.quantity, 10) || 1;
+    if (!Number.isInteger(qty) || qty < 1 || qty > 1000) {
+      throw Object.assign(new Error('Quantity must be between 1 and 1000'), { code: 'INVALID_QUANTITY' });
+    }
+
+    resolvedItems.push({
+      productId:       rawId,
+      quantity:        qty,
+      price,                                    // ← always from DB
+      regularPrice:    dbProduct.regularPrice ?? null,
+      productSnapshot: { title: item.title, images: item.images || [], variants: item.variants || [] },
+    });
+  }
+
+  // ── Persist inside a transaction so order + items are atomic ─────────────
+  const order = await prisma.$transaction(async (tx) => {
+    return tx.order.create({
+      data: {
+        ...orderData,
+        items: { create: resolvedItems },
       },
-    },
-    include: { items: true },
+      include: { items: true },
+    });
   });
 
-  // ── Fire-and-forget analytics (never blocks order response) ─────────────
+  // Fire-and-forget analytics — never blocks the order response
   incrementProductOrders(order.items, validSource).catch((err) =>
-    console.error('[productAnalytics] increment failed:', err?.message ?? err)
+    console.error('[productAnalytics] increment failed:', err?.message ?? err),
   );
 
   return { duplicate: false, order: mapOrder(order) };
@@ -218,11 +348,20 @@ export async function updateOrder(id, body) {
     if (pymtDetails.paymentMethod)                data.paymentMethod  = pymtDetails.paymentMethod;
     if (pymtDetails.status || pymtDetails.paymentStatus)
       data.paymentStatus = pymtDetails.status || pymtDetails.paymentStatus;
-    if (pymtDetails.total)                        data.paymentTotal   = pymtDetails.total;
+    if (pymtDetails.total) {
+      const pt = parseFloat(pymtDetails.total);
+      if (Number.isFinite(pt) && pt >= 0 && pt <= 1_000_000) data.paymentTotal = pt;
+    }
   }
   if (paymentMethod  !== undefined) data.paymentMethod  = paymentMethod;
   if (paymentStatus  !== undefined) data.paymentStatus  = paymentStatus;
-  if (paymentTotal   !== undefined) data.paymentTotal   = paymentTotal;
+  if (paymentTotal   !== undefined) {
+    const pt = parseFloat(paymentTotal);
+    if (!Number.isFinite(pt) || pt < 0 || pt > 1_000_000) {
+      throw Object.assign(new Error('paymentTotal must be a finite number between 0 and 1,000,000'), { code: 'INVALID_PAYMENT_TOTAL' });
+    }
+    data.paymentTotal = pt;
+  }
 
   if (status        !== undefined) data.status   = status;
   if (utm_source    !== undefined) data.utmSource = utm_source;

@@ -13,9 +13,10 @@
 import { NextResponse } from 'next/server';
 import { jwtVerify }    from 'jose';
 
-const JWT_SECRET = new TextEncoder().encode(
-  process.env.JWT_SECRET || 'change-this-to-a-long-random-secret'
-);
+if (!process.env.JWT_SECRET) {
+  throw new Error('[middleware] JWT_SECRET environment variable is required but not set.');
+}
+const JWT_SECRET = new TextEncoder().encode(process.env.JWT_SECRET);
 
 export default async function middleware(request) {
   const { pathname } = request.nextUrl;

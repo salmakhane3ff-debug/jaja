@@ -40,17 +40,23 @@ export async function getOrdersHandler(req) {
 
 // ── POST /api/order ───────────────────────────────────────────────────────────
 
+const ORDER_CLIENT_ERRORS = new Set([
+  'EMPTY_ORDER', 'MISSING_PRODUCT_ID', 'PRODUCT_NOT_FOUND',
+  'PRODUCT_INACTIVE', 'INVALID_PRICE', 'INVALID_QUANTITY',
+]);
+
 export async function createOrderHandler(req) {
   try {
     const body = await req.json();
-    const { duplicate, order } = await createOrder(body);
+    if (!body || typeof body !== 'object') return badRequest('Invalid request body');
 
-    // Both callers (address/page.jsx and orderCreate.jsx) do:
-    //   const data = await res.json(); → data._id
-    // So always return the order object directly.
+    const { duplicate, order } = await createOrder(body);
     // HTTP 200 = already existed (dedup), 201 = freshly created.
     return Response.json(order, { status: duplicate ? 200 : 201 });
   } catch (err) {
+    if (ORDER_CLIENT_ERRORS.has(err.code)) {
+      return Response.json({ error: err.message }, { status: 422 });
+    }
     console.error('Order POST error:', err);
     return serverError('Failed to create order');
   }
@@ -71,6 +77,9 @@ export async function updateOrderHandler(req) {
 
     return Response.json(order);
   } catch (err) {
+    if (err.code === 'INVALID_PAYMENT_TOTAL') {
+      return Response.json({ error: err.message }, { status: 422 });
+    }
     console.error('Order PUT error:', err);
     return serverError('Failed to update order');
   }

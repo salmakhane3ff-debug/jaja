@@ -9,6 +9,8 @@
  * ─────────────────────────────────────────────────────────────────────────────
  */
 
+import { sanitizeText } from './sanitize.js';
+
 // ── Products ─────────────────────────────────────────────────────────────────
 
 /**
@@ -65,6 +67,12 @@ export function mapOrder(order) {
     ...payDetails,
   };
 
+  // Server-computed total (sum of DB prices × quantities — never from client)
+  const computedTotal = (items || []).reduce(
+    (sum, item) => sum + (Number(item.price) || 0) * (item.quantity || 1),
+    0,
+  );
+
   return {
     // ── MongoDB-compatible fields ──────────────────────────────────────────
     _id:            id,
@@ -72,6 +80,7 @@ export function mapOrder(order) {
     email:          customerEmail,
     phone:          customerPhone,
     shipping:       shippingAddress || {},
+    computedTotal,
     products: {
       items: (items || []).map((item) => ({
         _id:          item.id,
@@ -142,10 +151,15 @@ export function parseOrderBody(body) {
   const addr = shipping || shippingAddress || {};
   const orderItems = products?.items || [];
 
+  // Sanitize customer-supplied text fields (strip HTML, truncate)
+  const rawName  = name  || customerName  || '';
+  const rawEmail = email || customerEmail || null;
+  const rawPhone = phone || customerPhone || null;
+
   return {
-    customerName:    name           || customerName    || '',
-    customerEmail:   email          || customerEmail   || null,
-    customerPhone:   phone          || customerPhone   || null,
+    customerName:    sanitizeText(rawName,  100),
+    customerEmail:   rawEmail ? sanitizeText(rawEmail, 200) : null,
+    customerPhone:   rawPhone ? sanitizeText(rawPhone,  30) : null,
     shippingAddress: addr,
     paymentMethod:   pymtDetails.paymentMethod  || paymentMethod  || null,
     paymentStatus:   pymtDetails.status         || pymtDetails.paymentStatus

@@ -407,7 +407,7 @@ export default function Product({ data }) {
                   <button
                     type="button"
                     onClick={() => setSelectedBundle(null)}
-                    className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-2xl border-2 text-left transition-all duration-150 ${
+                    className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-2xl border-2 text-start transition-all duration-150 ${
                       selectedBundle === null
                         ? "border-gray-300 bg-white"
                         : "border-gray-200 bg-white hover:border-gray-300"
@@ -438,7 +438,7 @@ export default function Product({ data }) {
                     </div>
 
                     {/* Price */}
-                    <div className="shrink-0 text-right">
+                    <div className="shrink-0 text-end">
                       <p className="text-base font-bold text-gray-900 leading-tight">{formatPrice(unitPrice)}</p>
                       {data.regularPrice && data.regularPrice > unitPrice && (
                         <p className="text-xs text-gray-400 line-through leading-tight">{formatPrice(data.regularPrice)}</p>
@@ -455,7 +455,7 @@ export default function Product({ data }) {
                     <button
                       type="button"
                       onClick={() => setSelectedBundle("2+1")}
-                      className={`w-full flex items-center gap-3 px-3 py-2.5 text-left transition-colors ${
+                      className={`w-full flex items-center gap-3 px-3 py-2.5 text-start transition-colors ${
                         selectedBundle === "2+1" ? "bg-[#f0ecff]" : "bg-white hover:bg-gray-50"
                       }`}
                     >
@@ -489,7 +489,7 @@ export default function Product({ data }) {
                       </div>
 
                       {/* Price */}
-                      <div className="shrink-0 text-right">
+                      <div className="shrink-0 text-end">
                         <p className="text-base font-bold text-gray-900 leading-tight">{formatPrice(unitPrice * 2)}</p>
                         <p className="text-xs text-gray-400 line-through leading-tight">{formatPrice(unitPrice * 3)}</p>
                       </div>
@@ -627,7 +627,7 @@ export default function Product({ data }) {
       {/* Related Products */}
       {ui.showRelatedProducts !== false && (
         <div className="py-6 bg-gray-50">
-          <h2 className="text-lg font-semibold text-gray-900 px-4 md:px-20 container mx-auto mb-2">
+          <h2 className="text-lg font-semibold text-gray-900 px-4 md:px-20 container mx-auto mb-2 text-start">
             {t("product_related")}
           </h2>
           <Suspense fallback={null}>

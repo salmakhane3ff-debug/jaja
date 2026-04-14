@@ -82,12 +82,55 @@ const nextConfig: NextConfig = {
       },
       { protocol: "https", hostname: "res.cloudinary.com" },
       { protocol: "https", hostname: "**.cloudinary.com" },
-      { protocol: "https", hostname: "placehold.co", dangerouslyAllowSVG: true, contentDispositionType: "attachment" },
+      { protocol: "https", hostname: "placehold.co" },
       { protocol: "https", hostname: "img.youtube.com" },
     ],
+    // SVG placeholder support (placehold.co)
+    dangerouslyAllowSVG: true,
+    contentDispositionType: "attachment",
+
     // PERF: REMOVED "unoptimized: true" — that single flag disabled ALL image optimization:
     //       no WebP/AVIF conversion, no responsive resizing, no compression.
     //       Removing it enables automatic format conversion and responsive serving.
+  },
+
+  // ── Security headers ─────────────────────────────────────────────────────────
+  async headers() {
+    return [
+      {
+        source: "/(.*)",
+        headers: [
+          // Prevent clickjacking — no iframes allowed
+          { key: "X-Frame-Options",           value: "DENY" },
+          // Prevent MIME-type sniffing
+          { key: "X-Content-Type-Options",    value: "nosniff" },
+          // Limit referrer info sent to external sites
+          { key: "Referrer-Policy",           value: "strict-origin-when-cross-origin" },
+          // Permissions policy — disable unused browser APIs
+          // microphone=self — required for the feedback voice recording feature.
+          // camera=() and geolocation=() remain blocked (not used anywhere).
+          { key: "Permissions-Policy",        value: "camera=(), microphone=(self), geolocation=()" },
+          // Content Security Policy — safe baseline
+          // 'unsafe-inline' is required for Next.js inline styles/scripts
+          {
+            key:   "Content-Security-Policy",
+            value: [
+              "default-src 'self'",
+              "script-src 'self' 'unsafe-inline' 'unsafe-eval'",
+              "style-src 'self' 'unsafe-inline'",
+              "img-src 'self' data: blob: https://res.cloudinary.com https://*.cloudinary.com https://placehold.co https://img.youtube.com",
+              "font-src 'self' data:",
+              "connect-src 'self' https://res.cloudinary.com https://ipwho.is https://ip-api.com",
+              "media-src 'self' blob:",
+              "frame-src 'none'",
+              "object-src 'none'",
+              "base-uri 'self'",
+              "form-action 'self'",
+            ].join("; "),
+          },
+        ],
+      },
+    ];
   },
 
   // FIX: Use process.cwd() so the path is always correct on any OS/server.

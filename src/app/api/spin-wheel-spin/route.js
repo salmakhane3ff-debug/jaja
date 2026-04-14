@@ -1,11 +1,16 @@
 /**
  * /api/spin-wheel-spin
- * POST — execute a spin; returns winning segment
- * GET  ?admin=true — analytics
+ * POST              — execute a spin; returns winning segment (public — widget)
+ * GET  ?admin=true  — analytics (admin — requires auth)
+ * PATCH             — track additional events: view, click, reward_unlock, etc. (public — widget)
  */
 
 import { getConfig, pickWinner, recordEvent, getAnalytics } from '@/lib/services/spinWheelConfigService.js';
 import { serverError, badRequest } from '@/lib/utils/apiResponse.js';
+import { withAdminAuth } from '@/lib/middleware/withAdminAuth';
+
+// Prototype pollution guard
+const BLOCKED_KEYS = new Set(['__proto__', 'constructor', 'prototype']);
 
 export async function POST(req) {
   try {
@@ -53,10 +58,9 @@ export async function POST(req) {
   }
 }
 
-export async function GET(req) {
+// GET analytics — admin only
+async function _getAnalytics(_req) {
   try {
-    const { searchParams } = new URL(req.url);
-    if (searchParams.get('admin') !== 'true') return badRequest('Admin only');
     const stats = await getAnalytics();
     return Response.json(stats);
   } catch (err) {
@@ -65,14 +69,42 @@ export async function GET(req) {
   }
 }
 
+export function GET(req) {
+  const { searchParams } = new URL(req.url);
+  if (searchParams.get('admin') === 'true') {
+    return withAdminAuth(_getAnalytics)(req);
+  }
+  return badRequest('Admin only');
+}
+
 // Track additional events (view, click, reward_unlock, coupon_used, spin_conversion)
+// Only whitelisted fields are forwarded — no ...rest spreading to prevent prototype pollution
 export async function PATCH(req) {
   try {
     const body = await req.json();
-    const { sessionId, eventType, ...rest } = body;
+
+    if (!body || typeof body !== 'object') return badRequest('Invalid payload');
+
+    // Block prototype pollution keys at the top level
+    for (const key of Object.keys(body)) {
+      if (BLOCKED_KEYS.has(key)) return badRequest('Invalid field: ' + key);
+    }
+
+    const { sessionId, eventType } = body;
     if (!sessionId || !eventType) return badRequest('sessionId + eventType required');
 
-    await recordEvent({ sessionId, eventType, ...rest });
+    // Whitelist only the fields recordEvent actually uses
+    const allowed = {
+      sessionId,
+      eventType,
+      segmentId:  body.segmentId  ?? null,
+      rewardType: body.rewardType ?? null,
+      couponCode: body.couponCode ?? null,
+      productId:  body.productId  ?? null,
+      clickId:    body.clickId    ?? null,
+    };
+
+    await recordEvent(allowed);
     return Response.json({ ok: true });
   } catch (err) {
     console.error('SpinWheelSpin PATCH error:', err);

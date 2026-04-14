@@ -1,6 +1,6 @@
 /**
  * GET  /api/admin/demo          → settings + competition info
- * POST /api/admin/demo/generate → generate 60 demo affiliates
+ * POST /api/admin/demo          → generate demo affiliates
  * PUT  /api/admin/demo          → save settings (isEnabled, simulationSpeed)
  */
 import {
@@ -9,8 +9,9 @@ import {
   getCompetitionInfo,
   generateDemoAffiliates,
 } from '@/lib/services/demoService';
+import { withAdminAuth } from '@/lib/middleware/withAdminAuth';
 
-export async function GET() {
+export const GET = withAdminAuth(async () => {
   try {
     const [settings, competition] = await Promise.all([
       getDemoSettings(),
@@ -21,9 +22,9 @@ export async function GET() {
     console.error('admin/demo GET error:', err);
     return Response.json({ error: 'Erreur serveur' }, { status: 500 });
   }
-}
+});
 
-export async function POST(req) {
+export const POST = withAdminAuth(async (req) => {
   try {
     const body  = await req.json().catch(() => ({}));
     const count = Math.min(100, Math.max(10, parseInt(body.count || 60, 10)));
@@ -33,9 +34,9 @@ export async function POST(req) {
     console.error('admin/demo POST error:', err);
     return Response.json({ error: 'Erreur serveur' }, { status: 500 });
   }
-}
+});
 
-export async function PUT(req) {
+export const PUT = withAdminAuth(async (req) => {
   try {
     const body = await req.json();
     const saved = await saveDemoSettings(body);
@@ -44,4 +45,4 @@ export async function PUT(req) {
     console.error('admin/demo PUT error:', err);
     return Response.json({ error: 'Erreur serveur' }, { status: 500 });
   }
-}
+});

@@ -25,6 +25,7 @@
  */
 
 import prisma from "@/lib/prisma";
+import { withAdminAuth } from '@/lib/middleware/withAdminAuth';
 
 function groupBy(arr, key) {
   return arr.reduce((acc, item) => {
@@ -56,7 +57,7 @@ function buildGroupMetrics(clicksArr, allConversions) {
   return { clicks, conversions, revenue, cost, profit, ctr, epc, cpa, roi, convRate };
 }
 
-export async function GET(request) {
+export const GET = withAdminAuth(async (request) => {
   try {
     const { searchParams } = new URL(request.url);
     const days     = parseInt(searchParams.get("days") || "30", 10);
@@ -214,4 +215,4 @@ export async function GET(request) {
     console.error("[admin/tracker]", err?.message ?? err);
     return Response.json({ error: "internal" }, { status: 500 });
   }
-}
+});
