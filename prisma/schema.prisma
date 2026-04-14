@@ -1,11 +1,11 @@
 generator client {
-  provider        = "prisma-client-js"
-  output          = "../src/generated/prisma"
-  previewFeatures = ["partialIndexes"]
+  provider = "prisma-client-js"
+  output   = "../src/generated/prisma"
 }
 
 datasource db {
   provider = "postgresql"
+  url      = env("DATABASE_URL")
 }
 
 model User {
@@ -81,7 +81,7 @@ model Product {
 model Collection {
   id                   String   @id @default(uuid())
   title                String   @unique
-  slug                 String?  @unique(where: raw("(slug IS NOT NULL)"))
+  slug                 String?  @unique
   description          String?
   image                String?
   banner               String?
