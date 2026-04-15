@@ -2,10 +2,6 @@
 import Stripe from "stripe";
 import { NextResponse } from "next/server";
 
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY, {
-  apiVersion: "2023-08-16",
-});
-
 export async function POST(request) {
   try {
     const { sessionId } = await request.json();
@@ -13,6 +9,12 @@ export async function POST(request) {
     if (!sessionId) {
       return NextResponse.json({ error: "Missing sessionId" }, { status: 400 });
     }
+
+    const key = process.env.STRIPE_SECRET_KEY;
+    if (!key) {
+      return NextResponse.json({ error: "Stripe not configured" }, { status: 503 });
+    }
+    const stripe = new Stripe(key, { apiVersion: "2023-08-16" });
 
     const session = await stripe.checkout.sessions.retrieve(sessionId);
 

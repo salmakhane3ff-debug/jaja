@@ -26,7 +26,7 @@ import {
   deleteFeedback,
 } from '../services/feedbackService.js';
 import { badRequest, notFound, serverError } from '../utils/apiResponse.js';
-import { sanitizeText, sanitizeTextOrNull } from '../utils/sanitize.js';
+import { sanitizeTextOrNull } from '../utils/sanitize.js';
 
 // ── GET /api/feedback ─────────────────────────────────────────────────────────
 
