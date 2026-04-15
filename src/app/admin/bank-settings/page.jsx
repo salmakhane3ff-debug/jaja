@@ -155,13 +155,15 @@ function MethodForm({ initial, onSave, onClose, saving, nextOrder }) {
           className={inputCls} />
       </Field>
 
+      {/* Account holder — shown for both bank and local methods */}
+      <Field label="Titulaire du compte">
+        <input type="text" value={form.accountName} onChange={e => set("accountName", e.target.value)}
+          placeholder="Prénom Nom" className={inputCls} />
+      </Field>
+
       {/* Bank fields */}
       {isBank && (
         <div className="space-y-4">
-          <Field label="Titulaire du compte">
-            <input type="text" value={form.accountName} onChange={e => set("accountName", e.target.value)}
-              placeholder="Prénom Nom" className={inputCls} />
-          </Field>
           <Field label="Numéro de compte" hint="Optionnel — affiché dans le checkout si renseigné">
             <input type="text" value={form.accountNumber} onChange={e => set("accountNumber", e.target.value)}
               placeholder="0123456789" className={`${inputCls} font-mono text-xs`} />
