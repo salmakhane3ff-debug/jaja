@@ -222,11 +222,18 @@ export async function createOrder(body) {
     const resolvedGiftId = item.giftId || item._giftId || null;
     const isGift         = Boolean(item.isFreeGift && resolvedGiftId && validGiftIds.has(resolvedGiftId));
 
-    if (isGift) {
+    // ── Fallback cadeau: isFreeGift=true but no giftId (::cadeau suffix or _isGift) ─
+    const isCadeauFallback = Boolean(
+      (item.isFreeGift || item._isGift) &&
+      !resolvedGiftId &&
+      (String(rawId || '').includes('::cadeau') || item._isGift)
+    );
+
+    if (isGift || isCadeauFallback) {
       // Use the DB-verified productId from giftProductMap (satisfies FK constraint).
       // Falls back to null — OrderItem.productId is optional in schema.
       resolvedItems.push({
-        productId:       giftProductMap.get(resolvedGiftId) ?? null,
+        productId:       isGift ? (giftProductMap.get(resolvedGiftId) ?? null) : null,
         quantity:        1,
         price:           0,
         regularPrice:    null,
