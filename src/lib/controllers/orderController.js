@@ -55,7 +55,8 @@ export async function createOrderHandler(req) {
     return Response.json(order, { status: duplicate ? 200 : 201 });
   } catch (err) {
     if (ORDER_CLIENT_ERRORS.has(err.code)) {
-      return Response.json({ error: err.message }, { status: 422 });
+      console.error('[Order 422]', err.code, err.message, JSON.stringify(err.meta ?? {}));
+      return Response.json({ error: err.message, code: err.code }, { status: 422 });
     }
     console.error('Order POST error:', err);
     return serverError('Failed to create order');
