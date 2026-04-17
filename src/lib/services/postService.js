@@ -84,8 +84,21 @@ export async function getPostById(id, category) {
 // ── Writes ────────────────────────────────────────────────────────────────────
 
 /**
+ * Find a unique slug by appending -2, -3, … until no collision is found.
+ */
+async function uniqueSlug(base) {
+  let candidate = base;
+  let counter   = 2;
+  while (await prisma.post.findUnique({ where: { slug: candidate } })) {
+    candidate = `${base}-${counter++}`;
+  }
+  return candidate;
+}
+
+/**
  * Create a new post.
  * Accepts the flat frontend body; splits it into promoted cols + JSONB data.
+ * Auto-deduplicates the slug if it already exists (appends -2, -3, …).
  */
 export async function createPost(body, defaultCategory) {
   const { promoted, extra } = splitBody(body);
@@ -94,7 +107,8 @@ export async function createPost(body, defaultCategory) {
   const status   = promoted.status   || 'Draft';
   const title    = promoted.title    || '';
   const prefix   = category === 'Blog' ? 'blog' : 'page';
-  const slug     = promoted.slug     || makeSlug(title, prefix);
+  const baseSlug = promoted.slug || makeSlug(title, prefix);
+  const slug     = await uniqueSlug(baseSlug);
 
   const post = await prisma.post.create({
     data: {
@@ -129,12 +143,18 @@ export async function updatePost(id, body) {
   if (promoted.title    !== undefined) update.title    = promoted.title;
   if (promoted.status   !== undefined) update.status   = promoted.status;
   if (promoted.category !== undefined) update.category = promoted.category;
-  if (promoted.slug     !== undefined) {
-    update.slug = promoted.slug;
+  if (promoted.slug !== undefined) {
+    // Only deduplicate if the slug actually changed
+    if (promoted.slug !== existing.slug) {
+      update.slug = await uniqueSlug(promoted.slug);
+    } else {
+      update.slug = promoted.slug;
+    }
   } else if (promoted.title && !body.slug) {
     // Auto-regenerate slug when title changes but slug not explicitly supplied
     const prefix = (promoted.category || existing.category) === 'Blog' ? 'blog' : 'page';
-    update.slug = makeSlug(promoted.title, prefix);
+    const baseSlug = makeSlug(promoted.title, prefix);
+    update.slug = baseSlug !== existing.slug ? await uniqueSlug(baseSlug) : existing.slug;
   }
 
   update.data = mergedData;
