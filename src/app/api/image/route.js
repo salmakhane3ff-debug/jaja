@@ -20,6 +20,13 @@ import { withAdminAuth } from '@/lib/middleware/withAdminAuth';
 import { validateImage, validateVideo } from '@/lib/uploadSecurity';
 import { rateLimit } from '@/lib/rateLimit';
 
+// ── Route segment config ──────────────────────────────────────────────────────
+// Raise Next.js body size limit to 200 MB so large video uploads aren't
+// rejected before they even reach the handler. Nginx must also be configured
+// with `client_max_body_size 200M` to match.
+export const maxDuration = 120; // seconds — allow time for large uploads
+// bodyParser is disabled by default for App Router (uses Web Streams) — no need to set it.
+
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 function mapImage(row) {
