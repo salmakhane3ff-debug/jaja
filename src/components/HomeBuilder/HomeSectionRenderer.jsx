@@ -178,7 +178,7 @@ const RENDERERS = {
   text:               ({ data }) => <TextSection data={data} />,
   cta:                ({ data }) => <CtaSection data={data} />,
   countdown:          ({ data }) => <CountdownSection data={data} />,
-  reviews:            ()         => <HomeFeedbackSection />,
+  reviews:            ()         => <HomeFeedbackSection forceShow />,
   support:            ()         => <SupportBenefits />,
   reels:              ()         => <VideoReels />,
   shoppable_reels:    ({ data }) => <ShoppableReels title={data?.title || "In Action"} />,

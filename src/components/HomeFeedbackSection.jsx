@@ -227,7 +227,7 @@ function SliderLayout({ items }) {
 // ── HomeFeedbackSection ───────────────────────────────────────────────────────
 // slot: "afterHero" | "afterProducts" | "bottom"
 
-export default function HomeFeedbackSection({ slot = "bottom" }) {
+export default function HomeFeedbackSection({ slot = "bottom", forceShow = false }) {
   const { t } = useLanguage();
   const { data: fbRaw, loaded: fbLoaded } = useSetting("feedback-settings");
   const settings = fbLoaded ? (fbRaw && !fbRaw.error ? fbRaw : {}) : null;
@@ -236,7 +236,7 @@ export default function HomeFeedbackSection({ slot = "bottom" }) {
 
   useEffect(() => {
     if (!settings) return; // wait for context to load
-    const show = settings.showFeedbackSlider ?? settings.showOnHomepage ?? false;
+    const show = forceShow || (settings.showFeedbackSlider ?? settings.showOnHomepage ?? false);
     if (!show) { setReady(true); return; }
 
     const max = settings.maxFeedbackItems || settings.maxItems || 6;
@@ -254,11 +254,11 @@ export default function HomeFeedbackSection({ slot = "bottom" }) {
   if (!ready || !settings) return null;
 
   // Resolve settings with backward-compat fallbacks
-  const show     = settings.showFeedbackSlider ?? settings.showOnHomepage ?? false;
+  const show     = forceShow || (settings.showFeedbackSlider ?? settings.showOnHomepage ?? false);
   const position = settings.feedbackSliderPosition || settings.position || "bottom";
   const layout   = settings.feedbackSliderType    || settings.layout    || "grid";
 
-  if (!show || position !== slot || items.length === 0) return null;
+  if (!show || (!forceShow && position !== slot) || items.length === 0) return null;
 
   const avgRating = items.length > 0
     ? (items.reduce((a, b) => a + (b.rating || 0), 0) / items.length).toFixed(1)
