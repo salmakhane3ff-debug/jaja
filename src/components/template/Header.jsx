@@ -143,7 +143,7 @@ export default function FullHeader() {
           {/* ── CENTER: Logo — always perfectly centered ── */}
           <Link href="/" className="flex items-center absolute left-1/2 -translate-x-1/2">
             {storeSettings?.logoImage ? (
-              <img src={logoSrc} alt={storeName} className="h-8 w-auto" fetchPriority="high" loading="eager" />
+              <img src={logoSrc} alt={storeName} className="h-12 w-auto" fetchPriority="high" loading="eager" />
             ) : (
               <span className="font-bold text-lg">{storeName}</span>
             )}
@@ -223,7 +223,7 @@ export default function FullHeader() {
 
                 <div className={`flex items-center gap-3 ${isRTL ? "pl-12" : "pr-12"}`}>
                   {storeSettings?.logoImage ? (
-                    <img src={logoSrc} alt={storeName} className="h-8 w-auto" />
+                    <img src={logoSrc} alt={storeName} className="h-12 w-auto" />
                   ) : (
                     <span className="font-bold text-lg text-gray-800">{storeName}</span>
                   )}
