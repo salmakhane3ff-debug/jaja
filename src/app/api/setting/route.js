@@ -28,9 +28,15 @@ const PUBLIC_TYPES = new Set([
   'ui-control',
   'discount_rules',
   'conversion_optimization',
+  'conversion-settings',   // storefront conversion badges
   'spin_wheel_config',
-  'bank-settings',   // checkout needs payment method info
-  'spin-wheel',      // spin-wheel widget config
+  'bank-settings',         // checkout needs payment method info
+  'spin-wheel',            // spin-wheel widget config
+  'feedback-settings',     // homepage reviews section
+  'support-benefits',      // support/trust badges section
+  'preloader',             // preloader config
+  'footer',                // footer content
+  'social',                // social links
 ]);
 
 export function GET(req) {
