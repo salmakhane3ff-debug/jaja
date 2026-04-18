@@ -30,6 +30,9 @@ const rubik = Rubik({
   display: "swap",
 });
 
+// Force dynamic rendering so favicon/title always reflect latest DB settings
+export const dynamic = "force-dynamic";
+
 // Generate metadata dynamically from store settings
 export async function generateMetadata() {
   const settings = await getStoreSettings();
