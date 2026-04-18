@@ -135,7 +135,7 @@ export default function FullHeader() {
                 className="p-2.5 text-gray-600 hover:text-gray-900 hover:bg-gray-50 rounded-lg transition-colors"
                 prefetch={true}
               >
-                <Star className="w-[18px] h-[18px]" />
+                <Star className="w-[18px] h-[18px] fill-yellow-400 text-yellow-400" />
               </Link>
             )}
           </div>
