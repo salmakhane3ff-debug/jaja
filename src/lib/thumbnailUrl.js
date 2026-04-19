@@ -28,6 +28,10 @@
  */
 
 const VIDEO_EXT  = /\.(mp4|webm|mov|avi|mkv|ogv)(\?.*)?$/i;
+// GIF and SVG must always use the original URL:
+//  - GIF: animated frames are lost when converting to WebP (thumbnails skip GIFs)
+//  - SVG: vector format, thumbnails are never generated for it
+const SKIP_EXT   = /\.(gif|svg)(\?.*)?$/i;
 const VALID_SIZE = new Set(['sm', 'md', 'lg']);
 
 /**
@@ -44,7 +48,8 @@ export function thumbUrl(src, size = 'md') {
   // Fallback conditions
   if (!url)                    return '';
   if (!VALID_SIZE.has(size))   return url;
-  if (VIDEO_EXT.test(url))     return url;
+  if (VIDEO_EXT.test(url))     return url;   // videos — no thumbnail
+  if (SKIP_EXT.test(url))      return url;   // GIF/SVG — keep original (animated / vector)
   if (!url.startsWith('/uploads/') && !url.includes('/uploads/')) return url;
 
   // Strip query string before manipulating
