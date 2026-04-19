@@ -7,6 +7,7 @@ import { Drawer, DrawerContent, DrawerHeader, DrawerBody, DrawerFooter } from "@
 import ProductLabel from "@/components/ProductLabel";
 import { ShoppingBag, Trash2, Plus, Minus, ArrowRight, X } from "lucide-react";
 import { useLanguage } from "@/context/LanguageContext";
+import { fetchCached } from "@/lib/dataCache";
 
 const CURRENCY = "MAD";
 
@@ -43,15 +44,12 @@ export default function CartDrawer({ isOpen, onClose }) {
     setSelectedItems(initialSelection);
 
     try {
-      const [productsRes, giftsRes] = await Promise.all([
-        fetch("/api/products", { cache: "force-cache", next: { revalidate: 300 } }),
-        fetch("/api/gifts"),
+      const [allProducts, giftsRaw] = await Promise.all([
+        fetchCached("/api/products"),
+        fetchCached("/api/gifts"),
       ]);
-      if (!productsRes.ok) throw new Error("Failed to fetch products");
-
-      const allProducts = await productsRes.json();
       const cartProductIds = localCart.map((item) => item.productId);
-      const giftsData = giftsRes.ok ? (await giftsRes.json()).filter((g) => g.active) : [];
+      const giftsData = Array.isArray(giftsRaw) ? giftsRaw.filter((g) => g.active) : [];
       const giftProductIds = giftsData.map((g) => g.productId).filter(Boolean);
       const matchedProducts = allProducts.filter(
         (p) => cartProductIds.includes(p._id) || giftProductIds.includes(p._id)

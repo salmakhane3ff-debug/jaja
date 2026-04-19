@@ -7,6 +7,7 @@ import "swiper/css/navigation";
 import "swiper/css/pagination";
 import Link from "next/link";
 import { Skeleton } from "@heroui/skeleton";
+import { fetchCached } from "@/lib/dataCache";
 
 export default function SliderCollection({ isTitle = true }) {
   const [collections, setCollections] = useState([]);
@@ -17,8 +18,7 @@ export default function SliderCollection({ isTitle = true }) {
   useEffect(() => {
     async function fetchCollections() {
       try {
-        const res = await fetch("/api/collection", {});
-        const data = await res.json();
+        const data = await fetchCached("/api/collection");
         if (Array.isArray(data) && data.length > 0) {
           setCollections(data);
         } else {

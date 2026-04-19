@@ -15,6 +15,7 @@
  */
 
 import { useEffect } from "react";
+import { fetchCached } from "@/lib/dataCache";
 
 function getImageUrl(images) {
   if (!images) return "";
@@ -103,12 +104,12 @@ export default function GiftSystemInit() {
 
     const init = async () => {
       try {
-        const [giftsRes, productsRes] = await Promise.all([
-          fetch("/api/gifts"),
-          fetch("/api/products"),
+        const [giftsData, productsData] = await Promise.all([
+          fetchCached("/api/gifts"),
+          fetchCached("/api/products"),
         ]);
-        if (giftsRes.ok) gifts = await giftsRes.json();
-        if (productsRes.ok) products = await productsRes.json();
+        gifts    = giftsData    || [];
+        products = productsData || [];
         initialized = true;
         syncGifts(); // run once immediately after loading
       } catch (e) {

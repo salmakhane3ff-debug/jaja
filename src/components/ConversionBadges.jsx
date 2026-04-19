@@ -19,6 +19,7 @@
 import { useState, useEffect, useRef, useMemo } from "react";
 import { useLanguage } from "@/context/LanguageContext";
 import { useSetting } from "@/context/SettingsContext";
+import { fetchCached } from "@/lib/dataCache";
 
 // ── Simulated buyer data ───────────────────────────────────────────────────────
 const AR_NAMES  = ["أحمد", "محمد", "فاطمة", "خديجة", "يوسف", "آية", "ريم", "سارة", "هشام", "نور", "عمر", "لمياء"];
@@ -106,8 +107,7 @@ function PurchasePopup({ settings, lang, dir, t }) {
   // triggers a re-render and is never re-fetched on interval ticks.
   useEffect(() => {
     if (!settings.enabled) return;
-    fetch("/api/products")
-      .then((r) => r.ok ? r.json() : [])
+    fetchCached("/api/products")
       .then((products) => {
         if (!Array.isArray(products)) return;
         const urls = products

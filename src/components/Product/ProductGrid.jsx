@@ -9,6 +9,7 @@ import { Button } from "@heroui/react";
 import { useCart } from "@/hooks/useCart";
 import { useLanguage } from "@/context/LanguageContext";
 import { useDiscountRules } from "@/hooks/useDiscountRules";
+import { fetchCached } from "@/lib/dataCache";
 
 // WHY: Static array prevents Array(10) allocation on every loading render cycle.
 const SKELETON_ITEMS = Array.from({ length: 10 }, (_, i) => i);
@@ -28,14 +29,8 @@ function StyleOne() {
     let cancelled = false;
     async function fetchProducts() {
       try {
-        // WHY: force-cache + revalidate:300 lets the browser reuse the cached response
-        // for 5 minutes instead of making a new network request on every render.
-        const res = await fetch("/api/products", {
-          cache: "force-cache",
-          next: { revalidate: 300 },
-        });
-        if (!res.ok) throw new Error("Network response was not ok");
-        const data = await res.json();
+        // fetchCached deduplicates: all components share one in-flight request
+        const data = await fetchCached("/api/products");
         if (!cancelled) setProducts(Array.isArray(data) && data.length > 0 ? data : []);
       } catch (err) {
         console.error("Failed to fetch products:", err);
