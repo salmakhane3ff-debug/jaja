@@ -19,6 +19,7 @@ import { getWatermarkSettings, applyWatermark } from '@/lib/services/watermarkSe
 import { withAdminAuth } from '@/lib/middleware/withAdminAuth';
 import { validateImage, validateVideo } from '@/lib/uploadSecurity';
 import { rateLimit } from '@/lib/rateLimit';
+import { optimizeImageBuffer } from '@/lib/imageOptimize';
 
 // ── Route segment config ──────────────────────────────────────────────────────
 // Raise Next.js body size limit to 200 MB so large video uploads aren't
@@ -80,8 +81,12 @@ export const POST = withAdminAuth(async (req) => {
 
     if (!existsSync(uploadDir)) await mkdir(uploadDir, { recursive: true });
 
-    // Apply watermark to images only (skip for video files)
+    // Image-only post-processing (skip videos entirely).
     if (!file.type.startsWith('video/')) {
+      // PERF: compress + resize BEFORE watermarking so the watermark is applied
+      // to the final dimensions and not wasted on pixels we're about to drop.
+      buffer = await optimizeImageBuffer(buffer, file.name);
+
       try {
         const wm = await getWatermarkSettings();
         if (wm?.isEnabled) buffer = await applyWatermark(buffer, wm);

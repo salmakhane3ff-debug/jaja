@@ -8,6 +8,7 @@ import { existsSync }       from 'fs';
 import path                 from 'path';
 import { withAffiliateAuth } from '@/lib/middleware/withAffiliateAuth';
 import { updateAffiliateProfile } from '@/lib/services/affiliateSystemService';
+import { optimizeImageBuffer } from '@/lib/imageOptimize';
 
 async function postHandler(req, _ctx, decoded) {
   try {
@@ -23,12 +24,15 @@ async function postHandler(req, _ctx, decoded) {
       return Response.json({ error: 'Seules les images sont acceptées' }, { status: 400 });
     }
 
-    // Max 2 MB
+    // Max 2 MB (pre-compression)
     const MAX_SIZE = 2 * 1024 * 1024;
-    const buffer   = Buffer.from(await file.arrayBuffer());
+    let buffer     = Buffer.from(await file.arrayBuffer());
     if (buffer.length > MAX_SIZE) {
       return Response.json({ error: 'Image trop lourde (max 2 Mo)' }, { status: 400 });
     }
+
+    // PERF: resize + recompress so 40×40 avatars don't ship multi-MB originals.
+    buffer = await optimizeImageBuffer(buffer, file.name);
 
     const safeName  = file.name.replace(/[^a-zA-Z0-9._-]/g, '-');
     const fileName  = `avatar-${decoded.affiliateId}-${Date.now()}-${safeName}`;
