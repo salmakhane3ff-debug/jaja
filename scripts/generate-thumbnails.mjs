@@ -34,6 +34,7 @@ const SKIP_EXTS    = new Set(['gif', 'svg', 'mp4', 'webm', 'mov', 'avi', 'mkv', 
 // ── Args ─────────────────────────────────────────────────────────────────────
 const argv   = process.argv.slice(2);
 const APPLY  = argv.includes('--apply');
+const FORCE  = argv.includes('--force'); // overwrite existing thumbnails
 const dirArg = argv.find(a => a.startsWith('--dir='));
 const UPLOAD_DIR = path.resolve(
   process.cwd(),
@@ -60,11 +61,12 @@ async function* walk(dir) {
   }
 }
 
-async function generateThumbs(buffer, base, uploadDir) {
+async function generateThumbs(buffer, base, uploadDir, animated = false) {
   return Promise.all(
     Object.entries(THUMB_SIZES).map(async ([key, size]) => {
       const thumbPath = path.join(uploadDir, `${base}-${key}.webp`);
-      const buf = await sharp(buffer, { failOn: 'none' })
+      // animated: true preserves frames in animated WebP inputs
+      const buf = await sharp(buffer, { failOn: 'none', animated })
         .resize({ width: size, height: size, fit: 'inside', withoutEnlargement: true })
         .webp({ quality: WEBP_QUALITY })
         .toBuffer();
@@ -75,8 +77,9 @@ async function generateThumbs(buffer, base, uploadDir) {
 
 // ── Main ─────────────────────────────────────────────────────────────────────
 async function main() {
-  console.log(`[thumbnails] dir:  ${UPLOAD_DIR}`);
-  console.log(`[thumbnails] mode: ${APPLY ? 'APPLY (will write files)' : 'DRY RUN (no writes)'}\n`);
+  console.log(`[thumbnails] dir:   ${UPLOAD_DIR}`);
+  console.log(`[thumbnails] mode:  ${APPLY ? 'APPLY (will write files)' : 'DRY RUN (no writes)'}`);
+  console.log(`[thumbnails] force: ${FORCE ? 'YES (overwrite existing)' : 'NO (skip existing)'}\n`);
 
   let scanned = 0, skipped = 0, alreadyDone = 0, created = 0, failed = 0;
   let bytesWritten = 0;
@@ -93,16 +96,18 @@ async function main() {
 
     const base = name.replace(/\.[^.]+$/, '');
 
-    // Check if all 3 thumbnails already exist
-    const allExist = await Promise.all(
-      Object.keys(THUMB_SIZES).map(key => exists(path.join(UPLOAD_DIR, `${base}-${key}.webp`)))
-    ).then(r => r.every(Boolean));
-
-    if (allExist) { alreadyDone++; continue; }
+    // Check if all 3 thumbnails already exist (skip unless --force)
+    if (!FORCE) {
+      const allExist = await Promise.all(
+        Object.keys(THUMB_SIZES).map(key => exists(path.join(UPLOAD_DIR, `${base}-${key}.webp`)))
+      ).then(r => r.every(Boolean));
+      if (allExist) { alreadyDone++; continue; }
+    }
 
     try {
       const buffer = await readFile(filePath);
-      const thumbs = await generateThumbs(buffer, base, UPLOAD_DIR);
+      // animated: true preserves animation in animated WebP inputs
+      const thumbs = await generateThumbs(buffer, base, UPLOAD_DIR, true);
       const rel    = path.relative(UPLOAD_DIR, filePath);
 
       if (APPLY) {

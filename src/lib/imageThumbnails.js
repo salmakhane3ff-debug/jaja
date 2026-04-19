@@ -48,7 +48,9 @@ export async function generateThumbnailBuffers(buffer, filename) {
   try {
     const entries = await Promise.all(
       Object.entries(THUMB_SIZES).map(async ([key, size]) => {
-        const buf = await sharp(buffer, { failOn: 'none' })
+        // animated: true preserves animation frames in animated WebP inputs.
+        // For static images it has no effect.
+        const buf = await sharp(buffer, { failOn: 'none', animated: true })
           .resize({ width: size, height: size, fit: 'inside', withoutEnlargement: true })
           .webp({ quality: WEBP_QUALITY })
           .toBuffer();
