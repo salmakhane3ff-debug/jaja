@@ -4,6 +4,7 @@ import { useState, useEffect, useRef } from "react";
 import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { Star, Check, X, Zap, Home, ChevronDown, ChevronUp } from "lucide-react";
 import Link from "next/link";
+import { fetchCached } from "@/lib/dataCache";
 
 // ══════════════════════════════════════════════════════════════════════════════
 //  HELPERS
@@ -1096,8 +1097,7 @@ function FeedbackBlockDisplay({ cfg, productId: pageProductId }) {
   useEffect(() => {
     const params = new URLSearchParams();
     if (pid) params.set("productId", pid);
-    fetch(`/api/feedback?${params}`)
-      .then((r) => r.json())
+    fetchCached(`/api/feedback?${params}`)
       .then((d) => setItems(Array.isArray(d) ? d.slice(0, cfg.limit || 6) : []))
       .catch(() => setItems([]))
       .finally(() => setLoading(false));

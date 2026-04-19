@@ -16,6 +16,7 @@ import { useSetting } from "@/context/SettingsContext";
 import { applyGiftsToItems } from "@/lib/giftUtils";
 import { useProductScarcity } from "@/hooks/useProductScarcity";
 import { useDiscountRules } from "@/hooks/useDiscountRules";
+import { fetchCached } from "@/lib/dataCache";
 
 // ── Lazy-loaded non-critical components ───────────────────────────────────────
 const ConversionBadges  = lazy(() => import("@/components/ConversionBadges"));
@@ -79,10 +80,11 @@ export default function Product({ data }) {
     const savedWishlist = JSON.parse(localStorage.getItem("wishlist") || "[]");
     setWishlist(savedWishlist);
 
-    // Fetch global feedback stats only when starClickAction needs them
+    // Fetch global feedback stats only when starClickAction needs them.
+    // PERF: fetchCached dedups with FeedbackSection's identical /api/feedback call
+    // — one 6+ MB payload is shared instead of two parallel downloads.
     if (fbSettings.starClickAction === "goToFeedbackPage") {
-      fetch("/api/feedback")
-        .then((r) => r.json())
+      fetchCached("/api/feedback")
         .then((list) => {
           if (!Array.isArray(list) || list.length === 0) return;
           const avg = list.reduce((a, b) => a + (b.rating || 0), 0) / list.length;

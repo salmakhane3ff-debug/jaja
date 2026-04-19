@@ -6,6 +6,7 @@ import { Spinner, Pagination } from "@heroui/react";
 import formatDate from "@/utils/formatDate";
 import FeedbackForm from "@/components/FeedbackForm";
 import { useLanguage } from "@/context/LanguageContext";
+import { fetchCached, invalidateCache } from "@/lib/dataCache";
 
 // ── VoicePlayer ────────────────────────────────────────────────────────────────
 
@@ -362,8 +363,7 @@ export default function FeedbackPage() {
   const fetchData = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await fetch("/api/feedback");
-      const data = await res.json();
+      const data = await fetchCached("/api/feedback");
       setItems(Array.isArray(data) ? data : []);
     } catch {
       // silently fail
@@ -374,6 +374,7 @@ export default function FeedbackPage() {
 
   const handleFormSuccess = useCallback(() => {
     setFormOpen(false);
+    invalidateCache("/api/feedback");
     fetchData();
     setSuccessVisible(true);
     setTimeout(() => setSuccessVisible(false), 3500);

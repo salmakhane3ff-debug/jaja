@@ -9,6 +9,7 @@ import { Spinner } from "@heroui/react";
 import formatDate from "@/utils/formatDate";
 import FeedbackForm from "@/components/FeedbackForm";
 import { useLanguage } from "@/context/LanguageContext";
+import { fetchCached, invalidateCache } from "@/lib/dataCache";
 
 // ── VoicePlayerMini ───────────────────────────────────────────────────────────
 
@@ -360,9 +361,11 @@ function FeedbackSection({
   const fetchData = useCallback(async () => {
     setLoading(true);
     try {
+      // PERF: fetchCached dedups identical requests for 60s — if RatingBadge
+      // or HomeFeedbackSection already fetched /api/feedback, we reuse that
+      // response instead of firing a second 6+ MB request.
       const url = productId ? `/api/feedback?productId=${productId}` : "/api/feedback";
-      const res  = await fetch(url);
-      const data = await res.json();
+      const data = await fetchCached(url);
       const list = Array.isArray(data) ? data : [];
       setItems(list);
       if (onStatsLoadedRef.current && list.length > 0) {
@@ -377,10 +380,13 @@ function FeedbackSection({
 
   const handleSuccess = useCallback(() => {
     setFormOpen(false);
+    // Evict stale cache so the refresh fetch actually hits the server.
+    const url = productId ? `/api/feedback?productId=${productId}` : "/api/feedback";
+    invalidateCache(url);
     fetchData();
     setSuccessVisible(true);
     setTimeout(() => setSuccessVisible(false), 3500);
-  }, [fetchData]);
+  }, [fetchData, productId]);
 
   const displayed = showAll ? items : items.slice(0, maxItems);
   const avgRating = items.length > 0
