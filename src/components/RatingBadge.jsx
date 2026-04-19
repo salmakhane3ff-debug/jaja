@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { Star } from "lucide-react";
 import Link from "next/link";
 import { useUIControl } from "@/hooks/useUIControl";
+import { fetchCached } from "@/lib/dataCache";
 
 export default function RatingBadge() {
   const ui = useUIControl();
@@ -12,8 +13,7 @@ export default function RatingBadge() {
   const [count, setCount] = useState(0);
 
   useEffect(() => {
-    fetch("/api/feedback")
-      .then((r) => r.ok ? r.json() : [])
+    fetchCached("/api/feedback")
       .then((list) => {
         if (!Array.isArray(list) || list.length === 0) return;
         const total = list.reduce((s, f) => s + (f.rating || 0), 0);
@@ -23,7 +23,12 @@ export default function RatingBadge() {
       .catch(() => {});
   }, []);
 
-  if (!avg) return null;
+  // Show skeleton while loading instead of nothing
+  if (!avg) return (
+    <div className="flex justify-center">
+      <div className="inline-flex items-center gap-2.5 rounded-full px-5 py-2.5 animate-pulse bg-gray-200 w-44 h-10" />
+    </div>
+  );
 
   const stars = parseFloat(avg);
 
