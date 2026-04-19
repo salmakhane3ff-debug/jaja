@@ -91,15 +91,16 @@ function ReelCard({ item, active }) {
       className="relative w-full overflow-hidden select-none"
       style={{ aspectRatio: "9/16", borderRadius: 16, border: "1px solid rgba(255,255,255,0.12)" }}
     >
-      {/* ── Active: local <video> ──
-           PERF: preload="none" — browser won't download video bytes until autoPlay kicks in.
-                 Eliminates the "15 MB video on page load" LCP killer. */}
+      {/* ── Local video: src only set when active to prevent browser preloading
+           inactive videos. autoPlay + preload="none" is contradictory —
+           browser ignores preload when autoPlay is present and downloads
+           the full file. Setting src conditionally avoids this entirely. */}
       {local && (
         <video
           ref={videoRef}
-          src={item.videoUrl}
+          src={active ? item.videoUrl : undefined}
           className="absolute inset-0 w-full h-full object-cover"
-          muted autoPlay loop playsInline
+          muted loop playsInline
           preload="none"
           style={{ opacity: active ? 1 : 0.6 }}
         />

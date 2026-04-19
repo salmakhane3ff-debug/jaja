@@ -74,10 +74,19 @@ export default function StyleOne() {
   }, []);
 
   // Pause autoplay while a video slide is active
+  // Also lazily assign src to video elements when their slide becomes active
   const handleSlideChange = (swiper) => {
     const current = images[swiper.realIndex];
     if (current?.mediaType === "video") {
       swiper.autoplay?.stop();
+      // Lazy-load: assign src when slide becomes active for the first time
+      const slide = swiper.slides[swiper.realIndex];
+      const vid = slide?.querySelector("video[data-src]");
+      if (vid && vid.dataset.src) {
+        vid.src = vid.dataset.src;
+        vid.removeAttribute("data-src");
+        vid.play().catch(() => {});
+      }
     } else {
       swiper.autoplay?.start();
     }
@@ -143,12 +152,14 @@ export default function StyleOne() {
                           title={item.title || `Slide ${index + 1}`}
                         />
                       ) : (
-                        /* PERF: preload="none" instead of preload="auto".
-                               preload="auto" was downloading the entire video file on
-                               page load, blocking LCP by up to 18 s on slow connections.
-                               poster shows the first frame while user decides to play. */
+                        /* PERF: src only set on first (active) slide.
+                               autoPlay + preload="none" is contradictory — the browser
+                               ignores preload="none" when autoPlay is present and fetches
+                               the full video. Setting src={undefined} on inactive slides
+                               prevents the browser from downloading off-screen videos. */
                         <video
-                          src={item.videoUrl}
+                          src={index === 0 ? item.videoUrl : undefined}
+                          data-src={index !== 0 ? item.videoUrl : undefined}
                           className="w-full h-full object-cover"
                           autoPlay
                           muted
