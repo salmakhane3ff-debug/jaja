@@ -3,8 +3,11 @@
 import { useEffect, useState } from "react";
 import { Star } from "lucide-react";
 import Link from "next/link";
+import { useUIControl } from "@/hooks/useUIControl";
 
 export default function RatingBadge() {
+  const ui = useUIControl();
+  const primaryColor = ui?.primaryColor || "#111827";
   const [avg, setAvg]     = useState(null);
   const [count, setCount] = useState(0);
 
@@ -27,7 +30,8 @@ export default function RatingBadge() {
   return (
     <div className="flex justify-center">
       <Link href="/feedback">
-        <div className="inline-flex items-center gap-2.5 bg-blue-600 text-white rounded-full px-5 py-2.5 shadow-lg shadow-blue-200 hover:bg-blue-700 transition-colors cursor-pointer">
+        <div className="inline-flex items-center gap-2.5 text-white rounded-full px-5 py-2.5 shadow-lg transition-opacity hover:opacity-90 cursor-pointer"
+          style={{ backgroundColor: primaryColor }}>
           {/* Score */}
           <span className="text-xl font-black tabular-nums leading-none">{avg}</span>
 
