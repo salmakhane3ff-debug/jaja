@@ -6,6 +6,7 @@ import Link from "next/link";
 import formatDate from "@/utils/formatDate";
 import { useLanguage } from "@/context/LanguageContext";
 import { useSetting } from "@/context/SettingsContext";
+import { fetchCached } from "@/lib/dataCache";
 
 // ── VoicePlayerMini ───────────────────────────────────────────────────────────
 
@@ -240,8 +241,9 @@ export default function HomeFeedbackSection({ slot = "bottom", forceShow = false
     if (!show) { setReady(true); return; }
 
     const max = settings.maxFeedbackItems || settings.maxItems || 6;
-    fetch("/api/feedback")
-      .then((r) => r.json())
+    // PERF: fetchCached dedups the request — RatingBadge and HomeFeedbackSection
+    // now share a single /api/feedback round-trip instead of doubling the payload.
+    fetchCached("/api/feedback")
       .then((fData) => {
         const list = Array.isArray(fData) ? fData : [];
         setItems(list.slice(0, max));

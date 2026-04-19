@@ -18,7 +18,7 @@ function getProductImageUrl(images) {
   return found?.url || found || "https://placehold.co/400x400?text=No+Image";
 }
 
-function ProductCard({ product, formatPrice, getDiscount }) {
+function ProductCard({ product, formatPrice, getDiscount, priority = false }) {
   const imageUrl     = getProductImageUrl(product.images);
   const discountRule = getDiscount ? getDiscount(product) : null;
   const price        = discountRule ? discountRule.effectivePrice : (product.salePrice || product.regularPrice);
@@ -28,11 +28,15 @@ function ProductCard({ product, formatPrice, getDiscount }) {
     <div className="bg-white rounded-3xl border border-purple-50 p-2 flex flex-col shadow-sm hover:shadow-md transition-all duration-300">
       <Link href={href}>
         <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-gray-100 to-gray-200 mb-3 aspect-square">
+          {/* PERF: first card in the first collection is the LCP candidate —
+              load it eagerly with high fetch priority. All other cards stay lazy. */}
           <img
             src={imageUrl}
             alt={product.title}
             className="absolute inset-0 w-full h-full object-cover object-top"
-            loading="lazy"
+            loading={priority ? "eager" : "lazy"}
+            fetchpriority={priority ? "high" : "auto"}
+            decoding={priority ? "sync" : "async"}
           />
           {product.productLabel && (
             <span className={`absolute top-2 left-2 px-1.5 py-0.5 text-[10px] font-semibold rounded-md backdrop-blur-sm ${
@@ -70,7 +74,7 @@ function ProductCard({ product, formatPrice, getDiscount }) {
 
 // ── Collection Section ────────────────────────────────────────────────────────
 
-function CollectionSection({ collection, allProducts, formatPrice, t, getDiscount }) {
+function CollectionSection({ collection, allProducts, formatPrice, t, getDiscount, isFirstSection = false }) {
   const limit = collection.homepageProductLimit || 4;
 
   const products = allProducts
@@ -100,12 +104,14 @@ function CollectionSection({ collection, allProducts, formatPrice, t, getDiscoun
       {products.length > 0 && (
         <>
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3 md:gap-4">
-            {products.map((product) => (
+            {products.map((product, idx) => (
               <ProductCard
                 key={product._id || product.id}
                 product={product}
                 formatPrice={formatPrice}
                 getDiscount={getDiscount}
+                // PERF: first card of the first collection is the LCP candidate.
+                priority={isFirstSection && idx === 0}
               />
             ))}
           </div>
@@ -178,8 +184,16 @@ export function SingleCollectionSection({ collectionTitle, collectionId, product
       ) : (
         <>
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3 md:gap-4">
-            {products.map(product => (
-              <ProductCard key={product._id || product.id} product={product} formatPrice={formatPrice} getDiscount={getDiscount} />
+            {products.map((product, idx) => (
+              <ProductCard
+                key={product._id || product.id}
+                product={product}
+                formatPrice={formatPrice}
+                getDiscount={getDiscount}
+                // PERF: first card can be an LCP candidate when this section is rendered
+                // at the top of the homepage via the builder.
+                priority={idx === 0}
+              />
             ))}
           </div>
           {showViewMore && (
@@ -228,7 +242,7 @@ export default function HomeCollectionSections() {
 
   return (
     <>
-      {collections.map((col) => (
+      {collections.map((col, idx) => (
         <div key={col._id || col.id}>
           <CollectionSection
             collection={col}
@@ -236,6 +250,7 @@ export default function HomeCollectionSections() {
             formatPrice={formatPrice}
             t={t}
             getDiscount={getDiscount}
+            isFirstSection={idx === 0}
           />
         </div>
       ))}
