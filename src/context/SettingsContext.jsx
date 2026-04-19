@@ -15,6 +15,7 @@
  */
 
 import { createContext, useContext, useEffect, useState, useCallback } from "react";
+import { fetchCached } from "@/lib/dataCache";
 
 const SETTING_TYPES = [
   "discount_rules",
@@ -36,10 +37,9 @@ export function SettingsProvider({ children }) {
   const fetchAll = useCallback(() => {
     Promise.all(
       SETTING_TYPES.map((type) =>
-        fetch(`/api/setting?type=${type}`)
-          .then((r) => (r.ok ? r.json() : null))
-          .catch(() => null)
+        fetchCached(`/api/setting?type=${type}`)
           .then((value) => ({ type, value }))
+          .catch(() => ({ type, value: null }))
       )
     ).then((results) => {
       const dataMap   = {};

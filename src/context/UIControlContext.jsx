@@ -15,6 +15,7 @@
 
 import { createContext, useContext, useState, useEffect, useCallback } from "react";
 import { UI_DEFAULTS } from "@/lib/ui-defaults";
+import { fetchCached } from "@/lib/dataCache";
 
 export { UI_DEFAULTS };
 
@@ -28,8 +29,7 @@ export function UIControlProvider({ children }) {
   const [settings, setSettings] = useState({ ...UI_DEFAULTS, _loaded: false });
 
   const reload = useCallback(() => {
-    fetch("/api/ui-control")
-      .then((r) => r.json())
+    fetchCached("/api/ui-control")
       .then((data) => setSettings({ ...UI_DEFAULTS, ...data, _loaded: true }))
       .catch(() => setSettings((s) => ({ ...s, _loaded: true })));
   }, []);
