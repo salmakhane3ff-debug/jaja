@@ -17,7 +17,7 @@ export async function GET() {
       where: {
         OR: [
           { status: 'APPROVED' },
-          { status: { in: ['SCHEDULED'] }, scheduledAt: { lte: now } },
+          { status: 'SCHEDULED', publishAt: { lte: now } },
         ],
       },
       _avg:   { rating: true },
