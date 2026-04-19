@@ -2,10 +2,9 @@
 
 import { useEffect, useState } from "react";
 import { Star } from "lucide-react";
-import { useLanguage } from "@/context/LanguageContext";
+import Link from "next/link";
 
 export default function RatingBadge() {
-  const { t } = useLanguage();
   const [avg, setAvg]     = useState(null);
   const [count, setCount] = useState(0);
 
@@ -27,32 +26,32 @@ export default function RatingBadge() {
 
   return (
     <div className="flex justify-center">
-      <div className="inline-flex items-center gap-2.5 bg-blue-600 text-white rounded-full px-5 py-2.5 shadow-lg shadow-blue-200">
-        {/* Score */}
-        <span className="text-xl font-black tabular-nums leading-none">{avg}</span>
+      <Link href="/feedback">
+        <div className="inline-flex items-center gap-2.5 bg-blue-600 text-white rounded-full px-5 py-2.5 shadow-lg shadow-blue-200 hover:bg-blue-700 transition-colors cursor-pointer">
+          {/* Score */}
+          <span className="text-xl font-black tabular-nums leading-none">{avg}</span>
 
-        {/* Stars */}
-        <div className="flex items-center gap-0.5">
-          {[1, 2, 3, 4, 5].map((s) => (
-            <Star
-              key={s}
-              size={16}
-              className={
-                stars >= s
-                  ? "fill-yellow-400 text-yellow-400"
-                  : stars >= s - 0.5
-                  ? "fill-yellow-400/50 text-yellow-400"
-                  : "fill-white/20 text-white/20"
-              }
-            />
-          ))}
+          {/* Stars */}
+          <div className="flex items-center gap-0.5">
+            {[1, 2, 3, 4, 5].map((s) => (
+              <Star
+                key={s}
+                size={16}
+                className={
+                  stars >= s
+                    ? "fill-yellow-400 text-yellow-400"
+                    : stars >= s - 0.5
+                    ? "fill-yellow-400/50 text-yellow-400"
+                    : "fill-white/20 text-white/20"
+                }
+              />
+            ))}
+          </div>
+
+          {/* Count */}
+          <span className="text-sm font-medium opacity-90">{count} Avis</span>
         </div>
-
-        {/* Count */}
-        <span className="text-sm font-medium opacity-90">
-          {count} {t ? t("feedback_avis") || "avis" : "avis"}
-        </span>
-      </div>
+      </Link>
     </div>
   );
 }
