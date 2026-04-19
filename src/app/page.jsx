@@ -11,6 +11,7 @@ import Slider           from "@/components/Slider/Slider";
 import SliderCollection from "@/components/Colleaction/SliderCollection";
 import ProductGrid      from "@/components/Product/ProductGrid";
 import Container        from "@/components/Container";
+import RatingBadge      from "@/components/RatingBadge";
 
 // PERF: Below-fold components — loaded with next/dynamic so their JS is only
 //       downloaded after the above-fold content has painted.
@@ -48,6 +49,7 @@ function DefaultHome({ topOfferBanner }) {
       )}
       <Container><Slider /></Container>
       <Container><SliderCollection /></Container>
+      <RatingBadge />
       <Container><ProductGrid /></Container>
       {/* PERF: dynamic imports below — JS for these sections loads after LCP */}
       <HomeCollectionSections />

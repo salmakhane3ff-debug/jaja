@@ -2,6 +2,7 @@
 
 import React, { useEffect, useState } from "react";
 import Container         from "@/components/Container";
+import RatingBadge       from "@/components/RatingBadge";
 import Slider            from "@/components/Slider/Slider";
 import SliderCollection  from "@/components/Colleaction/SliderCollection";
 import ProductGrid       from "@/components/Product/ProductGrid";
@@ -163,6 +164,7 @@ const RENDERERS = {
   hero:               ({ data }) => <HeroSection data={data} />,
   slider:             ()         => <Slider />,
   collection_slider:  ()         => <SliderCollection />,
+  rating_badge:       ()         => <RatingBadge />,
   products:           ({ data }) => <ProductsSection data={data} />,
   collection_section: ({ data }) => data?.collectionTitle || data?.collectionId
     ? <SingleCollectionSection
