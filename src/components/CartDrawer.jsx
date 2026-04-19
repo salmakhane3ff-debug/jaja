@@ -8,6 +8,7 @@ import ProductLabel from "@/components/ProductLabel";
 import { ShoppingBag, Trash2, Plus, Minus, ArrowRight, X } from "lucide-react";
 import { useLanguage } from "@/context/LanguageContext";
 import { fetchCached } from "@/lib/dataCache";
+import { thumbUrl }    from "@/lib/thumbnailUrl";
 
 const CURRENCY = "MAD";
 
@@ -305,7 +306,9 @@ export default function CartDrawer({ isOpen, onClose }) {
                 const product  = getProductDetails(item.productId);
                 // Gift items with synthetic IDs (::cadeau) won't match a product — use cart item data
                 if (!product && !item._isGift) return null;
-                const imageUrl  = item.image || product?.images?.[0] || "https://placehold.co/400x500?text=No+Image";
+                const _rawImage = item.image || product?.images?.[0] || "";
+                // PERF: cart thumbnail is 56px (w-14) — sm (80px WebP) is the right size.
+                const imageUrl  = thumbUrl(_rawImage, "sm") || _rawImage || "https://placehold.co/400x500?text=No+Image";
                 const isFreeItem = !!item.free || !!item._isGift;
 
                 return (

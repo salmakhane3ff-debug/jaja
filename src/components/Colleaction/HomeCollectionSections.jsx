@@ -5,6 +5,7 @@ import Link from "next/link";
 import { useLanguage } from "@/context/LanguageContext";
 import { useDiscountRules } from "@/hooks/useDiscountRules";
 import { fetchCached } from "@/lib/dataCache";
+import { thumbUrl }    from "@/lib/thumbnailUrl";
 
 // ── Product Card ──────────────────────────────────────────────────────────────
 
@@ -19,7 +20,10 @@ function getProductImageUrl(images) {
 }
 
 function ProductCard({ product, formatPrice, getDiscount, priority = false }) {
-  const imageUrl     = getProductImageUrl(product.images);
+  const _rawUrl  = getProductImageUrl(product.images);
+  // PERF: use 200px WebP thumbnail for grid cards (~200px display size).
+  // LCP card (priority=true) uses the larger lg thumbnail for better quality.
+  const imageUrl = thumbUrl(_rawUrl, priority ? "lg" : "md") || _rawUrl;
   const discountRule = getDiscount ? getDiscount(product) : null;
   const price        = discountRule ? discountRule.effectivePrice : (product.salePrice || product.regularPrice);
   const href         = `/products/${product._id || product.id}`;
