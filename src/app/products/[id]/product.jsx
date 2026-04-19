@@ -80,15 +80,13 @@ export default function Product({ data }) {
     const savedWishlist = JSON.parse(localStorage.getItem("wishlist") || "[]");
     setWishlist(savedWishlist);
 
-    // Fetch global feedback stats only when starClickAction needs them.
-    // PERF: fetchCached dedups with FeedbackSection's identical /api/feedback call
-    // — one 6+ MB payload is shared instead of two parallel downloads.
+    // PERF: fetch only avg+count from the lightweight stats endpoint (~20 bytes)
+    // instead of the full /api/feedback payload (6+ MB with base64 images).
     if (fbSettings.starClickAction === "goToFeedbackPage") {
-      fetchCached("/api/feedback")
-        .then((list) => {
-          if (!Array.isArray(list) || list.length === 0) return;
-          const avg = list.reduce((a, b) => a + (b.rating || 0), 0) / list.length;
-          setGlobalStats({ avg: parseFloat(avg.toFixed(1)), count: list.length });
+      fetchCached("/api/feedback/stats")
+        .then(({ avg, count }) => {
+          if (!count) return;
+          setGlobalStats({ avg, count });
         })
         .catch(() => {});
     }
