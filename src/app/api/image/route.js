@@ -20,6 +20,7 @@ import { withAdminAuth } from '@/lib/middleware/withAdminAuth';
 import { validateImage, validateVideo } from '@/lib/uploadSecurity';
 import { rateLimit } from '@/lib/rateLimit';
 import { optimizeImageBuffer } from '@/lib/imageOptimize';
+import { writeThumbnails }    from '@/lib/imageThumbnails';
 
 // ── Route segment config ──────────────────────────────────────────────────────
 // Raise Next.js body size limit to 200 MB so large video uploads aren't
@@ -96,6 +97,12 @@ export const POST = withAdminAuth(async (req) => {
     }
 
     await writeFile(filePath, buffer);
+
+    // Generate sm / md / lg WebP thumbnails in the background.
+    // Fire-and-forget — never block the upload response.
+    writeThumbnails(buffer, fileName, uploadDir).catch((e) =>
+      console.warn('[thumbnails] failed for', fileName, e.message)
+    );
 
     const url = `/uploads/${fileName}`;
     const row = await prisma.image.create({
