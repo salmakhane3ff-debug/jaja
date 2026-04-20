@@ -59,10 +59,18 @@ export default async function RootLayout({ children }) {
       className={rubik.variable}
       suppressHydrationWarning
     >
-      {/* PERF: <head> is now empty of blocking scripts.
-           The language-detection script has been moved to the bottom of <body>
-           so it no longer blocks HTML parsing and First Contentful Paint. */}
-      <head />
+      {/* This tiny inline script runs in <head> — BEFORE the browser renders
+           any content. This is intentionally render-blocking because it must
+           set <html dir> before the first paint to prevent RTL flash on admin
+           pages and LTR flash on Arabic storefront pages.
+           ~200 bytes of JS: negligible parse/exec cost, huge UX benefit. */}
+      <head>
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `(function(){try{var l=localStorage.getItem('store_lang');var h=document.documentElement;if(l==='fr'||l==='ar'){h.setAttribute('data-lang',l);h.setAttribute('lang',l);var a=window.location.pathname.startsWith('/admin');h.setAttribute('dir',(!a&&l==='ar')?'rtl':'ltr');}else{var a=window.location.pathname.startsWith('/admin');if(a)h.setAttribute('dir','ltr');}}catch(e){}}())`,
+          }}
+        />
+      </head>
       <body className="antialiased">
         <Providers>
           {/*
@@ -88,31 +96,6 @@ export default async function RootLayout({ children }) {
           <SpinWheelProvider />
           <GiftSystemInit />
         </Providers>
-
-        {/* PERF: Moved from <head> to bottom of <body>.
-             Previously this ran synchronously before any HTML was parsed (render-blocking).
-             At the bottom of <body> it still executes before DOMContentLoaded
-             but no longer delays FCP. LanguageContext reads the data-lang attribute
-             in its lazy useState initializer so the first client render still uses
-             the correct language with zero layout shift. */}
-        <script
-          dangerouslySetInnerHTML={{
-            __html: `
-          (function(){
-            try {
-              var l = localStorage.getItem('store_lang');
-              if (l === 'fr' || l === 'ar') {
-                var h = document.documentElement;
-                h.setAttribute('data-lang', l);
-                h.setAttribute('lang', l);
-                var isAdmin = window.location.pathname.startsWith('/admin');
-                h.setAttribute('dir', (!isAdmin && l === 'ar') ? 'rtl' : 'ltr');
-              }
-            } catch(e) {}
-          })();
-        `,
-          }}
-        />
       </body>
     </html>
   );
