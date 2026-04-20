@@ -30,13 +30,30 @@ export function LanguageProvider({ children }) {
     const fromDom = document.documentElement.getAttribute("data-lang");
     if (fromDom && SUPPORTED_LANGS.includes(fromDom)) {
       setLangState(fromDom);
-    } else {
-      try {
-        const saved = localStorage.getItem(STORAGE_KEY);
-        if (saved && SUPPORTED_LANGS.includes(saved)) setLangState(saved);
-      } catch {}
+      setMounted(true);
+      return;
     }
-    setMounted(true);
+
+    try {
+      const saved = localStorage.getItem(STORAGE_KEY);
+      if (saved && SUPPORTED_LANGS.includes(saved)) {
+        setLangState(saved);
+        setMounted(true);
+        return;
+      }
+    } catch {}
+
+    // No stored user preference — fetch the admin-configured store default
+    fetch("/api/setting?type=language-settings")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => {
+        const adminDefault = data?.defaultLang;
+        if (adminDefault && SUPPORTED_LANGS.includes(adminDefault)) {
+          setLangState(adminDefault);
+        }
+      })
+      .catch(() => {})
+      .finally(() => setMounted(true));
   }, []);
 
   // Sync HTML attributes and persist whenever lang changes

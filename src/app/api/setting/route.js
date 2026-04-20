@@ -37,6 +37,7 @@ const PUBLIC_TYPES = new Set([
   'preloader',             // preloader config
   'footer',                // footer content
   'social',                // social links
+  'language-settings',     // store default language (storefront reads on first visit)
 ]);
 
 export function GET(req) {

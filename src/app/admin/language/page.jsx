@@ -1,7 +1,7 @@
 "use client";
 
-import { useState } from "react";
-import { Languages, Globe, Save, RefreshCw, ChevronDown, ChevronUp } from "lucide-react";
+import { useState, useEffect } from "react";
+import { Languages, Globe, Save, RefreshCw, ChevronDown, ChevronUp, CheckCircle } from "lucide-react";
 import ar from "@/locales/ar.json";
 import fr from "@/locales/fr.json";
 
@@ -17,6 +17,40 @@ export default function AdminLanguagePage() {
   const [frTranslations, setFrTranslations] = useState(fr);
   const [expandedGroups, setExpandedGroups] = useState({});
   const [saved, setSaved] = useState(false);
+
+  // Default language state
+  const [defaultLang, setDefaultLang] = useState("ar");
+  const [defaultLangSaved, setDefaultLangSaved] = useState(false);
+  const [defaultLangSaving, setDefaultLangSaving] = useState(false);
+  const [defaultLangLoading, setDefaultLangLoading] = useState(true);
+
+  useEffect(() => {
+    fetch("/api/setting?type=language-settings")
+      .then((r) => (r.ok ? r.json() : null))
+      .then((data) => {
+        if (data?.defaultLang && ["ar", "fr"].includes(data.defaultLang)) {
+          setDefaultLang(data.defaultLang);
+        }
+      })
+      .catch(() => {})
+      .finally(() => setDefaultLangLoading(false));
+  }, []);
+
+  const handleSaveDefaultLang = async () => {
+    setDefaultLangSaving(true);
+    try {
+      const res = await fetch("/api/setting?type=language-settings", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ type: "language-settings", value: { defaultLang } }),
+      });
+      if (res.ok) {
+        setDefaultLangSaved(true);
+        setTimeout(() => setDefaultLangSaved(false), 3000);
+      }
+    } catch {}
+    setDefaultLangSaving(false);
+  };
 
   const translations = editLang === "ar" ? arTranslations : frTranslations;
   const setTranslations = editLang === "ar" ? setArTranslations : setFrTranslations;
@@ -94,6 +128,68 @@ export default function AdminLanguagePage() {
       {/* Settings Tab */}
       {activeTab === "settings" && (
         <div className="space-y-6">
+          {/* Default Store Language */}
+          <div className="bg-white border border-gray-200 rounded-xl p-5 shadow-sm">
+            <div className="flex items-center gap-2 mb-1">
+              <Globe className="w-5 h-5 text-blue-600" />
+              <h3 className="font-semibold text-gray-900">Default Store Language</h3>
+            </div>
+            <p className="text-xs text-gray-500 mb-4">
+              The language shown to new visitors who have never changed their preference.
+              Existing visitors keep their stored preference.
+            </p>
+
+            {defaultLangLoading ? (
+              <div className="flex gap-3">
+                <div className="h-16 w-32 bg-gray-100 animate-pulse rounded-xl" />
+                <div className="h-16 w-32 bg-gray-100 animate-pulse rounded-xl" />
+              </div>
+            ) : (
+              <div className="flex flex-wrap gap-3">
+                {Object.entries(LANG_META).map(([code, meta]) => (
+                  <button
+                    key={code}
+                    onClick={() => setDefaultLang(code)}
+                    className={`flex items-center gap-3 px-5 py-3 rounded-xl border-2 transition-all text-sm font-medium ${
+                      defaultLang === code
+                        ? "border-blue-600 bg-blue-50 text-blue-700"
+                        : "border-gray-200 bg-white text-gray-600 hover:border-blue-300"
+                    }`}
+                  >
+                    <span className="text-xl">{meta.flag}</span>
+                    <div className="text-left">
+                      <div>{meta.label}</div>
+                      <div className="text-xs opacity-60">{meta.dir.toUpperCase()}</div>
+                    </div>
+                    {defaultLang === code && (
+                      <CheckCircle className="w-4 h-4 text-blue-600 ml-1" />
+                    )}
+                  </button>
+                ))}
+              </div>
+            )}
+
+            <div className="flex items-center gap-3 mt-4">
+              <button
+                onClick={handleSaveDefaultLang}
+                disabled={defaultLangSaving || defaultLangLoading}
+                className={`flex items-center gap-2 px-4 py-2 text-sm rounded-lg font-medium transition-colors ${
+                  defaultLangSaved
+                    ? "bg-green-600 text-white"
+                    : "bg-blue-600 text-white hover:bg-blue-700 disabled:opacity-50"
+                }`}
+              >
+                <Save className="w-4 h-4" />
+                {defaultLangSaving ? "Saving…" : defaultLangSaved ? "Saved!" : "Save Default"}
+              </button>
+              {defaultLangSaved && (
+                <p className="text-xs text-green-600">
+                  New visitors will now see the site in {LANG_META[defaultLang].label}.
+                </p>
+              )}
+            </div>
+          </div>
+
           {/* Language Overview */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {Object.entries(LANG_META).map(([code, meta]) => (
@@ -106,7 +202,7 @@ export default function AdminLanguagePage() {
                       {code} · {meta.dir.toUpperCase()}
                     </span>
                   </div>
-                  {code === "ar" && (
+                  {code === defaultLang && (
                     <span className="ms-auto text-xs bg-green-100 text-green-700 px-2 py-1 rounded-full font-medium">
                       Default
                     </span>
