@@ -65,6 +65,8 @@ export default async function RootLayout({ children }) {
            pages and LTR flash on Arabic storefront pages.
            ~200 bytes of JS: negligible parse/exec cost, huge UX benefit. */}
       <head>
+        {/* Block Chrome/Google Translate popup — site has its own AR/FR switcher */}
+        <meta name="google" content="notranslate" />
         <script
           dangerouslySetInnerHTML={{
             __html: `(function(){try{var l=localStorage.getItem('store_lang');var h=document.documentElement;if(l==='fr'||l==='ar'){h.setAttribute('data-lang',l);h.setAttribute('lang',l);var a=window.location.pathname.startsWith('/admin');h.setAttribute('dir',(!a&&l==='ar')?'rtl':'ltr');}else{var a=window.location.pathname.startsWith('/admin');if(a)h.setAttribute('dir','ltr');}}catch(e){}}())`,
