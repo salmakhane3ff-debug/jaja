@@ -4,9 +4,9 @@
  * Generates pre-sized WebP thumbnails alongside the original upload.
  *
  * Sizes:
- *   sm  →  80×80   — icons, cart, wishlist, review avatars
- *   md  → 200×200  — product cards, collection grids
- *   lg  → 400×400  — product gallery thumbnails strip
+ *   sm  →  300×300  — icons, cart, wishlist, thumbnail strip
+ *   md  →  600×600  — product cards, collection grids
+ *   lg  → 1200×1200 — product gallery main display (HiDPI/Retina safe)
  *
  * Output format: always WebP (best size/quality ratio).
  * Naming convention (derived, no DB change needed):
@@ -27,12 +27,12 @@ import { writeFile } from 'fs/promises';
 const SKIP_EXTS = new Set(['gif', 'svg', 'mp4', 'webm', 'mov', 'avi', 'mkv', 'ogv']);
 
 export const THUMB_SIZES = {
-  sm: 80,
-  md: 200,
-  lg: 400,
+  sm:  300,   // thumbnail strip + cart + icons
+  md:  600,   // product cards + collection grids
+  lg: 1200,   // main product gallery — HiDPI/Retina safe (2x of 600px display)
 };
 
-const WEBP_QUALITY = 82;
+const WEBP_QUALITY = 85;
 
 /**
  * Generate sm / md / lg WebP thumbnails from a buffer.
