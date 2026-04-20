@@ -56,6 +56,7 @@ export default async function RootLayout({ children }) {
     <html
       lang="ar"
       dir="rtl"
+      translate="no"
       className={rubik.variable}
       suppressHydrationWarning
     >
