@@ -76,6 +76,24 @@ export default function Product({ data }) {
     data.conversionStock,
   );
 
+  // Track product page view — deduplicated per product per 24 h via localStorage
+  useEffect(() => {
+    if (!data._id) return;
+    try {
+      const key = `pc_${data._id}`;
+      const last = localStorage.getItem(key);
+      const now = Date.now();
+      if (last && now - Number(last) < 86_400_000) return; // already tracked today
+      localStorage.setItem(key, String(now));
+    } catch {}
+    fetch("/api/products/track-click", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ productId: data._id }),
+      keepalive: true,
+    }).catch(() => {});
+  }, [data._id]);
+
   useEffect(() => {
     const savedWishlist = JSON.parse(localStorage.getItem("wishlist") || "[]");
     setWishlist(savedWishlist);
