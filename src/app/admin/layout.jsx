@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useLayoutEffect } from "react";
 import { HeroUIProvider } from "@heroui/react";
 // PERF: SunEditor CSS scoped to admin only — removed from root layout.jsx.
 //       This prevents ~300 KB of editor CSS loading on public storefront pages.
@@ -37,7 +37,9 @@ export default function AdminLayout({ children }) {
   // [dir="rtl"] selectors anchored to <html>, so we must control the root.
   // MutationObserver catches and reverts any RTL set by LanguageContext
   // or the localStorage inline script before React hydrates.
-  useEffect(() => {
+  // useLayoutEffect fires BEFORE the browser paints — eliminates the RTL flash.
+  // useEffect fires after paint → user sees RTL for one frame → that was the bug.
+  useLayoutEffect(() => {
     const html = document.documentElement;
 
     function enforceLTR() {
@@ -46,7 +48,7 @@ export default function AdminLayout({ children }) {
       }
     }
 
-    enforceLTR(); // apply immediately on mount
+    enforceLTR(); // set before browser paints
 
     const observer = new MutationObserver(enforceLTR);
     observer.observe(html, { attributes: true, attributeFilter: ["dir"] });
@@ -58,7 +60,7 @@ export default function AdminLayout({ children }) {
         const stored = localStorage.getItem("store_lang");
         html.setAttribute("dir", stored === "ar" ? "rtl" : "ltr");
       } catch {
-        html.setAttribute("dir", "rtl"); // safe default
+        html.setAttribute("dir", "rtl");
       }
     };
   }, []);

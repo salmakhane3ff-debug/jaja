@@ -105,7 +105,8 @@ export default async function RootLayout({ children }) {
                 var h = document.documentElement;
                 h.setAttribute('data-lang', l);
                 h.setAttribute('lang', l);
-                h.setAttribute('dir', l === 'ar' ? 'rtl' : 'ltr');
+                var isAdmin = window.location.pathname.startsWith('/admin');
+                h.setAttribute('dir', (!isAdmin && l === 'ar') ? 'rtl' : 'ltr');
               }
             } catch(e) {}
           })();
