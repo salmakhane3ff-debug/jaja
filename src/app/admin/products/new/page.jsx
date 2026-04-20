@@ -268,29 +268,45 @@ function DraggableImageGrid({ images, onChange, onLibrary }) {
 }
 
 // ── Smart collection detector ─────────────────────────────────────────────────
-// Scores each collection by matching its title words against the product title.
-// Always returns the closest match — never returns null (fallback = first col).
+// Scores each collection by matching words between the product title and
+// collection name. Returns null if no real match found (score = 0).
 function detectCollection(title, collections) {
   if (!title?.trim() || !collections?.length) return null;
   const t = title.toLowerCase();
+  const titleWords = t.split(/[\s\-_/]+/).filter((w) => w.length > 2);
+
   let bestMatch = null;
-  let bestScore = -1;
+  let bestScore = 0; // must beat 0 to be considered a real match
 
   for (const col of collections) {
-    const colWords = col.title.toLowerCase().split(/[\s\-_/]+/).filter((w) => w.length > 1);
+    const colName = col.title.toLowerCase();
+    const colWords = colName.split(/[\s\-_/]+/).filter((w) => w.length > 1);
     let score = 0;
+
+    // Collection word found in product title
     for (const cw of colWords) {
-      if (t.includes(cw)) score += cw.length * 2; // longer = more specific
+      if (t.includes(cw)) score += cw.length * 2;
     }
-    const titleWords = t.split(/[\s\-_/]+/).filter((w) => w.length > 2);
+
+    // Product title word found in collection name
     for (const tw of titleWords) {
-      if (col.title.toLowerCase().includes(tw)) score += tw.length;
+      if (colName.includes(tw)) score += tw.length;
     }
+
+    // Partial match: title word starts with collection word or vice-versa (min 4 chars)
+    for (const cw of colWords) {
+      if (cw.length >= 4) {
+        for (const tw of titleWords) {
+          if (tw.startsWith(cw) || cw.startsWith(tw)) score += 3;
+        }
+      }
+    }
+
     if (score > bestScore) { bestScore = score; bestMatch = col; }
   }
 
-  // Always return something — closest match or first collection as last resort
-  return bestMatch || collections[0];
+  // Only return a match if we found a real keyword overlap — never random-pick
+  return bestMatch;
 }
 
 function ProductForm() {
