@@ -333,21 +333,6 @@ function ProductForm() {
     fetchCollection();
   }, []);
 
-  // ── Auto-detect collection from title (debounced 600 ms) ─────────────────────
-  // Only fires on new products — don't override admin's manual selection on update.
-  useEffect(() => {
-    if (isUpdate) return;
-    if (!productData.title?.trim() || !fetchingCollection.length) return;
-    const timer = setTimeout(() => {
-      const detected = detectCollection(productData.title, fetchingCollection);
-      if (detected) {
-        setAutoDetected(detected.title);
-        setCategories(new Set([detected.title]));
-      }
-    }, 600);
-    return () => clearTimeout(timer);
-  }, [productData.title, fetchingCollection, isUpdate]);
-
   const [productData, setProductData] = useState({
     title: "",
     description: "",
@@ -382,6 +367,21 @@ function ProductForm() {
   const visibilityOptions = ["Active", "Inactive"];
   const stockStatusOptions = ["In Stock", "Out of Stock"];
   const productLabelOptions = ["Trending", "New", "Hot", "Best Seller", "Limited Edition", "Sale", "Exclusive", "None"];
+
+  // ── Auto-detect collection from title (debounced 600 ms) ─────────────────────
+  // Only fires on new products — don't override admin's manual selection on update.
+  useEffect(() => {
+    if (isUpdate) return;
+    if (!productData.title?.trim() || !fetchingCollection.length) return;
+    const timer = setTimeout(() => {
+      const detected = detectCollection(productData.title, fetchingCollection);
+      if (detected) {
+        setAutoDetected(detected.title);
+        setCategories(new Set([detected.title]));
+      }
+    }, 600);
+    return () => clearTimeout(timer);
+  }, [productData.title, fetchingCollection, isUpdate]);
 
   useEffect(() => {
     const fetchProductById = async () => {
