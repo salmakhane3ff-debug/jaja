@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { HeroUIProvider } from "@heroui/react";
 // PERF: SunEditor CSS scoped to admin only — removed from root layout.jsx.
 //       This prevents ~300 KB of editor CSS loading on public storefront pages.
@@ -31,6 +31,37 @@ const sunEditorStyles = `
 
 export default function AdminLayout({ children }) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
+
+  // Force <html dir="ltr"> for the entire admin session.
+  // dir="ltr" on a child div is NOT enough — Tailwind rtl: variants use
+  // [dir="rtl"] selectors anchored to <html>, so we must control the root.
+  // MutationObserver catches and reverts any RTL set by LanguageContext
+  // or the localStorage inline script before React hydrates.
+  useEffect(() => {
+    const html = document.documentElement;
+
+    function enforceLTR() {
+      if (html.getAttribute("dir") !== "ltr") {
+        html.setAttribute("dir", "ltr");
+      }
+    }
+
+    enforceLTR(); // apply immediately on mount
+
+    const observer = new MutationObserver(enforceLTR);
+    observer.observe(html, { attributes: true, attributeFilter: ["dir"] });
+
+    return () => {
+      observer.disconnect();
+      // Restore the user's stored language direction when leaving admin
+      try {
+        const stored = localStorage.getItem("store_lang");
+        html.setAttribute("dir", stored === "ar" ? "rtl" : "ltr");
+      } catch {
+        html.setAttribute("dir", "rtl"); // safe default
+      }
+    };
+  }, []);
 
   return (
     // PERF: HeroUIProvider scoped to admin layout — removed from global providers.tsx.

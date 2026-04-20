@@ -1,7 +1,6 @@
 "use client";
 
 import { createContext, useContext, useState, useEffect, useCallback } from "react";
-import { usePathname } from "next/navigation";
 import ar from "@/locales/ar.json";
 import fr from "@/locales/fr.json";
 
@@ -24,9 +23,6 @@ export function LanguageProvider({ children }) {
    */
   // Always start with DEFAULT_LANG so the first client render matches the server HTML.
   // After hydration completes, useEffect reads the stored preference and updates.
-  const pathname = usePathname();
-  const isAdmin = pathname?.startsWith("/admin") ?? false;
-
   const [lang, setLangState] = useState(DEFAULT_LANG);
   const [mounted, setMounted] = useState(false);
 
@@ -60,17 +56,15 @@ export function LanguageProvider({ children }) {
       .finally(() => setMounted(true));
   }, []);
 
-  // Sync HTML attributes and persist whenever lang or route changes.
-  // Admin pages always force LTR on <html> so Tailwind rtl: variants
-  // never activate there, regardless of the selected store language.
+  // Sync HTML attributes and persist whenever lang changes.
   useEffect(() => {
     if (!mounted) return;
-    const dir = (!isAdmin && lang === "ar") ? "rtl" : "ltr";
-    document.documentElement.lang = isAdmin ? "fr" : lang; // admin stays neutral
+    const dir = lang === "ar" ? "rtl" : "ltr";
+    document.documentElement.lang = lang;
     document.documentElement.dir = dir;
-    document.documentElement.setAttribute("data-lang", isAdmin ? "fr" : lang);
-    if (!isAdmin) localStorage.setItem(STORAGE_KEY, lang); // don't overwrite pref from admin
-  }, [lang, mounted, isAdmin]);
+    document.documentElement.setAttribute("data-lang", lang);
+    localStorage.setItem(STORAGE_KEY, lang);
+  }, [lang, mounted]);
 
   const setLang = useCallback((newLang) => {
     if (SUPPORTED_LANGS.includes(newLang)) {
