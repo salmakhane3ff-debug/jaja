@@ -57,9 +57,12 @@ export function LanguageProvider({ children }) {
   }, []);
 
   // Sync HTML attributes and persist whenever lang changes.
+  // IMPORTANT: Never apply RTL on admin pages — the admin must always be LTR.
+  // window.location.pathname is read at effect time (always current route).
   useEffect(() => {
     if (!mounted) return;
-    const dir = lang === "ar" ? "rtl" : "ltr";
+    const onAdmin = window.location.pathname.startsWith("/admin");
+    const dir = (!onAdmin && lang === "ar") ? "rtl" : "ltr";
     document.documentElement.lang = lang;
     document.documentElement.dir = dir;
     document.documentElement.setAttribute("data-lang", lang);
