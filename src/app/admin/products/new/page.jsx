@@ -111,7 +111,7 @@ function DraggableImageGrid({ images, onChange, onLibrary }) {
     <div className="bg-white rounded-xl p-6">
       {/* Hidden file input */}
       <input
-        ref={fileInputRef}
+        id="fileUpload" ref={fileInputRef}
         type="file"
         accept="image/*,video/mp4,video/webm,video/ogg,video/quicktime,video/x-msvideo"
         multiple
