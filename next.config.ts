@@ -116,11 +116,11 @@ const nextConfig: NextConfig = {
             key:   "Content-Security-Policy",
             value: [
               "default-src 'self'",
-              "script-src 'self' 'unsafe-inline' 'unsafe-eval'",
+              "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://static.cloudflareinsights.com",
               "style-src 'self' 'unsafe-inline'",
               "img-src 'self' data: blob: https://res.cloudinary.com https://*.cloudinary.com https://placehold.co https://img.youtube.com",
               "font-src 'self' data:",
-              "connect-src 'self' https://res.cloudinary.com https://ipwho.is https://ip-api.com",
+              "connect-src 'self' https://res.cloudinary.com https://ipwho.is https://ip-api.com https://cloudflareinsights.com",
               "media-src 'self' blob:",
               "frame-src 'none'",
               "object-src 'none'",
