@@ -37,7 +37,9 @@ export async function optimizeImageBuffer(buffer, filename) {
   if (ext === 'gif' || ext === 'svg') return buffer;
 
   try {
-    const pipeline = sharp(buffer, { failOn: 'none' })
+    // animated: true preserves all frames in animated WebP inputs.
+    // For static images it has no effect on output or performance.
+    const pipeline = sharp(buffer, { failOn: 'none', animated: true })
       .rotate() // honour EXIF orientation then strip it
       .resize({
         width:  MAX_IMAGE_DIMENSION,
