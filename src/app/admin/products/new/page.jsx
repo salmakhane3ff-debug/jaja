@@ -267,6 +267,32 @@ function DraggableImageGrid({ images, onChange, onLibrary }) {
   );
 }
 
+// ── Smart collection detector ─────────────────────────────────────────────────
+// Scores each collection by matching its title words against the product title.
+// Always returns the closest match — never returns null (fallback = first col).
+function detectCollection(title, collections) {
+  if (!title?.trim() || !collections?.length) return null;
+  const t = title.toLowerCase();
+  let bestMatch = null;
+  let bestScore = -1;
+
+  for (const col of collections) {
+    const colWords = col.title.toLowerCase().split(/[\s\-_/]+/).filter((w) => w.length > 1);
+    let score = 0;
+    for (const cw of colWords) {
+      if (t.includes(cw)) score += cw.length * 2; // longer = more specific
+    }
+    const titleWords = t.split(/[\s\-_/]+/).filter((w) => w.length > 2);
+    for (const tw of titleWords) {
+      if (col.title.toLowerCase().includes(tw)) score += tw.length;
+    }
+    if (score > bestScore) { bestScore = score; bestMatch = col; }
+  }
+
+  // Always return something — closest match or first collection as last resort
+  return bestMatch || collections[0];
+}
+
 function ProductForm() {
   const searchParams = useSearchParams();
 
@@ -279,6 +305,7 @@ function ProductForm() {
   const [savedProduct, setSavedProduct] = useState(null);
   const [categories, setCategories] = useState(new Set());
   const [fetchingCollection, setFetchingCollection] = useState([]);
+  const [autoDetected, setAutoDetected] = useState(null); // name of auto-detected collection
   const [isImageSelectorOpen, setIsImageSelectorOpen] = useState(false);
   const [selectedImages, setSelectedImages] = useState([]);
   const [isFetching, setIsFetching] = useState(false);
@@ -305,6 +332,21 @@ function ProductForm() {
   useEffect(() => {
     fetchCollection();
   }, []);
+
+  // ── Auto-detect collection from title (debounced 600 ms) ─────────────────────
+  // Only fires on new products — don't override admin's manual selection on update.
+  useEffect(() => {
+    if (isUpdate) return;
+    if (!productData.title?.trim() || !fetchingCollection.length) return;
+    const timer = setTimeout(() => {
+      const detected = detectCollection(productData.title, fetchingCollection);
+      if (detected) {
+        setAutoDetected(detected.title);
+        setCategories(new Set([detected.title]));
+      }
+    }, 600);
+    return () => clearTimeout(timer);
+  }, [productData.title, fetchingCollection, isUpdate]);
 
   const [productData, setProductData] = useState({
     title: "",
@@ -399,7 +441,10 @@ function ProductForm() {
     fetchProductById();
   }, [isUpdate, productId]);
 
-  const handleCategoryChange = (keys) => setCategories(new Set(keys));
+  const handleCategoryChange = (keys) => {
+    setCategories(new Set(keys));
+    setAutoDetected(null); // admin overrode — clear the badge
+  };
 
   const addVariant = () => {
     if (!variantInput.name || !variantInput.options) return;
@@ -743,6 +788,17 @@ function ProductForm() {
           <div className="bg-white rounded-xl p-6">
             <h3 className="text-lg font-semibold text-gray-900 mb-8">Organization</h3>
             <div className="space-y-10">
+              {autoDetected && (
+                <div className="flex items-center gap-2 text-xs bg-blue-50 border border-blue-200 text-blue-700 px-3 py-2 rounded-lg">
+                  <span>🤖</span>
+                  <span>Auto-detected: <strong>{autoDetected}</strong></span>
+                  <button
+                    type="button"
+                    onClick={() => { setAutoDetected(null); setCategories(new Set()); }}
+                    className="ml-auto text-blue-400 hover:text-blue-700 font-bold"
+                  >✕</button>
+                </div>
+              )}
               <Select
                 label="Collections"
                 labelPlacement="outside"
