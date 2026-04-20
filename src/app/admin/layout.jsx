@@ -37,7 +37,7 @@ export default function AdminLayout({ children }) {
     //       Admin pages use HeroUI components extensively; public pages don't need it.
     <HeroUIProvider>
       <style dangerouslySetInnerHTML={{ __html: sunEditorStyles }} />
-      <div className="min-h-screen bg-gray-50">
+      <div className="min-h-screen bg-gray-50" dir="ltr">
         <Header sidebarOpen={sidebarOpen} setSidebarOpen={setSidebarOpen} />
 
         <div className="flex">
