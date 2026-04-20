@@ -349,7 +349,14 @@ function detectCollection(title, collections) {
     if (score > bestScore) { bestScore = score; bestMatch = col; }
   }
 
-  return bestMatch; // null if bestScore stayed at 0
+  // If a real match found → use it
+  if (bestMatch) return bestMatch;
+
+  // Fallback: find a collection whose name contains "electronic"
+  const electronic = collections.find((c) =>
+    c.title.toLowerCase().includes("electronic")
+  );
+  return electronic || null;
 }
 
 function ProductForm() {
