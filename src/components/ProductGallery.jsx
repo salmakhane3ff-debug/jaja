@@ -3,6 +3,7 @@
 import React, { useState, useRef, useEffect, useCallback } from "react";
 import { ChevronLeft, ChevronRight, Play, Volume2, VolumeX, X, ZoomIn } from "lucide-react";
 import { useUIControl } from "@/hooks/useUIControl";
+import { thumbUrl } from "@/lib/thumbnailUrl";
 
 // ── Media type detector ───────────────────────────────────────────────────────
 function getMediaType(src) {
@@ -197,7 +198,7 @@ function Thumb({ src, title, active, onClick, index }) {
           <span className="absolute bottom-1 left-1 text-[8px] font-bold bg-black/60 text-white px-1 rounded">GIF</span>
         </>
       ) : (
-        <img src={url} alt={`${title} ${index + 1}`} className="w-full h-full object-contain bg-white" />
+        <img src={thumbUrl(url, 'sm') || url} alt={`${title} ${index + 1}`} className="w-full h-full object-contain bg-white" loading="lazy" />
       )}
     </button>
   );
@@ -401,11 +402,12 @@ export default function ProductGallery({ images = [], title = "" }) {
                         className="w-full h-full" />
                     ) : (
                       <img
-                        src={getSrc(item)}
+                        src={thumbUrl(getSrc(item), 'lg') || getSrc(item)}
                         alt={`${title} ${i + 1}`}
                         draggable={false}
                         onContextMenu={(e) => e.preventDefault()}
                         className="max-w-full max-h-full object-contain select-none"
+                        loading={i === 0 ? "eager" : "lazy"}
                       />
                     )}
                   </div>
@@ -492,7 +494,12 @@ export default function ProductGallery({ images = [], title = "" }) {
               style={containerStyle}
             >
               <MediaItem
-                src={selected}
+                src={(() => {
+                  const type = getMediaType(selected);
+                  if (type !== "image") return selected; // video/gif/youtube/vimeo unchanged
+                  const raw = getSrc(selected);
+                  return thumbUrl(raw, 'lg') || raw;
+                })()}
                 title={title}
                 autoPlay={true}
                 className="w-full h-full"
