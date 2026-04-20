@@ -267,33 +267,70 @@ function DraggableImageGrid({ images, onChange, onLibrary }) {
   );
 }
 
+// ── Brand synonym map ─────────────────────────────────────────────────────────
+// Maps common brand/product keywords to collection name patterns.
+// If a title contains a brand keyword AND a collection name matches a pattern
+// from the same group → that collection gets a large score boost.
+const SYNONYM_GROUPS = [
+  {
+    patterns: ["smartphone", "phone", "mobile"],
+    brands:   ["samsung", "galaxy", "iphone", "apple", "bypass", "pixel",
+               "xiaomi", "redmi", "oppo", "huawei", "oneplus", "realme", "nokia"],
+  },
+  {
+    patterns: ["tablet", "tab"],
+    brands:   ["ipad", "galaxy tab", "tab s", "tab a", "mediapad", "kindle"],
+  },
+  {
+    patterns: ["laptop", "notebook", "pc"],
+    brands:   ["macbook", "lenovo", "dell", "asus", "hp ", "acer", "surface"],
+  },
+  {
+    patterns: ["vibrat"],
+    brands:   ["vibrat", "wand", "bullet", "massager"],
+  },
+  {
+    patterns: ["doll"],
+    brands:   ["sex doll", "love doll", "silicone doll"],
+  },
+  {
+    patterns: ["popper"],
+    brands:   ["popper", "rush", "jungle juice", "amsterdam"],
+  },
+  {
+    patterns: ["camera", "action cam", "360"],
+    brands:   ["insta360", "insta 360", "gopro", "dji"],
+  },
+];
+
 // ── Smart collection detector ─────────────────────────────────────────────────
-// Scores each collection by matching words between the product title and
-// collection name. Returns null if no real match found (score = 0).
+// Layer 1: direct keyword overlap between title and collection name.
+// Layer 2: synonym map — detects "Samsung" → "Smartphones" even with no shared word.
+// Returns null if no real match found.
 function detectCollection(title, collections) {
   if (!title?.trim() || !collections?.length) return null;
   const t = title.toLowerCase();
   const titleWords = t.split(/[\s\-_/]+/).filter((w) => w.length > 2);
 
   let bestMatch = null;
-  let bestScore = 0; // must beat 0 to be considered a real match
+  let bestScore = 0;
 
   for (const col of collections) {
     const colName = col.title.toLowerCase();
     const colWords = colName.split(/[\s\-_/]+/).filter((w) => w.length > 1);
     let score = 0;
 
-    // Collection word found in product title
+    // Layer 1a: collection word found in product title
     for (const cw of colWords) {
       if (t.includes(cw)) score += cw.length * 2;
     }
 
-    // Product title word found in collection name
+    // Layer 1b: product title word found in collection name
     for (const tw of titleWords) {
       if (colName.includes(tw)) score += tw.length;
     }
 
-    // Partial match: title word starts with collection word or vice-versa (min 4 chars)
+    // Layer 1c: partial word match (min 4 chars)
     for (const cw of colWords) {
       if (cw.length >= 4) {
         for (const tw of titleWords) {
@@ -302,11 +339,17 @@ function detectCollection(title, collections) {
       }
     }
 
+    // Layer 2: synonym map boost
+    for (const group of SYNONYM_GROUPS) {
+      const titleHasBrand   = group.brands.some((b)   => t.includes(b));
+      const colMatchPattern = group.patterns.some((p) => colName.includes(p));
+      if (titleHasBrand && colMatchPattern) score += 20; // strong boost
+    }
+
     if (score > bestScore) { bestScore = score; bestMatch = col; }
   }
 
-  // Only return a match if we found a real keyword overlap — never random-pick
-  return bestMatch;
+  return bestMatch; // null if bestScore stayed at 0
 }
 
 function ProductForm() {
