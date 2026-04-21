@@ -84,7 +84,7 @@ function ProtectedVideo({ url, autoPlay, controls, className, style }) {
 }
 
 // ── Media item renderer ───────────────────────────────────────────────────────
-function MediaItem({ src, title, className = "", style, autoPlay = false, controls = true, onImageClick }) {
+function MediaItem({ src, title, isFirst = false, className = "", style, autoPlay = false, controls = true, onImageClick }) {
   const type = getMediaType(src);
   const url  = getSrc(src);
 
@@ -135,9 +135,19 @@ function MediaItem({ src, title, className = "", style, autoPlay = false, contro
       onClick={onImageClick}
     >
       <img
-        src={url}
+        src={thumbUrl(url, 'lg') || url}
+        srcSet={type === "image" ? [
+          `${thumbUrl(url, 'sm') || url} 300w`,
+          `${thumbUrl(url, 'md') || url} 600w`,
+          `${thumbUrl(url, 'lg') || url} 1200w`,
+        ].join(", ") : undefined}
+        sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 600px"
+        width={800}
+        height={800}
         alt={title}
         draggable={false}
+        loading={isFirst ? "eager" : "lazy"}
+        fetchPriority={isFirst ? "high" : "auto"}
         onContextMenu={(e) => e.preventDefault()}
         className="max-w-full max-h-full object-contain select-none"
         style={{ display: "block" }}
@@ -403,11 +413,20 @@ export default function ProductGallery({ images = [], title = "" }) {
                     ) : (
                       <img
                         src={thumbUrl(getSrc(item), 'lg') || getSrc(item)}
+                        srcSet={[
+                          `${thumbUrl(getSrc(item), 'sm') || getSrc(item)} 300w`,
+                          `${thumbUrl(getSrc(item), 'md') || getSrc(item)} 600w`,
+                          `${thumbUrl(getSrc(item), 'lg') || getSrc(item)} 1200w`,
+                        ].join(", ")}
+                        sizes="100vw"
+                        width={800}
+                        height={800}
                         alt={`${title} ${i + 1}`}
                         draggable={false}
+                        loading={i === 0 ? "eager" : "lazy"}
+                        fetchPriority={i === 0 ? "high" : "auto"}
                         onContextMenu={(e) => e.preventDefault()}
                         className="max-w-full max-h-full object-contain select-none"
-                        loading={i === 0 ? "eager" : "lazy"}
                       />
                     )}
                   </div>
@@ -494,13 +513,9 @@ export default function ProductGallery({ images = [], title = "" }) {
               style={containerStyle}
             >
               <MediaItem
-                src={(() => {
-                  const type = getMediaType(selected);
-                  if (type !== "image") return selected; // video/gif/youtube/vimeo unchanged
-                  const raw = getSrc(selected);
-                  return thumbUrl(raw, 'lg') || raw;
-                })()}
+                src={selected}
                 title={title}
+                isFirst={true}
                 autoPlay={true}
                 className="w-full h-full"
                 controls
