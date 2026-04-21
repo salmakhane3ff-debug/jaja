@@ -1,26 +1,19 @@
 "use client";
 
-import { useEffect, useState } from "react";
 import Script from "next/script";
 
-export default function ScriptInjector() {
-  const [integrations, setIntegrations] = useState(null);
-
-  useEffect(() => {
-    // Fetch integration settings
-    fetch("/api/setting?type=integrations", {
-      cache: "force-cache",
-      next: { revalidate: 300 }
-    })
-      .then((res) => res.json())
-      .then((data) => {
-        if (data && Object.keys(data).length > 0) {
-          setIntegrations(data);
-        }
-      })
-      .catch((err) => console.error("Failed to fetch integrations:", err));
-  }, []);
-
+/**
+ * ScriptInjector — injects third-party tracking scripts into the page.
+ *
+ * Props:
+ *   integrations — fetched server-side in layout.jsx via getIntegrationsSettings().
+ *                  Passing it as a prop avoids the client-side fetch to the
+ *                  admin-only /api/setting?type=integrations endpoint, which
+ *                  returned 401 for unauthenticated visitors and silently
+ *                  prevented the Meta Pixel (and GA/GTM) from loading on the
+ *                  public storefront.
+ */
+export default function ScriptInjector({ integrations }) {
   if (!integrations) return null;
 
   return (

@@ -16,6 +16,7 @@ import GiftSystemInit from "@/components/GiftSystem/GiftSystemInit";
 import PreloaderWrapper from "@/components/PreloaderWrapper";
 import { getStoreSettings } from "@/lib/getStoreSettings";
 import { getPreloaderSettings } from "@/lib/getPreloaderSettings";
+import { getIntegrationsSettings } from "@/lib/getIntegrationsSettings";
 import { Suspense } from "react";
 
 // Rubik supports both Latin and Arabic scripts — load both subsets.
@@ -49,7 +50,8 @@ export async function generateMetadata() {
 }
 
 export default async function RootLayout({ children }) {
-  const preloaderConfig = await getPreloaderSettings();
+  const preloaderConfig  = await getPreloaderSettings();
+  const integrations     = await getIntegrationsSettings();
   return (
     // suppressHydrationWarning: LanguageProvider updates lang/dir client-side.
     // Default to Arabic (RTL) — matches the default language setting.
@@ -88,7 +90,7 @@ export default async function RootLayout({ children }) {
           <Suspense fallback={null}>
             <TrackingCapture />
           </Suspense>
-          <ScriptInjector />
+          <ScriptInjector integrations={integrations} />
           <Suspense fallback={null}>
             <PreloaderWrapper config={preloaderConfig}>
               <MainHeaderWrapper />
