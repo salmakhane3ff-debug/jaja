@@ -96,28 +96,79 @@ function SuccessContent() {
     fetchAll();
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // ── Facebook Pixel — Purchase event ──────────────────────────────────────
-  // Fires once per order (localStorage flag prevents double-firing on re-renders).
-  // Sends value, currency, and product list so Facebook can attribute the sale.
+  // ── Facebook Pixel + Conversions API — Purchase event ────────────────────
+  // • Browser pixel fires fbq('track','Purchase') for real-time reporting
+  // • Server-side CAPI fires via /api/facebook/capi with the SAME event_id
+  //   → Facebook deduplicates both and counts the conversion only once
+  // • localStorage flag prevents double-firing on re-renders / hot-reload
   useEffect(() => {
     if (!order?._id) return;
     const flag = `fb_purchase_${order._id}`;
     try { if (localStorage.getItem(flag)) return; } catch {}
     try { localStorage.setItem(flag, '1'); } catch {}
 
-    try {
-      if (typeof window.fbq !== 'function') return;
-      const _pd    = order.paymentDetails || {};
-      const _items = order.products?.items || [];
-      const _total = _pd.total ?? _items.reduce((s, i) => s + i.price * (i.quantity || 1), 0);
+    const _pd    = order.paymentDetails || {};
+    const _items = order.products?.items || [];
+    const _total = _pd.total ?? _items.reduce((s, i) => s + i.price * (i.quantity || 1), 0);
+    const _ids   = _items.map(i => String(i.productId || i._id || i.title || '')).filter(Boolean);
+    const _count = _items.reduce((s, i) => s + (i.quantity || 1), 0);
 
-      window.fbq('track', 'Purchase', {
-        value:        _total,
-        currency:     'MAD',
-        content_ids:  _items.map(i => String(i.productId || i._id || i.title || '')).filter(Boolean),
-        content_type: 'product',
-        num_items:    _items.reduce((s, i) => s + (i.quantity || 1), 0),
-      });
+    // Deterministic event_id: same order always produces the same ID,
+    // so deduplication works even if this effect somehow runs twice.
+    const eventId = `purchase_${order._id}`;
+
+    // ── 1. Browser Pixel ───────────────────────────────────────────────────
+    try {
+      if (typeof window.fbq === 'function') {
+        window.fbq('track', 'Purchase',
+          {
+            value:        _total,
+            currency:     'MAD',
+            content_ids:  _ids,
+            content_type: 'product',
+            num_items:    _count,
+          },
+          { eventID: eventId },   // 4th arg = options; eventID enables deduplication
+        );
+      }
+    } catch {}
+
+    // ── 2. Server-side CAPI (fire-and-forget) ─────────────────────────────
+    try {
+      // Read _fbp / _fbc cookies set by the browser pixel
+      const getCookie = (name) => {
+        const m = document.cookie.match(new RegExp('(?:^|;\\s*)' + name + '=([^;]*)'));
+        return m ? decodeURIComponent(m[1]) : null;
+      };
+
+      const contents = _items.map(i => ({
+        id:         String(i.productId || i._id || ''),
+        quantity:   i.quantity || 1,
+        item_price: i.price,
+        title:      i.title || '',
+      }));
+
+      fetch('/api/facebook/capi', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          event_name:       'Purchase',
+          event_id:         eventId,
+          event_source_url: window.location.href,
+          fbp:              getCookie('_fbp'),
+          fbc:              getCookie('_fbc'),
+          user_agent:       navigator.userAgent,
+          value:            _total,
+          currency:         'MAD',
+          content_ids:      _ids,
+          contents,
+          num_items:        _count,
+          order_id:         order._id,
+          // PII — hashed server-side in the API route
+          phone:            order.phone,
+          city:             order.shipping?.address?.city,
+        }),
+      }).catch(() => {}); // best-effort: never block the UI
     } catch {}
   }, [order?._id]); // eslint-disable-line react-hooks/exhaustive-deps
 

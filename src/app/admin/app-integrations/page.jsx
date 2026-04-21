@@ -71,8 +71,9 @@ export default function AppIntegrationsPage() {
             trackingIds: Array.isArray(data.googleAnalytics?.trackingIds) ? data.googleAnalytics.trackingIds : []
           },
           metaPixel: {
-            enabled: data.metaPixel?.enabled || false,
-            pixelIds: Array.isArray(data.metaPixel?.pixelIds) ? data.metaPixel.pixelIds : []
+            enabled:     data.metaPixel?.enabled || false,
+            pixelIds:    Array.isArray(data.metaPixel?.pixelIds) ? data.metaPixel.pixelIds : [],
+            accessToken: data.metaPixel?.accessToken || '',
           },
           googleTagManager: {
             enabled: data.googleTagManager?.enabled || false,
@@ -223,17 +224,36 @@ export default function AppIntegrationsPage() {
                     )}
 
                     {key === "metaPixel" && (
-                      <IntegrationFields
-                        type="metaPixel"
-                        field="pixelIds"
-                        items={integration.pixelIds || []}
-                        addItem={addItem}
-                        removeItem={removeItem}
-                        updateItem={updateItem}
-                        placeholder1="Ad Account Name"
-                        placeholder2="Pixel ID (numbers only)"
-                        buttonText="Add Pixel"
-                      />
+                      <>
+                        <IntegrationFields
+                          type="metaPixel"
+                          field="pixelIds"
+                          items={integration.pixelIds || []}
+                          addItem={addItem}
+                          removeItem={removeItem}
+                          updateItem={updateItem}
+                          placeholder1="Ad Account Name"
+                          placeholder2="Pixel ID (numbers only)"
+                          buttonText="Add Pixel"
+                        />
+                        {/* Conversions API token — server-side tracking */}
+                        <div className="pt-2 border-t border-gray-100 space-y-1">
+                          <p className="text-xs font-semibold text-gray-700">
+                            Conversions API Token
+                            <span className="ml-1 text-gray-400 font-normal">(optional — for server-side tracking)</span>
+                          </p>
+                          <Input
+                            placeholder="EAAxxxxxxxx..."
+                            value={integration.accessToken || ""}
+                            onChange={(e) => updateIntegration("metaPixel", "accessToken", e.target.value)}
+                            size="sm"
+                            type="password"
+                          />
+                          <p className="text-xs text-gray-400">
+                            Events Manager → Settings → Conversions API → Generate Access Token
+                          </p>
+                        </div>
+                      </>
                     )}
 
                     {key === "googleTagManager" && (
