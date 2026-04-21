@@ -1,6 +1,7 @@
 "use client";
 
-import Script from "next/script";
+import Script  from "next/script";
+import { useState, useEffect } from "react";
 
 /**
  * ScriptInjector — injects third-party tracking scripts into the page.
@@ -14,7 +15,13 @@ import Script from "next/script";
  *                  public storefront.
  */
 export default function ScriptInjector({ integrations }) {
-  if (!integrations) return null;
+  // Guard: only render scripts after the client has mounted.
+  // This prevents a hydration mismatch when users have old cached JS bundles
+  // that expect this component to render null on first paint.
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => { setMounted(true); }, []);
+
+  if (!mounted || !integrations) return null;
 
   return (
     <>
