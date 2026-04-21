@@ -36,7 +36,7 @@ const DEFAULTS = {
   slider:             {},
   collection_slider:  {},
   products:           { title: "Featured Products", limit: 8, collectionFilter: "" },
-  collection_section: { collectionTitle: "", collectionId: "", productLimit: 8, customTitle: "", showViewMore: true },
+  collection_section: { collectionTitle: "", collectionId: "", productLimit: 8, customTitle: "", showViewMore: true, mode: "auto", selectedProducts: [] },
   image:              { url: "", link: "", alt: "" },
   video:              { url: "", autoplay: false, muted: true },
   text:               { content: "", align: "center" },
@@ -165,9 +165,16 @@ function EditContact({ data, onChange }) {
 }
 
 function EditCollectionSection({ data, onChange }) {
-  const [collections, setCollections] = useState([]);
+  const [collections,  setCollections]  = useState([]);
   const [loadingCols,  setLoadingCols]  = useState(true);
+  const [allProducts,  setAllProducts]  = useState([]);
+  const [loadingProds, setLoadingProds] = useState(false);
+  const [search,       setSearch]       = useState("");
 
+  const mode             = data.mode || "auto";
+  const selectedProducts = Array.isArray(data.selectedProducts) ? data.selectedProducts : [];
+
+  // Always load collections (used in auto mode + optional view-more link)
   useEffect(() => {
     fetch("/api/collection", { cache: "no-store" })
       .then(r => r.ok ? r.json() : [])
@@ -176,40 +183,199 @@ function EditCollectionSection({ data, onChange }) {
       .finally(() => setLoadingCols(false));
   }, []);
 
-  const handleSelect = (e) => {
-    const selected = collections.find(c => (c._id || c.id) === e.target.value);
-    if (!selected) {
-      onChange({ ...data, collectionTitle: "", collectionId: "" });
-    } else {
-      onChange({ ...data, collectionTitle: selected.title, collectionId: selected._id || selected.id });
-    }
+  // Load products only when switching to manual mode
+  useEffect(() => {
+    if (mode !== "manual") return;
+    setLoadingProds(true);
+    fetch("/api/products", { cache: "no-store" })
+      .then(r => r.ok ? r.json() : [])
+      .then(d => setAllProducts(Array.isArray(d) ? d : []))
+      .catch(() => setAllProducts([]))
+      .finally(() => setLoadingProds(false));
+  }, [mode]);
+
+  const handleCollectionSelect = (e) => {
+    const col = collections.find(c => (c._id || c.id) === e.target.value);
+    onChange(col
+      ? { ...data, collectionTitle: col.title, collectionId: col._id || col.id }
+      : { ...data, collectionTitle: "", collectionId: "" }
+    );
+  };
+
+  const addProduct = (id) => {
+    if (selectedProducts.includes(id)) return;
+    onChange({ ...data, selectedProducts: [...selectedProducts, id] });
+  };
+
+  const removeProduct = (id) => {
+    onChange({ ...data, selectedProducts: selectedProducts.filter(x => x !== id) });
+  };
+
+  const moveProduct = (idx, dir) => {
+    const arr = [...selectedProducts];
+    const to = idx + dir;
+    if (to < 0 || to >= arr.length) return;
+    [arr[idx], arr[to]] = [arr[to], arr[idx]];
+    onChange({ ...data, selectedProducts: arr });
+  };
+
+  // Build a lookup map for quick access
+  const productMap = Object.fromEntries(allProducts.map(p => [p._id || p.id, p]));
+
+  // Products not yet selected, filtered by search
+  const available = allProducts
+    .filter(p => !selectedProducts.includes(p._id || p.id))
+    .filter(p => !search || (p.title || "").toLowerCase().includes(search.toLowerCase()))
+    .slice(0, 60);
+
+  const getImg = (p) => {
+    const raw = p.images?.[0];
+    return raw?.url || raw || null;
   };
 
   return (
-    <div className="space-y-3">
-      <Field label="Collection">
-        {loadingCols ? (
-          <div className="field text-gray-400 text-xs">Loading collections…</div>
-        ) : (
-          <select className="field" value={data.collectionId || ""} onChange={handleSelect}>
-            <option value="">— Select a collection —</option>
-            {collections.map(c => (
-              <option key={c._id || c.id} value={c._id || c.id}>{c.title}</option>
-            ))}
-          </select>
+    <div className="space-y-4">
+
+      {/* ── Mode toggle ── */}
+      <Field label="Selection Mode">
+        <div className="flex rounded-lg border border-gray-200 overflow-hidden">
+          {["auto", "manual"].map(m => (
+            <button
+              key={m}
+              type="button"
+              onClick={() => onChange({ ...data, mode: m })}
+              className={`flex-1 py-2 text-xs font-semibold transition-colors
+                ${mode === m ? "bg-gray-900 text-white" : "bg-white text-gray-500 hover:bg-gray-50"}`}
+            >
+              {m === "auto" ? "🔄 Auto (from collection)" : "✋ Manual (pick products)"}
+            </button>
+          ))}
+        </div>
+      </Field>
+
+      {/* ── AUTO mode ── */}
+      {mode === "auto" && (
+        <Field label="Collection">
+          {loadingCols ? (
+            <div className="field text-gray-400 text-xs">Loading…</div>
+          ) : (
+            <select className="field" value={data.collectionId || ""} onChange={handleCollectionSelect}>
+              <option value="">— Select a collection —</option>
+              {collections.map(c => (
+                <option key={c._id || c.id} value={c._id || c.id}>{c.title}</option>
+              ))}
+            </select>
+          )}
+          {data.collectionTitle && (
+            <p className="text-xs text-green-600 mt-1">✓ <strong>{data.collectionTitle}</strong></p>
+          )}
+        </Field>
+      )}
+
+      {/* ── MANUAL mode ── */}
+      {mode === "manual" && (
+        <div className="space-y-3">
+
+          {/* Selected list */}
+          {selectedProducts.length > 0 && (
+            <Field label={`Selected products (${selectedProducts.length}) — drag order = display order`}>
+              <div className="space-y-1 max-h-52 overflow-y-auto pr-1">
+                {selectedProducts.map((id, idx) => {
+                  const p = productMap[id];
+                  if (!p) return null;
+                  const img = getImg(p);
+                  return (
+                    <div key={id} className="flex items-center gap-2 bg-white border border-gray-200 rounded-lg px-2 py-1.5 text-xs">
+                      <span className="text-gray-400 font-mono w-4 text-center">{idx + 1}</span>
+                      {img && <img src={img} alt="" className="w-8 h-8 object-cover rounded flex-shrink-0" />}
+                      <span className="flex-1 font-medium text-gray-800 line-clamp-1">{p.title}</span>
+                      <div className="flex items-center gap-0.5 shrink-0">
+                        <button type="button" onClick={() => moveProduct(idx, -1)} disabled={idx === 0}
+                          className="px-1.5 py-1 hover:bg-gray-100 rounded disabled:opacity-30 text-gray-500">↑</button>
+                        <button type="button" onClick={() => moveProduct(idx, 1)} disabled={idx === selectedProducts.length - 1}
+                          className="px-1.5 py-1 hover:bg-gray-100 rounded disabled:opacity-30 text-gray-500">↓</button>
+                        <button type="button" onClick={() => removeProduct(id)}
+                          className="px-1.5 py-1 hover:bg-red-50 rounded text-red-400 hover:text-red-600">×</button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </Field>
+          )}
+
+          {/* Product picker */}
+          <Field label="Add products">
+            <input
+              className="field mb-2"
+              placeholder="Search by product name…"
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+            />
+            <div className="border border-gray-200 rounded-lg overflow-hidden">
+              {loadingProds ? (
+                <p className="text-xs text-gray-400 text-center py-4">Loading products…</p>
+              ) : available.length === 0 ? (
+                <p className="text-xs text-gray-400 text-center py-4">
+                  {search ? "No products match your search." : "All products are already selected."}
+                </p>
+              ) : (
+                <div className="max-h-48 overflow-y-auto divide-y divide-gray-50">
+                  {available.map(p => {
+                    const img = getImg(p);
+                    return (
+                      <button
+                        key={p._id || p.id}
+                        type="button"
+                        onClick={() => addProduct(p._id || p.id)}
+                        className="w-full flex items-center gap-2 px-3 py-2 hover:bg-purple-50 transition-colors text-left"
+                      >
+                        {img
+                          ? <img src={img} alt="" className="w-8 h-8 object-cover rounded flex-shrink-0" />
+                          : <div className="w-8 h-8 bg-gray-100 rounded flex-shrink-0" />
+                        }
+                        <span className="flex-1 text-xs font-medium text-gray-700 line-clamp-1">{p.title}</span>
+                        <span className="text-[11px] text-purple-600 font-semibold shrink-0">+ Add</span>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          </Field>
+        </div>
+      )}
+
+      {/* ── Common fields ── */}
+      <Field label="Section Title (optional override)">
+        <input
+          className="field"
+          placeholder={mode === "manual" ? "e.g. Our Picks" : (data.collectionTitle || "Uses collection name")}
+          value={data.customTitle || ""}
+          onChange={e => onChange({ ...data, customTitle: e.target.value })}
+        />
+      </Field>
+
+      <Field label="Max Products to Display">
+        <input
+          type="number" min={1} max={50}
+          className="field w-24"
+          value={data.productLimit || 8}
+          onChange={e => onChange({ ...data, productLimit: Number(e.target.value) })}
+        />
+        {mode === "manual" && (
+          <p className="text-xs text-gray-400 mt-1">
+            Limits how many are shown — you can select more above and reorder freely.
+          </p>
         )}
-        {data.collectionTitle && (
-          <p className="text-xs text-green-600 mt-1">✓ Selected: <strong>{data.collectionTitle}</strong></p>
-        )}
       </Field>
-      <Field label="Override Section Title (optional)">
-        <input className="field" placeholder={data.collectionTitle || "Uses collection name"} value={data.customTitle || ""} onChange={e => onChange({ ...data, customTitle: e.target.value })} />
-      </Field>
-      <Field label="Max Products to Show">
-        <input type="number" min={1} max={50} className="field w-24" value={data.productLimit || 8} onChange={e => onChange({ ...data, productLimit: Number(e.target.value) })} />
-      </Field>
-      <label className="flex items-center gap-2 text-sm cursor-pointer">
-        <input type="checkbox" checked={data.showViewMore !== false} onChange={e => onChange({ ...data, showViewMore: e.target.checked })} />
+
+      <label className="flex items-center gap-2 text-sm cursor-pointer select-none">
+        <input
+          type="checkbox"
+          checked={data.showViewMore !== false}
+          onChange={e => onChange({ ...data, showViewMore: e.target.checked })}
+        />
         Show "View More" button
       </label>
     </div>

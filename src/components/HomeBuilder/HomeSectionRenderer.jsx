@@ -166,15 +166,27 @@ const RENDERERS = {
   collection_slider:  ()         => <SliderCollection />,
   rating_badge:       ()         => <RatingBadge />,
   products:           ({ data }) => <ProductsSection data={data} />,
-  collection_section: ({ data }) => data?.collectionTitle || data?.collectionId
-    ? <SingleCollectionSection
-        collectionTitle={data.collectionTitle}
-        collectionId={data.collectionId}
-        productLimit={data.productLimit || 8}
-        customTitle={data.customTitle || ""}
-        showViewMore={data.showViewMore !== false}
-      />
-    : <HomeCollectionSections />,
+  collection_section: ({ data }) => {
+    const isManual = data?.mode === "manual";
+    // Render SingleCollectionSection when:
+    //   • manual mode (selectedProducts drives the display), OR
+    //   • auto mode with a collection chosen
+    if (isManual || data?.collectionTitle || data?.collectionId) {
+      return (
+        <SingleCollectionSection
+          collectionTitle={data.collectionTitle}
+          collectionId={data.collectionId}
+          productLimit={data.productLimit || 8}
+          customTitle={data.customTitle || ""}
+          showViewMore={data.showViewMore !== false}
+          mode={data.mode || "auto"}
+          selectedProducts={Array.isArray(data.selectedProducts) ? data.selectedProducts : []}
+        />
+      );
+    }
+    // Fallback: no collection configured → show all homepage collections (legacy)
+    return <HomeCollectionSections />;
+  },
   image:              ({ data }) => <ImageSection data={data} />,
   video:              ({ data }) => <VideoSection data={data} />,
   text:               ({ data }) => <TextSection data={data} />,

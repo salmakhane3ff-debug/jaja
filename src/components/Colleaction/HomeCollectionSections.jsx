@@ -133,83 +133,121 @@ function CollectionSection({ collection, allProducts, formatPrice, t, getDiscoun
 }
 
 // ── Single Collection Section (used by Homepage Builder) ──────────────────────
-// Renders products from ONE specific collection by title.
+// Supports two modes:
+//   auto   — fetches products that belong to the chosen collection (original behaviour)
+//   manual — displays exactly the products in `selectedProducts`, in that order
 
-export function SingleCollectionSection({ collectionTitle, collectionId, productLimit = 8, customTitle = "", showViewMore = true }) {
+export function SingleCollectionSection({
+  collectionTitle,
+  collectionId,
+  productLimit    = 8,
+  customTitle     = "",
+  showViewMore    = true,
+  mode            = "auto",
+  selectedProducts = [],
+}) {
   const [allProducts, setAllProducts] = useState([]);
   const [collection,  setCollection]  = useState(null);
   const [loading,     setLoading]     = useState(true);
   const { formatPrice, t } = useLanguage();
-  const { getDiscount } = useDiscountRules();
+  const { getDiscount }    = useDiscountRules();
+
+  // Stable key for the selectedProducts array so the effect only re-runs when
+  // the actual selection changes, not on every parent re-render.
+  const selectedKey = selectedProducts.join(",");
 
   useEffect(() => {
-    if (!collectionTitle && !collectionId) { setLoading(false); return; }
-    Promise.all([
-      fetchCached("/api/collection"),
-      fetchCached("/api/products"),
-    ])
-      .then(([cols, prods]) => {
-        const col = cols.find(c =>
-          (collectionId && (c._id || c.id) === collectionId) ||
-          (collectionTitle && c.title.toLowerCase() === collectionTitle.toLowerCase())
-        );
-        setCollection(col || null);
-        setAllProducts(Array.isArray(prods) ? prods : []);
-      })
-      .catch(() => {})
-      .finally(() => setLoading(false));
-  }, [collectionTitle, collectionId]);
+    if (mode === "manual") {
+      // Manual: we only need the full product list to look up by ID.
+      if (selectedProducts.length === 0) { setLoading(false); return; }
+      fetchCached("/api/products")
+        .then(prods => setAllProducts(Array.isArray(prods) ? prods : []))
+        .catch(() => {})
+        .finally(() => setLoading(false));
+    } else {
+      // Auto: original behaviour — find collection, then filter products.
+      if (!collectionTitle && !collectionId) { setLoading(false); return; }
+      Promise.all([
+        fetchCached("/api/collection"),
+        fetchCached("/api/products"),
+      ])
+        .then(([cols, prods]) => {
+          const col = cols.find(c =>
+            (collectionId  && (c._id || c.id) === collectionId) ||
+            (collectionTitle && c.title.toLowerCase() === collectionTitle.toLowerCase())
+          );
+          setCollection(col || null);
+          setAllProducts(Array.isArray(prods) ? prods : []);
+        })
+        .catch(() => {})
+        .finally(() => setLoading(false));
+    }
+  }, [collectionTitle, collectionId, mode, selectedKey]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (loading) return null;
-  if (!collection) return null;
 
-  const products = allProducts
-    .filter(p =>
-      Array.isArray(p.collections) &&
-      p.collections.some(c => c.toLowerCase() === collection.title.toLowerCase())
-    )
-    .slice(0, productLimit);
+  // ── Resolve the product list to display ──────────────────────────────────
+  let products;
+  let heading;
+  let viewMoreHref;
 
-  const heading = customTitle || collection.title;
+  if (mode === "manual") {
+    if (selectedProducts.length === 0) return null;
+    // Build a lookup map and preserve the admin-defined order.
+    const productMap = Object.fromEntries(allProducts.map(p => [p._id || p.id, p]));
+    products = selectedProducts
+      .map(id => productMap[id])
+      .filter(Boolean)           // skip IDs that no longer exist
+      .slice(0, productLimit);   // max products = display limit only
+    heading     = customTitle || "";
+    viewMoreHref = "/products";
+  } else {
+    // Auto mode — requires a matched collection.
+    if (!collection) return null;
+    products = allProducts
+      .filter(p =>
+        Array.isArray(p.collections) &&
+        p.collections.some(c => c.toLowerCase() === collection.title.toLowerCase())
+      )
+      .slice(0, productLimit);
+    heading     = customTitle || collection.title;
+    viewMoreHref = `/products?collection=${encodeURIComponent(collection.title)}`;
+  }
+
+  if (products.length === 0) return null;
 
   return (
     <section>
-      <div className="max-w-7xl mx-auto px-4 mb-6 text-center">
-        <h2 className="text-xl md:text-2xl font-bold text-gray-900">{heading}</h2>
-        {collection.description && (
-          <p className="text-sm text-gray-500 mt-1">{collection.description}</p>
-        )}
+      {heading && (
+        <div className="max-w-7xl mx-auto px-4 mb-6 text-center">
+          <h2 className="text-xl md:text-2xl font-bold text-gray-900">{heading}</h2>
+          {mode === "auto" && collection?.description && (
+            <p className="text-sm text-gray-500 mt-1">{collection.description}</p>
+          )}
+        </div>
+      )}
+
+      <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3 md:gap-4">
+        {products.map((product, idx) => (
+          <ProductCard
+            key={product._id || product.id}
+            product={product}
+            formatPrice={formatPrice}
+            getDiscount={getDiscount}
+            // PERF: first card can be the LCP candidate when rendered at top of page.
+            priority={idx === 0}
+          />
+        ))}
       </div>
 
-      {products.length === 0 ? (
-        <p className="text-sm text-gray-400 italic">
-          No products assigned to &quot;{collection.title}&quot; yet.
-        </p>
-      ) : (
-        <>
-          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3 md:gap-4">
-            {products.map((product, idx) => (
-              <ProductCard
-                key={product._id || product.id}
-                product={product}
-                formatPrice={formatPrice}
-                getDiscount={getDiscount}
-                // PERF: first card can be an LCP candidate when this section is rendered
-                // at the top of the homepage via the builder.
-                priority={idx === 0}
-              />
-            ))}
-          </div>
-          {showViewMore && (
-            <div className="flex justify-center mt-8">
-              <Link href={`/products?collection=${encodeURIComponent(collection.title)}`}>
-                <button className="px-8 py-2 bg-gray-900 text-white text-sm font-semibold rounded-2xl hover:bg-gray-700 transition-colors">
-                  {t("product_view_more")}
-                </button>
-              </Link>
-            </div>
-          )}
-        </>
+      {showViewMore && (
+        <div className="flex justify-center mt-8">
+          <Link href={viewMoreHref}>
+            <button className="px-8 py-2 bg-gray-900 text-white text-sm font-semibold rounded-2xl hover:bg-gray-700 transition-colors">
+              {t("product_view_more")}
+            </button>
+          </Link>
+        </div>
       )}
     </section>
   );
