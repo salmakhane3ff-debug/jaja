@@ -96,6 +96,31 @@ function SuccessContent() {
     fetchAll();
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // ── Facebook Pixel — Purchase event ──────────────────────────────────────
+  // Fires once per order (localStorage flag prevents double-firing on re-renders).
+  // Sends value, currency, and product list so Facebook can attribute the sale.
+  useEffect(() => {
+    if (!order?._id) return;
+    const flag = `fb_purchase_${order._id}`;
+    try { if (localStorage.getItem(flag)) return; } catch {}
+    try { localStorage.setItem(flag, '1'); } catch {}
+
+    try {
+      if (typeof window.fbq !== 'function') return;
+      const _pd    = order.paymentDetails || {};
+      const _items = order.products?.items || [];
+      const _total = _pd.total ?? _items.reduce((s, i) => s + i.price * (i.quantity || 1), 0);
+
+      window.fbq('track', 'Purchase', {
+        value:        _total,
+        currency:     'MAD',
+        content_ids:  _items.map(i => String(i.productId || i._id || i.title || '')).filter(Boolean),
+        content_type: 'product',
+        num_items:    _items.reduce((s, i) => s + (i.quantity || 1), 0),
+      });
+    } catch {}
+  }, [order?._id]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // ── Derived values ───────────────────────────────────────────────────────
   const pd          = order?.paymentDetails || {};
   const items       = order?.products?.items || [];
