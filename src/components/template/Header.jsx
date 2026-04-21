@@ -89,7 +89,25 @@ export default function FullHeader() {
     };
   }, [updateWishlistCount, updateCartCount]);
 
-  const logoSrc = useMemo(() => storeSettings?.logoImage || "/logonc.svg", [storeSettings?.logoImage]);
+  // PERF: Prefer the -sm.webp thumbnail (300px WebP) over the raw upload.
+  //       The logo displays at h-12 (48px) — serving a 340KB PNG for that is wasteful.
+  //       Falls back to original if thumbnail doesn't exist (old uploads without thumbs).
+  const logoSrc = useMemo(() => {
+    const raw = storeSettings?.logoImage;
+    if (!raw) return "/logonc.svg";
+    if (raw.startsWith('/uploads/')) {
+      const base = raw.replace(/\.[^.]+$/, '');   // strip extension
+      return `${base}-sm.webp`;                   // e.g. /uploads/1234-logo-sm.webp
+    }
+    return raw;
+  }, [storeSettings?.logoImage]);
+
+  // Original full-res URL used as <img onError> fallback for logos uploaded
+  // before the thumbnail system was introduced (they won't have a -sm.webp file).
+  const logoFallback = useMemo(
+    () => storeSettings?.logoImage || "/logonc.svg",
+    [storeSettings?.logoImage]
+  );
   const storeName = useMemo(() => storeSettings?.textLogo || storeSettings?.storeName || "", [storeSettings]);
   const displayMenuItems = useMemo(() => menuItems, [menuItems]);
   const closeMenu = useCallback(() => setMenuOpen(false), []);
@@ -143,7 +161,14 @@ export default function FullHeader() {
           {/* ── CENTER: Logo — always perfectly centered ── */}
           <Link href="/" className="flex items-center absolute left-1/2 -translate-x-1/2">
             {storeSettings?.logoImage ? (
-              <img src={logoSrc} alt={storeName} className="h-12 w-auto" fetchPriority="high" loading="eager" />
+              <img
+                src={logoSrc}
+                alt={storeName}
+                className="h-12 w-auto"
+                fetchPriority="high"
+                loading="eager"
+                onError={e => { e.currentTarget.onerror = null; e.currentTarget.src = logoFallback; }}
+              />
             ) : (
               <span className="font-bold text-lg">{storeName}</span>
             )}
@@ -223,7 +248,12 @@ export default function FullHeader() {
 
                 <div className={`flex items-center gap-3 ${isRTL ? "pl-12" : "pr-12"}`}>
                   {storeSettings?.logoImage ? (
-                    <img src={logoSrc} alt={storeName} className="h-12 w-auto" />
+                    <img
+                      src={logoSrc}
+                      alt={storeName}
+                      className="h-12 w-auto"
+                      onError={e => { e.currentTarget.onerror = null; e.currentTarget.src = logoFallback; }}
+                    />
                   ) : (
                     <span className="font-bold text-lg text-gray-800">{storeName}</span>
                   )}
