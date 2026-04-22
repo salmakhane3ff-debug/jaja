@@ -104,11 +104,11 @@ export default function StickyAddToCart({
     }
   }, [product?._id]); // eslint-disable-line
 
-  // Merged config — reads live DB values via useUIControl
+  // Always Variant A — original design (backdrop-blur, black + yellow buttons)
   const cfg = useMemo(() => ({
-    variant:  hints.stickyVariant ?? ui.stickyVariant  ?? "A",
-    quickBuy: hints.quickBuy      ?? (ui.stickyShowBuyNow !== false),
-  }), [hints, ui.stickyVariant, ui.stickyShowBuyNow]);
+    variant:  "A",
+    quickBuy: ui.stickyShowBuyNow !== false,
+  }), [ui.stickyShowBuyNow]);
 
   // Cart sync
   const syncCart = useCallback(() => {
