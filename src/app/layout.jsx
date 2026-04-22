@@ -13,7 +13,6 @@ import AffiliateRefCapture from "@/components/AffiliateRefCapture";
 import TrackingCapture from "@/components/tracking/TrackingCapture";
 import SpinWheelProvider from "@/components/SpinWheel/SpinWheelProvider";
 import GiftSystemInit from "@/components/GiftSystem/GiftSystemInit";
-import GiftCountdownBanner from "@/components/GiftSystem/GiftCountdownBanner";
 import PreloaderWrapper from "@/components/PreloaderWrapper";
 import { getStoreSettings } from "@/lib/getStoreSettings";
 import { getPreloaderSettings } from "@/lib/getPreloaderSettings";
@@ -101,7 +100,6 @@ export default async function RootLayout({ children }) {
           </Suspense>
           <SpinWheelProvider />
           <GiftSystemInit />
-          <GiftCountdownBanner />
         </Providers>
       </body>
     </html>

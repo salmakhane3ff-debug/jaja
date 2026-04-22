@@ -18,7 +18,28 @@ export default function CartDrawer({ isOpen, onClose }) {
   const [loading, setLoading] = useState(true);
   const [selectedItems, setSelectedItems] = useState({});
   const [activeGifts, setActiveGifts] = useState([]);
+  const [now, setNow]       = useState(() => Date.now());
   const { t, formatPrice } = useLanguage();
+
+  // Tick every second for countdown timers
+  useEffect(() => {
+    const id = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(id);
+  }, []);
+
+  // Returns "MM:SS" string for a gift item, or null if no timer
+  const getCountdown = (item) => {
+    if (!item._isGift || !item._giftId) return null;
+    try {
+      const expiresAt = parseInt(localStorage.getItem(`gift_expiry_${item._giftId}`), 10);
+      if (!expiresAt || isNaN(expiresAt)) return null;
+      const remaining = Math.max(0, Math.floor((expiresAt - now) / 1000));
+      if (remaining <= 0) return null;
+      const m = Math.floor(remaining / 60);
+      const s = remaining % 60;
+      return `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
+    } catch { return null; }
+  };
 
   useEffect(() => {
     if (isOpen) loadCartData();
@@ -329,14 +350,24 @@ export default function CartDrawer({ isOpen, onClose }) {
                       }`}
                   >
                     {/* Free Gift / Reward banner */}
-                    {isFreeItem && (
-                      <div className={`px-3 py-1.5 flex items-center gap-1.5 ${item._isGift ? "bg-[#6e57b2]" : "bg-gradient-to-r from-pink-500 to-rose-500"}`}>
-                        <span className="text-xs">🎁</span>
-                        <span className="text-xs font-bold text-white tracking-wide">
-                          {item._isGift ? "+ 1 article GRATUIT" : t("spin_free_label")}
-                        </span>
-                      </div>
-                    )}
+                    {isFreeItem && (() => {
+                      const countdown = item._isGift ? getCountdown(item) : null;
+                      return (
+                        <div className={`px-3 py-1.5 flex items-center justify-between gap-1.5 ${item._isGift ? "bg-[#6e57b2]" : "bg-gradient-to-r from-pink-500 to-rose-500"}`}>
+                          <div className="flex items-center gap-1.5">
+                            <span className="text-xs">🎁</span>
+                            <span className="text-xs font-bold text-white tracking-wide">
+                              {item._isGift ? "+ 1 article GRATUIT" : t("spin_free_label")}
+                            </span>
+                          </div>
+                          {countdown && (
+                            <span className={`text-xs font-black tabular-nums px-1.5 py-0.5 rounded-full ${parseInt(countdown) === 0 && countdown.startsWith("00:") ? "bg-red-500" : "bg-white/20"} text-white`}>
+                              ⏱ {countdown}
+                            </span>
+                          )}
+                        </div>
+                      );
+                    })()}
 
                     <div className="p-3">
                       <div className="flex gap-3">
