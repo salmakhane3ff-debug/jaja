@@ -199,8 +199,11 @@ export function SingleCollectionSection({
       .map(id => productMap[id])
       .filter(Boolean)           // skip IDs that no longer exist
       .slice(0, productLimit);   // max products = display limit only
-    heading     = customTitle || "";
-    viewMoreHref = "/products";
+    heading      = customTitle || "";
+    // Link to the collection page if a title/id is known, otherwise hide the button
+    viewMoreHref = collectionTitle
+      ? `/products?collection=${encodeURIComponent(collectionTitle)}`
+      : null;
   } else {
     // Auto mode — requires a matched collection.
     if (!collection) return null;
@@ -240,7 +243,7 @@ export function SingleCollectionSection({
         ))}
       </div>
 
-      {showViewMore && (
+      {showViewMore && viewMoreHref && (
         <div className="flex justify-center mt-8">
           <Link href={viewMoreHref}>
             <button className="px-8 py-2 bg-gray-900 text-white text-sm font-semibold rounded-2xl hover:bg-gray-700 transition-colors">
