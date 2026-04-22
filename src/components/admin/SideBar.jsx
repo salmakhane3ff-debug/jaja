@@ -65,6 +65,7 @@ const SideBar = ({ onItemClick }) => {
     { href: "/admin/pages", icon: <Files size={16} />, label: "Pages" },
     { href: "/admin/pages/new", icon: <FileText size={16} />, label: "Add Page" },
     { href: "/admin/orders", icon: <ShoppingCart size={16} />, label: "Orders" },
+    { href: "/admin/abandoned-orders", icon: <ShoppingCart size={16} />, label: "Abandoned Orders" },
     // { href: "/admin/payment", icon: <CreditCard size={16} />, label: "Payments" },
     { href: "/admin/contact", icon: <Mail size={16} />, label: "Contact" },
     { href: "/admin/faqs", icon: <HelpCircle size={16} />, label: "FAQs" },

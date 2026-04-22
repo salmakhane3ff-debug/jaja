@@ -45,6 +45,20 @@ export default async function orderCreate({ products, paymentDetails, billingDet
         console.log('Pending order updated successfully:', updatedOrder._id);
         // Clear pending order ID
         localStorage.removeItem("pendingOrderId");
+
+        // Mark abandoned cart as recovered (fire-and-forget)
+        try {
+          const addr = JSON.parse(localStorage.getItem("checkoutAddress") || "null");
+          if (addr?.phone) {
+            fetch("/api/abandoned-carts", {
+              method: "PATCH",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({ phone: addr.phone }),
+              keepalive: true,
+            }).catch(() => {});
+          }
+        } catch {}
+
         return {
           orderId: pendingOrderId,
           sessionId: updatedOrder.sessionId || updatedOrder._id,
@@ -119,6 +133,20 @@ export default async function orderCreate({ products, paymentDetails, billingDet
 
       const data = await res.json();
       console.log('New order created successfully:', data._id);
+
+      // Mark abandoned cart as recovered (fire-and-forget)
+      try {
+        const addr = JSON.parse(localStorage.getItem("checkoutAddress") || "null");
+        if (addr?.phone) {
+          fetch("/api/abandoned-carts", {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ phone: addr.phone }),
+            keepalive: true,
+          }).catch(() => {});
+        }
+      } catch {}
+
       return {
         orderId: data._id,
         sessionId: data.sessionId || data._id,

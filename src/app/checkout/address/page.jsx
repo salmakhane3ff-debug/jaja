@@ -1,5 +1,5 @@
 "use client";
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { applyGiftsToItems } from "@/lib/giftUtils";
 import { useRouter } from "next/navigation";
 import FunnelTracker from "@/components/tracking/FunnelTracker";
@@ -245,6 +245,35 @@ export default function CheckoutAddressPage() {
   const [promoData,    setPromoData]    = useState(null);
   const [promoError,   setPromoError]   = useState("");
   const [promoLoading, setPromoLoading] = useState(false);
+
+  // ── Abandoned cart capture ────────────────────────────────────────────────
+  // Fires 2s after the user stops typing, when a valid phone is present.
+  // Saves a server-side snapshot so we can recover lost customers.
+  const abandonedTimerRef = useRef(null);
+  useEffect(() => {
+    const digits = form.phone.replace(/\D/g, "");
+    if (digits.length < 9) return; // not enough digits yet — don't fire
+
+    clearTimeout(abandonedTimerRef.current);
+    abandonedTimerRef.current = setTimeout(() => {
+      const subtotal = cartItems.reduce((s, i) => s + i.price * (i.quantity || 1), 0);
+      fetch("/api/abandoned-carts", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          phone:     form.phone.trim(),
+          fullName:  form.fullName.trim() || null,
+          email:     form.email.trim()    || null,
+          city:      form.city.trim()     || null,
+          items:     cartItems,
+          cartTotal: subtotal,
+        }),
+        keepalive: true,
+      }).catch(() => {}); // fire-and-forget
+    }, 2000);
+
+    return () => clearTimeout(abandonedTimerRef.current);
+  }, [form.phone, form.fullName, form.email, form.city, cartItems]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Initialise from localStorage ──────────────────────────────────────────
   useEffect(() => {
