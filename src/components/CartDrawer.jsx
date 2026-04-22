@@ -45,10 +45,17 @@ export default function CartDrawer({ isOpen, onClose }) {
     setSelectedItems(initialSelection);
 
     try {
-      const [allProducts, giftsRaw] = await Promise.all([
+      // Use allSettled so a gifts API failure never blocks product display
+      const [productsResult, giftsResult] = await Promise.allSettled([
         fetchCached("/api/products"),
         fetchCached("/api/gifts"),
       ]);
+      const allProducts = productsResult.status === "fulfilled" ? productsResult.value : [];
+      const giftsRaw    = giftsResult.status    === "fulfilled" ? giftsResult.value    : [];
+
+      if (productsResult.status === "rejected") console.error("CartDrawer: products fetch failed", productsResult.reason);
+      if (giftsResult.status    === "rejected") console.error("CartDrawer: gifts fetch failed",    giftsResult.reason);
+
       const cartProductIds = localCart.map((item) => item.productId);
       const giftsData = Array.isArray(giftsRaw) ? giftsRaw.filter((g) => g.active) : [];
       const giftProductIds = giftsData.map((g) => g.productId).filter(Boolean);
