@@ -54,8 +54,9 @@ export default function Product({ data }) {
   ), [convRaw]);
 
   const [quantity, setQuantity] = useState(1);
-  const [selectedSize, setSelectedSize] = useState(null);
-  const [selectedColor, setSelectedColor] = useState(null);
+  // Generic variant selections: { [variantName]: selectedOption }
+  // e.g. { "Couleur": "Noir", "Taille": "M" }
+  const [selectedVariants, setSelectedVariants] = useState({});
   // null = 1 Pack, "2+1" = Buy 2 Get 1 Free bundle
   const [selectedBundle, setSelectedBundle] = useState(null);
   // Gift product fetched from specialOfferSlug (ui-control setting)
@@ -165,10 +166,15 @@ export default function Product({ data }) {
 
   const effectivePrice = bundleUnitPrice;
 
+  // Convert selectedVariants map to structured array for cart/order storage
+  const variantsList = Object.entries(selectedVariants)
+    .filter(([, v]) => v)
+    .map(([name, value]) => ({ name, value }));
+
   const handleAddToCart = async () => {
     if (selectedBundle === "2+1") {
       // Line 1 — Pack de 2 at full unit price
-      await addToCart({ ...data, salePrice: unitPrice, regularPrice: data.regularPrice }, 2);
+      await addToCart({ ...data, salePrice: unitPrice, regularPrice: data.regularPrice }, 2, { variants: variantsList });
 
       // Line 2 — 1 article GRATUIT at 0 DH
       const freeItemBase = giftProduct?._id
@@ -191,7 +197,7 @@ export default function Product({ data }) {
           };
       await addToCart(freeItemBase, 1);
     } else {
-      await addToCart(data, quantity);
+      await addToCart(data, quantity, { variants: variantsList });
     }
   };
 
@@ -208,8 +214,7 @@ export default function Product({ data }) {
           productId: data._id,
           title: data.title,
           quantity: 2,
-          color: selectedColor || null,
-          size: selectedSize || null,
+          variants: variantsList,
           image: data.images?.[0] || "",
           price: unitPrice,
           currency: "MAD",
@@ -233,8 +238,7 @@ export default function Product({ data }) {
           productId: data._id,
           title: data.title,
           quantity,
-          color: selectedColor || null,
-          size: selectedSize || null,
+          variants: variantsList,
           image: data.images?.[0] || "",
           price: effectivePrice,
           currency: "MAD",
@@ -531,45 +535,29 @@ export default function Product({ data }) {
               );
             })()}
 
-            {/* Size Selector */}
-            {data.sizes && data.sizes.length > 0 && (
-              <div className="space-y-2">
-                <h3 className="text-xs font-medium text-gray-900">{t("product_size")}:</h3>
-                <div className="flex flex-wrap gap-2">
-                  {data.sizes.map((size) => (
-                    <button
-                      key={size}
-                      onClick={() => setSelectedSize(size)}
-                      className={`px-3 py-2 border rounded text-xs font-medium transition-all ${
-                        selectedSize === size
-                          ? "border-orange-500 bg-orange-50 text-orange-600"
-                          : "border-gray-300 hover:border-gray-400 text-gray-700"
-                      }`}
-                    >
-                      {size}
-                    </button>
-                  ))}
+            {/* Product Variants — generic loop over data.variants */}
+            {Array.isArray(data.variants) && data.variants.map(variant => (
+              variant?.name && Array.isArray(variant.options) && variant.options.length > 0 ? (
+                <div key={variant.name} className="space-y-2">
+                  <h3 className="text-xs font-medium text-gray-900">{variant.name}:</h3>
+                  <div className="flex flex-wrap gap-2">
+                    {variant.options.map(option => (
+                      <button
+                        key={option}
+                        onClick={() => setSelectedVariants(prev => ({ ...prev, [variant.name]: option }))}
+                        className={`px-3 py-2 border rounded text-xs font-medium transition-all ${
+                          selectedVariants[variant.name] === option
+                            ? "border-orange-500 bg-orange-50 text-orange-600"
+                            : "border-gray-300 hover:border-gray-400 text-gray-700"
+                        }`}
+                      >
+                        {option}
+                      </button>
+                    ))}
+                  </div>
                 </div>
-              </div>
-            )}
-
-            {/* Color Selector */}
-            {data.colors && data.colors.length > 0 && (
-              <div className="space-y-2">
-                <h3 className="text-xs font-medium text-gray-900">{t("product_color")}:</h3>
-                <div className="flex flex-wrap gap-2">
-                  {data.colors.map((color) => (
-                    <button
-                      key={color}
-                      onClick={() => setSelectedColor(color)}
-                      className={`w-6 h-6 rounded-full border-2 transition-all ${selectedColor === color ? "border-orange-500 scale-110" : "border-gray-300"}`}
-                      style={{ backgroundColor: color }}
-                      title={color}
-                    />
-                  ))}
-                </div>
-              </div>
-            )}
+              ) : null
+            ))}
 
             {/* Quantity — locked to 3 when bundle "2+1" is active */}
             <div className={`space-y-2 transition-opacity ${selectedBundle === "2+1" ? "opacity-50" : ""}`}>

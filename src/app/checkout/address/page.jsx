@@ -173,11 +173,11 @@ function CartItemCard({ item, onQtyChange, onRemove, formatPrice = (v) => `${v} 
       </div>
       <div className="flex-1 min-w-0">
         <h4 className="text-xs sm:text-sm font-medium text-gray-900 line-clamp-2 leading-tight">{item.title}</h4>
-        {(item.color || item.size) && (
+        {Array.isArray(item.variants) && item.variants.length > 0 && (
           <p className="text-[10px] text-gray-400 mt-0.5">
-            {item.color && <span>{t("checkout_color_label").replace("{c}", item.color)}</span>}
-            {item.color && item.size && " · "}
-            {item.size && <span>{t("checkout_size_label").replace("{s}", item.size)}</span>}
+            {item.variants.map((v, i) => (
+              <span key={v.name}>{i > 0 && " · "}{v.name}: {v.value}</span>
+            ))}
           </p>
         )}
         <div className="mt-2 sm:mt-3 space-y-2 sm:space-y-0">

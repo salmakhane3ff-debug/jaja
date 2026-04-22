@@ -324,8 +324,9 @@ function SuccessContent() {
                       )}
                       <div className="flex-1 min-w-0">
                         <p className="font-semibold text-gray-900 text-sm">{item.title}</p>
-                        {item.color && <p className="text-xs text-gray-400">{t("success_color")}: {item.color}</p>}
-                        {item.size  && <p className="text-xs text-gray-400">{t("success_size")}: {item.size}</p>}
+                        {Array.isArray(item.variants) && item.variants.map(v => (
+                          <p key={v.name} className="text-xs text-gray-400">{v.name}: {v.value}</p>
+                        ))}
                         <div className="flex items-center gap-2 mt-1">
                           <span className="text-xs text-gray-500">{item.quantity} ×</span>
                           <span className="text-xs font-bold text-gray-700">{item.price} MAD</span>

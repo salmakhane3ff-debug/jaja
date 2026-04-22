@@ -30,7 +30,7 @@ export const useCart = () => {
   const { setCartDrawerOpen } = cartDrawerContext || { setCartDrawerOpen: () => {} };
   const { getDiscount } = useDiscountRules();
 
-  const addToCart = (product, quantity = 1) => {
+  const addToCart = (product, quantity = 1, opts = {}) => {
     return new Promise((resolve, reject) => {
       if (!product || !product._id) {
         console.error("Invalid product data:", product);
@@ -59,8 +59,7 @@ export const useCart = () => {
             productId: product._id,
             title: product.title,
             quantity: quantity,
-            color: null,
-            size: null,
+            variants: opts.variants || [],   // [{name, value}] — generic variant selections
             image: product.images?.[0]?.url || product.images?.[0] || "",
             price: effectivePrice,
             currency: product.currencySymbol || process.env.NEXT_PUBLIC_CURRENCY_SYMBOL || "$",

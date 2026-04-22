@@ -237,8 +237,9 @@ export default function CheckoutOrderSummary({ billingDetails, setErrors }) {
                     </span>
                   )}
                   <p className="text-xs text-gray-500">{t("product_quantity")}: {item.quantity}</p>
-                  {item.color && <p className="text-xs text-gray-500">{t("product_color")}: {item.color}</p>}
-                  {item.size && <p className="text-xs text-gray-500">{t("product_size")}: {item.size}</p>}
+                  {Array.isArray(item.variants) && item.variants.map(v => (
+                    <p key={v.name} className="text-xs text-gray-500">{v.name}: {v.value}</p>
+                  ))}
                 </div>
               </div>
               <div className="text-right font-medium">

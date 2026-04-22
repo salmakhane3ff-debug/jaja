@@ -204,8 +204,7 @@ export default function CartDrawer({ isOpen, onClose }) {
           ? item.title + " (CADEAU GRATUIT)"
           : item.title,
         quantity: item.quantity,
-        color: item.color || null,
-        size: item.size || null,
+        variants: item.variants || [],
         image: item.image,
         price: isGift ? 0 : item.price,
         currency: "MAD",
