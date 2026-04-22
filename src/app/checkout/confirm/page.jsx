@@ -89,7 +89,8 @@ export default function ConfirmPage() {
   const [promoDiscount,setPromoDiscount]= useState(0);
 
   const [bankInfo,     setBankInfo]     = useState(null);  // resolved method from DB
-  const [screenshot,   setScreenshot]   = useState(null);
+  const [screenshot,   setScreenshot]   = useState(null);  // URL returned by upload-receipt
+  const [uploading,    setUploading]    = useState(false);
   const [isInstant,    setIsInstant]    = useState(false);
   const [ribCopied,    setRibCopied]    = useState(false);
   const [acctCopied,   setAcctCopied]   = useState(false);
@@ -179,16 +180,35 @@ export default function ConfirmPage() {
     });
   };
 
-  // ── Screenshot upload — compress before storing ───────────────────────────
-  // A mobile photo can be 3–5 MB base64; embedding that in the order JSON
-  // payload causes a 413 / body-too-large error. We resize to max 1200 px
-  // and encode at 72 % JPEG quality — more than enough for proof-of-payment.
+  // ── Screenshot upload — validate client-side, compress, then upload securely ─
+  // The server (/api/checkout/upload-receipt) re-validates magic bytes, enforces
+  // the 5 MB limit, and saves the file under a UUID name. `screenshot` now holds
+  // a server URL ("/uploads/receipts/uuid.jpg") — never raw base64 in the order.
+  const ALLOWED_TYPES = ["image/jpeg", "image/png", "image/webp"];
+
   const handleFile = (file) => {
-    if (!file || !file.type.startsWith("image/")) return;
+    if (!file) return;
+
+    // 1. Client-side type allowlist (mirrors server; blocks SVG etc.)
+    if (!ALLOWED_TYPES.includes(file.type)) {
+      setSubmitError(t("checkout_upload_invalid_type") || "Only JPEG, PNG, or WebP images are accepted.");
+      return;
+    }
+
+    // 2. Client-side size pre-check (5 MB)
+    if (file.size > 5 * 1024 * 1024) {
+      setSubmitError(t("checkout_upload_too_large") || "Image must be under 5 MB.");
+      return;
+    }
+
+    setSubmitError("");
+    setUploading(true);
+
     const reader = new FileReader();
     reader.onload = (e) => {
       const img = new Image();
-      img.onload = () => {
+      img.onload = async () => {
+        // 3. Compress: resize to max 1200 px, encode at 72 % JPEG
         const MAX = 1200;
         let { width, height } = img;
         if (width > MAX || height > MAX) {
@@ -199,10 +219,36 @@ export default function ConfirmPage() {
         canvas.width  = width;
         canvas.height = height;
         canvas.getContext("2d").drawImage(img, 0, 0, width, height);
-        // 72 % quality is plenty for a payment receipt screenshot
-        setScreenshot(canvas.toDataURL("image/jpeg", 0.72));
+        const dataUrl = canvas.toDataURL("image/jpeg", 0.72);
+
+        // 4. POST to secure server endpoint — server validates magic bytes & saves UUID file
+        try {
+          const res = await fetch("/api/checkout/upload-receipt", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ dataUrl }),
+          });
+          const data = await res.json();
+          if (!res.ok || !data.url) {
+            setSubmitError(data.error || t("checkout_upload_error") || "Upload failed. Please try again.");
+            return;
+          }
+          setScreenshot(data.url);   // store server URL, not base64
+        } catch {
+          setSubmitError(t("checkout_upload_error") || "Upload failed. Please try again.");
+        } finally {
+          setUploading(false);
+        }
+      };
+      img.onerror = () => {
+        setSubmitError(t("checkout_upload_invalid_type") || "Could not read the image. Please try another file.");
+        setUploading(false);
       };
       img.src = e.target.result;
+    };
+    reader.onerror = () => {
+      setSubmitError(t("checkout_upload_error") || "Could not read the file.");
+      setUploading(false);
     };
     reader.readAsDataURL(file);
   };
@@ -566,17 +612,29 @@ export default function ConfirmPage() {
           <div className="p-5">
             {!screenshot ? (
               <div
-                onClick={() => fileRef.current?.click()}
-                onDrop={e => { e.preventDefault(); handleFile(e.dataTransfer.files?.[0]); }}
+                onClick={() => !uploading && fileRef.current?.click()}
+                onDrop={e => { e.preventDefault(); if (!uploading) handleFile(e.dataTransfer.files?.[0]); }}
                 onDragOver={e => e.preventDefault()}
-                className="flex flex-col items-center justify-center h-36 border-2 border-dashed border-gray-200 rounded-2xl cursor-pointer hover:border-gray-400 hover:bg-gray-50 transition-all group">
-                <div className="w-12 h-12 rounded-full bg-gray-100 group-hover:bg-gray-200 flex items-center justify-center mb-2.5 transition-colors">
-                  <Upload className="w-5 h-5 text-gray-400 group-hover:text-gray-700 transition-colors" />
-                </div>
-                <p className="text-sm font-semibold text-gray-600 group-hover:text-gray-900 transition-colors">
-                  {t("checkout_upload_click")}
-                </p>
-                <p className="text-xs text-gray-400 mt-1">{t("checkout_upload_drag")}</p>
+                className={`flex flex-col items-center justify-center h-36 border-2 border-dashed rounded-2xl transition-all group
+                  ${uploading
+                    ? "border-gray-200 bg-gray-50 cursor-not-allowed"
+                    : "border-gray-200 cursor-pointer hover:border-gray-400 hover:bg-gray-50"}`}>
+                {uploading ? (
+                  <>
+                    <div className="w-8 h-8 border-[3px] border-gray-300 border-t-gray-700 rounded-full animate-spin mb-2.5" />
+                    <p className="text-sm font-semibold text-gray-500">{t("checkout_processing") || "Uploading…"}</p>
+                  </>
+                ) : (
+                  <>
+                    <div className="w-12 h-12 rounded-full bg-gray-100 group-hover:bg-gray-200 flex items-center justify-center mb-2.5 transition-colors">
+                      <Upload className="w-5 h-5 text-gray-400 group-hover:text-gray-700 transition-colors" />
+                    </div>
+                    <p className="text-sm font-semibold text-gray-600 group-hover:text-gray-900 transition-colors">
+                      {t("checkout_upload_click")}
+                    </p>
+                    <p className="text-xs text-gray-400 mt-1">{t("checkout_upload_drag")}</p>
+                  </>
+                )}
               </div>
             ) : (
               <div className="relative rounded-2xl overflow-hidden border border-gray-200">
@@ -594,9 +652,9 @@ export default function ConfirmPage() {
             <input
               ref={fileRef}
               type="file"
-              accept="image/*"
+              accept="image/jpeg,image/png,image/webp"
               className="hidden"
-              onChange={e => handleFile(e.target.files?.[0])}
+              onChange={e => { handleFile(e.target.files?.[0]); e.target.value = ""; }}
             />
           </div>
         </div>
@@ -611,7 +669,7 @@ export default function ConfirmPage() {
         {/* ── Submit button ── */}
         <button
           onClick={handleSubmit}
-          disabled={submitting || !screenshot}
+          disabled={submitting || uploading || !screenshot}
           className="w-full bg-gray-900 hover:bg-gray-800 active:scale-[0.99] disabled:opacity-50 disabled:cursor-not-allowed text-white py-4 rounded-2xl font-black text-base flex items-center justify-center gap-2 transition-all shadow-lg">
           {submitting ? (
             <>
