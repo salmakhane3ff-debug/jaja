@@ -26,11 +26,14 @@ async function _POST(req) {
       return Response.json({ error: "thresholdAmount must be a finite non-negative number" }, { status: 400 });
     }
 
+    const countdown = parseInt(body.countdownMinutes, 10) || 0;
+
     const gift = await prisma.gift.create({
       data: {
-        productId:       body.productId,
-        thresholdAmount: threshold,
-        active:          body.active ?? true,
+        productId:        body.productId,
+        thresholdAmount:  threshold,
+        active:           body.active ?? true,
+        countdownMinutes: countdown >= 0 ? countdown : 0,
       },
     });
     return Response.json(gift, { status: 201 });

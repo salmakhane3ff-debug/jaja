@@ -73,7 +73,18 @@ export default function GiftSystemInit() {
             currency: "MAD",
             _isGift: true,
             _giftId: gift.id,
+            _countdownMinutes: gift.countdownMinutes || 0,
           });
+
+          // Start countdown timer the FIRST time this gift is unlocked
+          if ((gift.countdownMinutes || 0) > 0) {
+            const expiryKey = `gift_expiry_${gift.id}`;
+            if (!localStorage.getItem(expiryKey)) {
+              const expiresAt = Date.now() + gift.countdownMinutes * 60 * 1000;
+              localStorage.setItem(expiryKey, String(expiresAt));
+              window.dispatchEvent(new CustomEvent("giftCountdownStart", { detail: { giftId: gift.id, expiresAt } }));
+            }
+          }
         }
 
         // Compare existing gift ids vs new gift ids
@@ -88,6 +99,12 @@ export default function GiftSystemInit() {
           .join(",");
 
         if (existingIds !== newIds) {
+          // Clear expiry keys for gifts that are being removed
+          const removedIds = existingIds
+            ? existingIds.split(",").filter((id) => !newIds.split(",").includes(id))
+            : [];
+          removedIds.forEach((id) => localStorage.removeItem(`gift_expiry_${id}`));
+
           localStorage.setItem(
             "cart",
             JSON.stringify([...nonGiftItems, ...newGiftItems])

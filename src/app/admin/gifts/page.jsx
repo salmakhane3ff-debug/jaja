@@ -16,6 +16,7 @@ export default function AdminGiftsPage() {
   const [form, setForm] = useState({
     productId: "",
     thresholdAmount: "",
+    countdownMinutes: 0,
     active: true,
   });
 
@@ -58,7 +59,7 @@ export default function AdminGiftsPage() {
       if (!res.ok) throw new Error();
       const newGift = await res.json();
       setGifts((prev) => [...prev, newGift].sort((a, b) => a.thresholdAmount - b.thresholdAmount));
-      setForm({ productId: "", thresholdAmount: "", active: true });
+      setForm({ productId: "", thresholdAmount: "", countdownMinutes: 0, active: true });
       showToast("Gift added successfully");
     } catch {
       showToast("Failed to add gift", "error");
@@ -202,6 +203,32 @@ export default function AdminGiftsPage() {
             </p>
           </div>
 
+          {/* Countdown timer */}
+          <div>
+            <label className="block text-xs font-medium text-gray-600 mb-1.5">
+              ⏱ Countdown Timer (minutes)
+            </label>
+            <div className="relative">
+              <input
+                type="number"
+                min="0"
+                step="1"
+                value={form.countdownMinutes}
+                onChange={(e) =>
+                  setForm((f) => ({ ...f, countdownMinutes: Math.max(0, parseInt(e.target.value) || 0) }))
+                }
+                placeholder="0"
+                className="w-full border border-gray-200 rounded-xl px-3 py-2.5 text-sm bg-gray-50 focus:outline-none focus:ring-2 focus:ring-pink-300 focus:border-transparent"
+              />
+              <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-gray-400 font-medium">
+                min
+              </span>
+            </div>
+            <p className="text-xs text-gray-400 mt-1">
+              Set to 0 to disable timer. When &gt; 0, customers see a live countdown once the gift is unlocked.
+            </p>
+          </div>
+
           {/* Active toggle */}
           <div className="flex items-center gap-3">
             <button
@@ -279,6 +306,11 @@ export default function AdminGiftsPage() {
                     <span className="text-xs text-gray-500">
                       Unlocks at {gift.thresholdAmount} {CURRENCY}
                     </span>
+                    {gift.countdownMinutes > 0 && (
+                      <span className="text-xs bg-orange-50 text-orange-600 px-2 py-0.5 rounded-full font-medium">
+                        ⏱ {gift.countdownMinutes} min timer
+                      </span>
+                    )}
                   </div>
                 </div>
 

@@ -6,9 +6,10 @@ export async function PUT(req, { params }) {
     const gift = await prisma.gift.update({
       where: { id: params.id },
       data: {
-        productId: body.productId,
-        thresholdAmount: parseFloat(body.thresholdAmount),
-        active: body.active,
+        productId:        body.productId,
+        thresholdAmount:  parseFloat(body.thresholdAmount),
+        active:           body.active,
+        countdownMinutes: parseInt(body.countdownMinutes, 10) || 0,
       },
     });
     return Response.json(gift);

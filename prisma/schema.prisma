@@ -855,12 +855,13 @@ enum CampaignStatus {
 }
 
 model Gift {
-  id              String   @id @default(uuid())
-  productId       String
-  thresholdAmount Float
-  active          Boolean  @default(true)
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
+  id               String   @id @default(uuid())
+  productId        String
+  thresholdAmount  Float
+  active           Boolean  @default(true)
+  countdownMinutes Int      @default(0)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
 
   @@map("gifts")
 }
