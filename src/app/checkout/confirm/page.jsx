@@ -294,6 +294,34 @@ export default function ConfirmPage() {
     setSubmitError("");
     setSubmitting(true);
 
+    // ── If we have a pending order (came from success page "Complete Payment") ──
+    // PATCH the existing order instead of creating a new one.
+    const pendingOrderId = (() => { try { return localStorage.getItem("pendingOrderId"); } catch { return null; } })();
+    if (pendingOrderId) {
+      try {
+        const res = await fetch("/api/order/receipt", {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ orderId: pendingOrderId, screenshotUrl: screenshot }),
+        });
+        if (!res.ok) {
+          const j = await res.json().catch(() => ({}));
+          setSubmitError(j?.error || t("checkout_error_submit"));
+          setSubmitting(false);
+          return;
+        }
+        // Clean up and go back to success page
+        try { localStorage.removeItem("pendingOrderId"); } catch {}
+        clearCheckoutStorage();
+        router.push(`/checkout/success?orderId=${pendingOrderId}`);
+        return;
+      } catch {
+        setSubmitError(t("checkout_error_unexpected"));
+        setSubmitting(false);
+        return;
+      }
+    }
+
     try {
       // ── Pre-flight: remove stale products from cart ───────────────────────
       // Products can be deleted from DB while a customer has them in localStorage.

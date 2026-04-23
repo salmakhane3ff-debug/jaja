@@ -1,5 +1,5 @@
 "use client";
-import React, { useState, useEffect, Suspense } from "react";
+import React, { useState, useEffect, useRef, Suspense } from "react";
 import { useSearchParams, useRouter } from "next/navigation";
 import { CheckCircle, Home, MessageCircle, Printer, Clock, AlertCircle, CreditCard } from "lucide-react";
 import Link from "next/link";
@@ -58,10 +58,12 @@ function buildWhatsAppMsg(order, lang) {
 
 // ── Resolve a product image to a plain URL string ─────────────────────────────
 // productSnapshot stores images as either string[] or {url:string}[] — handle both.
+// Falls back to /empty.svg (already in /public) when no image is available.
+const PLACEHOLDER = "/empty.svg";
 function resolveImg(item) {
   const raw = item.image ?? item.images?.[0] ?? null;
-  if (!raw) return null;
-  return typeof raw === "string" ? raw : (raw?.url || null);
+  if (!raw) return PLACEHOLDER;
+  return (typeof raw === "string" ? raw : (raw?.url || null)) || PLACEHOLDER;
 }
 
 // ── Main content ──────────────────────────────────────────────────────────────
@@ -74,6 +76,7 @@ function SuccessContent() {
   const [order,         setOrder]         = useState(null);
   const [storeSettings, setStoreSettings] = useState(null);
   const [loading,       setLoading]       = useState(true);
+  const orderIdRef = useRef(null); // stable ref so polling closure always has latest orderId
 
   useEffect(() => {
     const orderId =
@@ -86,11 +89,12 @@ function SuccessContent() {
       } catch {}
 
       if (orderId) {
+        orderIdRef.current = orderId;
         try {
-          const r = await fetch(`/api/order?orderId=${orderId}`);
+          // Use the public status endpoint — no admin auth required
+          const r = await fetch(`/api/order/status?orderId=${orderId}`);
           const d = await r.json();
-          if (Array.isArray(d) && d.length > 0) { setOrder(d[0]); setLoading(false); return; }
-          if (d?._id)                            { setOrder(d);    setLoading(false); return; }
+          if (d?._id) { setOrder(d); setLoading(false); return; }
         } catch {}
       }
 
@@ -140,6 +144,29 @@ function SuccessContent() {
       }).catch(() => {});
     } catch {}
   }, [order?._id]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // ── Live polling — re-fetch order every 8 s until confirmed ─────────────────
+  // Stops automatically when order.status === "confirmed" or paymentStatus === "success"
+  // so we never keep polling a done order.
+  useEffect(() => {
+    const oid = orderIdRef.current || order?._id;
+    if (!oid) return;
+
+    // Already confirmed / paid — no need to poll
+    if (order?.status === "confirmed" || order?.paymentStatus === "success") return;
+
+    const tick = async () => {
+      try {
+        const r = await fetch(`/api/order/status?orderId=${oid}`);
+        if (!r.ok) return;
+        const fresh = await r.json();
+        if (fresh?._id) setOrder(fresh);
+      } catch {}
+    };
+
+    const id = setInterval(tick, 8_000);
+    return () => clearInterval(id);
+  }, [order?._id, order?.status, order?.paymentStatus]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── "Complete Payment" — reconstruct checkout state then go to confirm page ──
   const handleCompletePayment = () => {
@@ -381,13 +408,12 @@ function SuccessContent() {
                   const img = resolveImg(item);
                   return (
                     <div key={i} className="flex items-start gap-3 py-3 border-b border-gray-50 last:border-0">
-                      {img && (
-                        <img
-                          src={img}
-                          alt={item.title}
-                          className="w-12 h-12 object-cover rounded-xl border border-gray-100 flex-shrink-0"
-                        />
-                      )}
+                      <img
+                        src={img}
+                        alt={item.title}
+                        className="w-12 h-12 object-cover rounded-xl border border-gray-100 flex-shrink-0"
+                        onError={(e) => { e.currentTarget.src = PLACEHOLDER; }}
+                      />
                       <div className="flex-1 min-w-0">
                         <p className="font-semibold text-gray-900 text-sm">{item.title}</p>
                         {Array.isArray(item.variants) && item.variants.map(v => (
