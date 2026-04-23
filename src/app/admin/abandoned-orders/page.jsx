@@ -64,27 +64,12 @@ function ItemsTooltip({ items }) {
   );
 }
 
-// ── Link to send to customer ──────────────────────────────────────────────────
-// If orderId exists → success page link (customer can complete payment)
-// If no orderId    → WhatsApp with a "come back" message linking to the store
-function OrderLink({ orderId, phone, fullName }) {
+// ── Success-page link for admin to send to customer ──────────────────────────
+function OrderLink({ orderId }) {
   const [copied, setCopied] = useState(false);
+  if (!orderId) return <span className="text-gray-300 text-xs">—</span>;
 
-  const origin = typeof window !== "undefined" ? window.location.origin : "https://proprogiftvip.com";
-
-  // URL to copy / open
-  const url = orderId
-    ? `${origin}/checkout/success?orderId=${orderId}`
-    : `${origin}`;
-
-  // WhatsApp message
-  const waMsg = orderId
-    ? encodeURIComponent(`مرحباً ${fullName || ""}،\nطلبك بانتظار إتمام الدفع:\n${url}`)
-    : encodeURIComponent(`مرحباً ${fullName || ""}،\nسلتك لا تزال تنتظرك! أكمل طلبك الآن:\n${url}`);
-
-  const waUrl = phone
-    ? `https://wa.me/${phone.replace(/\D/g, "")}?text=${waMsg}`
-    : null;
+  const url = `${typeof window !== "undefined" ? window.location.origin : "https://proprogiftvip.com"}/checkout/success?orderId=${orderId}`;
 
   const copy = () => {
     navigator.clipboard.writeText(url).then(() => {
@@ -94,31 +79,17 @@ function OrderLink({ orderId, phone, fullName }) {
   };
 
   return (
-    <div className="flex items-center gap-1 flex-wrap">
-      {/* Copy link */}
-      <button
-        onClick={copy}
+    <div className="flex items-center gap-1">
+      <a href={url} target="_blank" rel="noopener noreferrer"
+        className="text-blue-500 hover:text-blue-700" title={url}>
+        <Link2 className="w-3.5 h-3.5" />
+      </a>
+      <button onClick={copy}
         className={`flex items-center gap-1 text-xs px-2 py-1 rounded-lg font-semibold transition-all ${
           copied ? "bg-green-100 text-green-700" : "bg-gray-100 text-gray-600 hover:bg-gray-200"
-        }`}
-        title={url}
-      >
-        {copied ? <CheckCircle className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
-        {copied ? "Copié!" : orderId ? "✅ Lien" : "🔗 Lien"}
+        }`}>
+        {copied ? <><CheckCircle className="w-3 h-3" /> Copié</> : <><Copy className="w-3 h-3" /> Copier</>}
       </button>
-
-      {/* Open in WhatsApp */}
-      {waUrl && (
-        <a
-          href={waUrl}
-          target="_blank"
-          rel="noopener noreferrer"
-          className="flex items-center gap-1 text-xs px-2 py-1 rounded-lg font-semibold bg-green-50 text-green-700 hover:bg-green-100 transition-all"
-          title="Envoyer via WhatsApp"
-        >
-          <Link2 className="w-3 h-3" /> WA
-        </a>
-      )}
     </div>
   );
 }
@@ -341,7 +312,7 @@ export default function AbandonedOrdersPage() {
                     </td>
                     {/* Lien success page */}
                     <td className="px-4 py-3">
-                      <OrderLink orderId={cart.orderId} phone={cart.phone} fullName={cart.fullName} />
+                      <OrderLink orderId={cart.orderId} />
                     </td>
                     {/* Actions */}
                     <td className="px-4 py-3 text-right">

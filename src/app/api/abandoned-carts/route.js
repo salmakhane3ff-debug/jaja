@@ -26,8 +26,10 @@ export async function POST(req) {
     const PAGE_RANK = { address: 0, payment: 1, confirm: 2 };
     const existing = await prisma.abandonedCart.findFirst({
       where: { phone: cleanPhone, recovered: false },
-      select: { id: true, pageAbandoned: true },
+      select: { id: true, pageAbandoned: true, orderId: true },
     });
+
+    let cartId = existing?.id ?? null;
 
     if (existing) {
       const existingRank = PAGE_RANK[existing.pageAbandoned] ?? 0;
@@ -41,13 +43,12 @@ export async function POST(req) {
           items:         safeItems,
           cartTotal:     safeTotal,
           itemCount:     safeCount,
-          // Only advance the page, never go backwards
           pageAbandoned: newRank >= existingRank ? safePage : existing.pageAbandoned,
           updatedAt:     new Date(),
         },
       });
     } else {
-      await prisma.abandonedCart.create({
+      const created = await prisma.abandonedCart.create({
         data: {
           phone:         cleanPhone,
           fullName:      fullName  || null,
@@ -59,6 +60,67 @@ export async function POST(req) {
           pageAbandoned: safePage,
         },
       });
+      cartId = created.id;
+    }
+
+    // ── Link abandoned cart to an order ──────────────────────────────────────
+    // Only attempt if cart doesn't already have an orderId.
+    const alreadyHasOrder = existing?.orderId;
+    if (!alreadyHasOrder && cartId) {
+      // 1. Find the most recent existing order for this phone
+      const latestOrder = await prisma.order.findFirst({
+        where: { customerPhone: cleanPhone },
+        orderBy: { createdAt: "desc" },
+        select: { id: true },
+      });
+
+      if (latestOrder) {
+        // Link to existing order
+        await prisma.abandonedCart.update({
+          where: { id: cartId },
+          data:  { orderId: latestOrder.id },
+        });
+      } else if (safePage === "confirm" && safeItems.length > 0) {
+        // 2. No existing order — create a minimal draft order so the admin
+        //    can send the customer a success-page link to complete payment.
+        try {
+          const paidItems = safeItems.filter((i) => i.productId && !(i.isFreeGift || i._isGift));
+          const draft = await prisma.order.create({
+            data: {
+              customerName:    fullName || cleanPhone,
+              customerPhone:   cleanPhone,
+              customerEmail:   email    || null,
+              shippingAddress: { city: city || "" },
+              status:          "pending",
+              paymentStatus:   "pending",
+              paymentDetails:  {
+                paymentMethod: "bank_transfer",
+                total:         safeTotal,
+                cartTotal:     safeTotal,
+              },
+              sessionId: `draft_${cleanPhone}_${Date.now()}`,
+              items: {
+                create: paidItems.map((item) => ({
+                  productId:       item.productId,
+                  quantity:        item.quantity || 1,
+                  price:           item.price    || 0,
+                  productSnapshot: {
+                    title:   item.title  || "",
+                    images:  Array.isArray(item.images) ? item.images : [],
+                    variants: item.variants || [],
+                  },
+                })),
+              },
+            },
+          });
+          await prisma.abandonedCart.update({
+            where: { id: cartId },
+            data:  { orderId: draft.id },
+          });
+        } catch {
+          // Silently skip if draft creation fails (e.g. stale productId FK error)
+        }
+      }
     }
 
     return NextResponse.json({ ok: true });
