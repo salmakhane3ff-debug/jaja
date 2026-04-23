@@ -125,7 +125,8 @@ export default function ConfirmPage() {
 
     setAddress(parsedAddr);
     setShipping(parsedShip);
-    setCartItems(JSON.parse(localStorage.getItem("buyNow") || "[]"));
+    const confirmItems = JSON.parse(localStorage.getItem("buyNow") || "[]");
+    setCartItems(confirmItems);
 
     try {
       const pd = localStorage.getItem("promoDiscount");
@@ -133,6 +134,28 @@ export default function ConfirmPage() {
     } catch {}
 
     setIsHydrated(true);
+
+    // ── Abandoned cart: update page to "confirm" (fire-and-forget) ────────────
+    try {
+      const phone = parsedAddr?.phone?.trim();
+      if (phone && phone.replace(/\D/g, "").length >= 8) {
+        const subtotal = confirmItems.reduce((s, i) => s + (i.price || 0) * (i.quantity || 1), 0);
+        fetch("/api/abandoned-carts", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            phone,
+            fullName:  parsedAddr?.fullName || null,
+            email:     parsedAddr?.email    || null,
+            city:      parsedAddr?.city     || null,
+            items:     confirmItems,
+            cartTotal: subtotal,
+            page:      "confirm",
+          }),
+          keepalive: true,
+        }).catch(() => {});
+      }
+    } catch {}
 
     // ── Fetch fresh bank data from DB using paymentMethodId ──────────────────
     fetch("/api/setting?type=bank-settings")
@@ -436,6 +459,18 @@ export default function ConfirmPage() {
         orderId: order._id, cartItems: validatedItems, address, shipping,
         subtotal, shippingCost, promoDiscount, total, deposit, paymentMethod,
       });
+
+      // ── Mark abandoned cart as recovered (fire-and-forget) ─────────────────
+      try {
+        if (address?.phone) {
+          fetch("/api/abandoned-carts", {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ phone: address.phone }),
+            keepalive: true,
+          }).catch(() => {});
+        }
+      } catch {}
 
       clearCheckoutStorage();
       router.push(`/checkout/success?orderId=${order._id}`);

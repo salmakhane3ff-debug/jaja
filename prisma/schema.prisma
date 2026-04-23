@@ -155,17 +155,18 @@ model Setting {
 }
 
 model AbandonedCart {
-  id         String   @id @default(uuid())
-  phone      String
-  fullName   String?
-  email      String?
-  city       String?
-  items      Json     // snapshot of cart items
-  cartTotal  Float    @default(0)
-  itemCount  Int      @default(0)
-  recovered  Boolean  @default(false)
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
+  id            String   @id @default(uuid())
+  phone         String
+  fullName      String?
+  email         String?
+  city          String?
+  items         Json     // snapshot of cart items
+  cartTotal     Float    @default(0)
+  itemCount     Int      @default(0)
+  pageAbandoned String?  // "address" | "payment" | "confirm"
+  recovered     Boolean  @default(false)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
 
   @@index([phone])
   @@index([recovered])

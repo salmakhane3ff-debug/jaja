@@ -8,46 +8,55 @@ import { withAdminAuth } from "@/lib/middleware/withAdminAuth";
 export async function POST(req) {
   try {
     const body = await req.json();
-    const { phone, fullName, email, city, items, cartTotal } = body;
+    const { phone, fullName, email, city, items, cartTotal, page } = body;
 
-    const cleanPhone = (phone || "").toString().trim();
+    const cleanPhone  = (phone || "").toString().trim();
     if (!cleanPhone || cleanPhone.replace(/\D/g, "").length < 8) {
       return NextResponse.json({ error: "Invalid phone" }, { status: 400 });
     }
 
-    const safeItems = Array.isArray(items) ? items : [];
-    const safeTotal = parseFloat(cartTotal) || 0;
-    const safeCount = safeItems.filter((i) => !i.isFreeGift).length;
+    const VALID_PAGES  = ["address", "payment", "confirm"];
+    const safePage     = VALID_PAGES.includes(page) ? page : "address";
+    const safeItems    = Array.isArray(items) ? items : [];
+    const safeTotal    = parseFloat(cartTotal) || 0;
+    const safeCount    = safeItems.filter((i) => !i.isFreeGift && !i._isGift).length;
 
     // Upsert: update existing row for this phone, or create a new one.
+    // Always keep the furthest page (address < payment < confirm).
+    const PAGE_RANK = { address: 0, payment: 1, confirm: 2 };
     const existing = await prisma.abandonedCart.findFirst({
       where: { phone: cleanPhone, recovered: false },
-      select: { id: true },
+      select: { id: true, pageAbandoned: true },
     });
 
     if (existing) {
+      const existingRank = PAGE_RANK[existing.pageAbandoned] ?? 0;
+      const newRank      = PAGE_RANK[safePage] ?? 0;
       await prisma.abandonedCart.update({
         where: { id: existing.id },
         data: {
-          fullName:  fullName  || null,
-          email:     email     || null,
-          city:      city      || null,
-          items:     safeItems,
-          cartTotal: safeTotal,
-          itemCount: safeCount,
-          updatedAt: new Date(),
+          fullName:      fullName  || null,
+          email:         email     || null,
+          city:          city      || null,
+          items:         safeItems,
+          cartTotal:     safeTotal,
+          itemCount:     safeCount,
+          // Only advance the page, never go backwards
+          pageAbandoned: newRank >= existingRank ? safePage : existing.pageAbandoned,
+          updatedAt:     new Date(),
         },
       });
     } else {
       await prisma.abandonedCart.create({
         data: {
-          phone:     cleanPhone,
-          fullName:  fullName  || null,
-          email:     email     || null,
-          city:      city      || null,
-          items:     safeItems,
-          cartTotal: safeTotal,
-          itemCount: safeCount,
+          phone:         cleanPhone,
+          fullName:      fullName  || null,
+          email:         email     || null,
+          city:          city      || null,
+          items:         safeItems,
+          cartTotal:     safeTotal,
+          itemCount:     safeCount,
+          pageAbandoned: safePage,
         },
       });
     }

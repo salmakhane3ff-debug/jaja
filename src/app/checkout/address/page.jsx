@@ -267,6 +267,7 @@ export default function CheckoutAddressPage() {
           city:      form.city.trim()     || null,
           items:     cartItems,
           cartTotal: subtotal,
+          page:      "address",
         }),
         keepalive: true,
       }).catch(() => {}); // fire-and-forget

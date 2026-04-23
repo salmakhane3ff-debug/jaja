@@ -225,6 +225,28 @@ export default function PaymentPage() {
     const items = JSON.parse(localStorage.getItem("buyNow") || "[]");
     setCartItems(items);
 
+    // ── Abandoned cart: update page to "payment" (fire-and-forget) ────────────
+    try {
+      const phone = parsedAddr?.phone?.trim();
+      if (phone && phone.replace(/\D/g, "").length >= 8) {
+        const subtotal = items.reduce((s, i) => s + (i.price || 0) * (i.quantity || 1), 0);
+        fetch("/api/abandoned-carts", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            phone,
+            fullName:  parsedAddr?.fullName || null,
+            email:     parsedAddr?.email    || null,
+            city:      parsedAddr?.city     || null,
+            items,
+            cartTotal: subtotal,
+            page:      "payment",
+          }),
+          keepalive: true,
+        }).catch(() => {});
+      }
+    } catch {}
+
     try {
       const pd = localStorage.getItem("promoDiscount");
       if (pd) setPromoDiscount(JSON.parse(pd).discountAmount || 0);

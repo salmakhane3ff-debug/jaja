@@ -194,6 +194,7 @@ export default function AbandonedOrdersPage() {
                   <th className="px-4 py-3 text-left">Ville</th>
                   <th className="px-4 py-3 text-left">Articles</th>
                   <th className="px-4 py-3 text-right">Total</th>
+                  <th className="px-4 py-3 text-center">Étape</th>
                   <th className="px-4 py-3 text-center">Statut</th>
                   <th className="px-4 py-3 text-center">Quand</th>
                   <th className="px-4 py-3"></th>
@@ -243,6 +244,22 @@ export default function AbandonedOrdersPage() {
                     {/* Total */}
                     <td className="px-4 py-3 text-right font-bold text-gray-900">
                       {formatMAD(cart.cartTotal)}
+                    </td>
+                    {/* Étape */}
+                    <td className="px-4 py-3 text-center">
+                      {cart.pageAbandoned === "confirm" ? (
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-red-100 text-red-700 rounded-full text-xs font-semibold">
+                          💳 Paiement
+                        </span>
+                      ) : cart.pageAbandoned === "payment" ? (
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-yellow-100 text-yellow-700 rounded-full text-xs font-semibold">
+                          🚚 Livraison
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 bg-gray-100 text-gray-600 rounded-full text-xs font-semibold">
+                          📋 Adresse
+                        </span>
+                      )}
                     </td>
                     {/* Statut */}
                     <td className="px-4 py-3 text-center">
