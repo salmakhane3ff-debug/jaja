@@ -262,7 +262,8 @@ export default function ConfirmPage() {
     // Guard: cart must have at least one non-gift item.
     // Do NOT check price > 0 here — client-side prices in localStorage may
     // be 0/undefined for legitimate products; server recalculates from DB.
-    const hasPaidItem = cartItems.some((i) => !i.isFreeGift);
+    // Note: CartDrawer uses _isGift, checkout address uses isFreeGift — check both.
+    const hasPaidItem = cartItems.some((i) => !(i.isFreeGift || i._isGift));
     if (!hasPaidItem || cartItems.length === 0) {
       router.replace("/checkout/address");
       return;
@@ -295,10 +296,14 @@ export default function ConfirmPage() {
             quantity:     item.quantity,
             price:        item.price,
             sellingPrice: item.price,
-            images:       item.image ? [item.image] : [],
-            // Pass gift fields so the server can skip DB price lookup for free items
-            isFreeGift:   item.isFreeGift || false,
+            // item.images is an array; item.image (singular) is never in cart
+            images:       Array.isArray(item.images) ? item.images : (item.image ? [item.image] : []),
+            // CartDrawer stores gifts as _isGift:true; checkout stores as isFreeGift:true.
+            // Pass BOTH so the server's isCadeauFallback check works for both sources.
+            isFreeGift:   item.isFreeGift || item._isGift || false,
+            _isGift:      item._isGift    || false,
             giftId:       item._giftId    || item.giftId || undefined,
+            _giftId:      item._giftId    || undefined,
           })),
         },
         paymentDetails: {
@@ -331,6 +336,10 @@ export default function ConfirmPage() {
       });
 
       if (!res.ok) {
+        // Read the server error for diagnosis (log it, show friendly message)
+        let serverMsg = "";
+        try { const j = await res.json(); serverMsg = j?.error || j?.code || ""; } catch {}
+        console.error("[confirm] order POST failed:", res.status, serverMsg);
         setSubmitError(t("checkout_error_submit"));
         return;
       }
