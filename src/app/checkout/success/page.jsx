@@ -1,7 +1,7 @@
 "use client";
-import React, { useState, useEffect, useRef, Suspense } from "react";
-import { useSearchParams } from "next/navigation";
-import { CheckCircle, Home, MessageCircle, Printer, Clock, Upload, X, AlertCircle } from "lucide-react";
+import React, { useState, useEffect, Suspense } from "react";
+import { useSearchParams, useRouter } from "next/navigation";
+import { CheckCircle, Home, MessageCircle, Printer, Clock, AlertCircle, CreditCard } from "lucide-react";
 import Link from "next/link";
 import { useLanguage } from "@/context/LanguageContext";
 
@@ -56,141 +56,24 @@ function buildWhatsAppMsg(order, lang) {
   );
 }
 
-// ── Pending receipt upload panel ──────────────────────────────────────────────
-// Shown when the order is bank_transfer + still pending + no screenshot yet.
-
-const ALLOWED_TYPES = ["image/jpeg", "image/png", "image/webp"];
-
-function ReceiptUploadPanel({ orderId, onUploaded }) {
-  const fileRef            = useRef(null);
-  const [uploading, setUploading] = useState(false);
-  const [error,     setError]     = useState("");
-
-  const handleFile = (file) => {
-    if (!file) return;
-    if (!ALLOWED_TYPES.includes(file.type)) {
-      setError("Seuls JPEG, PNG et WebP sont acceptés.");
-      return;
-    }
-    if (file.size > 5 * 1024 * 1024) {
-      setError("Image trop grande (max 5 MB).");
-      return;
-    }
-    setError("");
-    setUploading(true);
-
-    const reader = new FileReader();
-    reader.onload = (e) => {
-      const img = new Image();
-      img.onload = async () => {
-        // Compress to max 1200 px JPEG 72 %
-        const MAX = 1200;
-        let { width, height } = img;
-        if (width > MAX || height > MAX) {
-          if (width > height) { height = Math.round(height * MAX / width); width = MAX; }
-          else                { width  = Math.round(width  * MAX / height); height = MAX; }
-        }
-        const canvas = document.createElement("canvas");
-        canvas.width  = width;
-        canvas.height = height;
-        canvas.getContext("2d").drawImage(img, 0, 0, width, height);
-        const dataUrl = canvas.toDataURL("image/jpeg", 0.72);
-
-        try {
-          // 1. Upload file → secure endpoint → get URL
-          const upRes  = await fetch("/api/checkout/upload-receipt", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ dataUrl }),
-          });
-          const upData = await upRes.json();
-          if (!upRes.ok || !upData.url) {
-            setError(upData.error || "Échec du téléchargement. Réessayez.");
-            return;
-          }
-
-          // 2. Attach screenshot URL to order
-          const attRes  = await fetch("/api/order/receipt", {
-            method: "PATCH",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ orderId, screenshotUrl: upData.url }),
-          });
-          const attData = await attRes.json();
-          if (!attRes.ok) {
-            setError(attData.error || "Impossible de mettre à jour la commande.");
-            return;
-          }
-
-          onUploaded(upData.url, attData.uploadedAt);
-        } catch {
-          setError("Erreur réseau. Réessayez.");
-        } finally {
-          setUploading(false);
-        }
-      };
-      img.onerror = () => { setError("Impossible de lire l'image."); setUploading(false); };
-      img.src = e.target.result;
-    };
-    reader.onerror = () => { setError("Impossible de lire le fichier."); setUploading(false); };
-    reader.readAsDataURL(file);
-  };
-
-  return (
-    <div className="bg-white rounded-2xl shadow-sm border border-orange-100 overflow-hidden mt-4 print:hidden">
-      <div className="px-5 py-3.5 border-b border-gray-50 flex items-center gap-2 bg-orange-50">
-        <Upload className="w-4 h-4 text-orange-600" />
-        <h3 className="font-bold text-orange-800 text-sm">رفع إثبات التحويل — Joindre le reçu</h3>
-      </div>
-      <div className="p-5">
-        <div
-          onClick={() => !uploading && fileRef.current?.click()}
-          onDrop={(e) => { e.preventDefault(); if (!uploading) handleFile(e.dataTransfer.files?.[0]); }}
-          onDragOver={(e) => e.preventDefault()}
-          className={`flex flex-col items-center justify-center h-32 border-2 border-dashed rounded-2xl transition-all
-            ${uploading ? "border-gray-200 bg-gray-50 cursor-not-allowed" : "border-orange-200 cursor-pointer hover:border-orange-400 hover:bg-orange-50"}`}
-        >
-          {uploading ? (
-            <>
-              <div className="w-7 h-7 border-[3px] border-orange-300 border-t-orange-600 rounded-full animate-spin mb-2" />
-              <p className="text-sm text-gray-500 font-medium">Envoi en cours…</p>
-            </>
-          ) : (
-            <>
-              <Upload className="w-8 h-8 text-orange-300 mb-2" />
-              <p className="text-sm font-semibold text-orange-600">Cliquez ou déposez votre reçu ici</p>
-              <p className="text-xs text-gray-400 mt-0.5">JPEG, PNG ou WebP — max 5 MB</p>
-            </>
-          )}
-        </div>
-        {error && (
-          <p className="mt-2 text-xs text-red-600 font-medium flex items-center gap-1">
-            <AlertCircle className="w-3.5 h-3.5 shrink-0" /> {error}
-          </p>
-        )}
-        <input
-          ref={fileRef}
-          type="file"
-          accept="image/jpeg,image/png,image/webp"
-          className="hidden"
-          onChange={(e) => { handleFile(e.target.files?.[0]); e.target.value = ""; }}
-        />
-      </div>
-    </div>
-  );
+// ── Resolve a product image to a plain URL string ─────────────────────────────
+// productSnapshot stores images as either string[] or {url:string}[] — handle both.
+function resolveImg(item) {
+  const raw = item.image ?? item.images?.[0] ?? null;
+  if (!raw) return null;
+  return typeof raw === "string" ? raw : (raw?.url || null);
 }
 
 // ── Main content ──────────────────────────────────────────────────────────────
 
 function SuccessContent() {
   const searchParams = useSearchParams();
-  const { t, lang } = useLanguage();
+  const router       = useRouter();
+  const { t, lang }  = useLanguage();
 
   const [order,         setOrder]         = useState(null);
   const [storeSettings, setStoreSettings] = useState(null);
   const [loading,       setLoading]       = useState(true);
-  // receipt state — managed locally so upload refreshes without full reload
-  const [receiptUrl,    setReceiptUrl]    = useState(null);
-  const [receiptTime,   setReceiptTime]   = useState(null);
 
   useEffect(() => {
     const orderId =
@@ -221,16 +104,6 @@ function SuccessContent() {
 
     fetchAll();
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
-
-  // Sync receipt state from order once loaded
-  useEffect(() => {
-    if (!order) return;
-    const pd = order.paymentDetails || {};
-    if (pd.bankScreenshot && !receiptUrl) {
-      setReceiptUrl(pd.bankScreenshot);
-      setReceiptTime(pd.receiptUploadedAt || null);
-    }
-  }, [order]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Facebook Pixel + Conversions API — Purchase event ────────────────────
   useEffect(() => {
@@ -268,6 +141,55 @@ function SuccessContent() {
     } catch {}
   }, [order?._id]); // eslint-disable-line react-hooks/exhaustive-deps
 
+  // ── "Complete Payment" — reconstruct checkout state then go to confirm page ──
+  const handleCompletePayment = () => {
+    if (!order) return;
+    const pd = order.paymentDetails || {};
+    try {
+      // Mark the existing order so confirm page updates it instead of creating a new one
+      localStorage.setItem("pendingOrderId", order._id);
+
+      // Rebuild address from order data
+      localStorage.setItem("checkoutAddress", JSON.stringify({
+        fullName: order.name  || "",
+        phone:    order.phone || "",
+        email:    order.email || order.customerEmail || "",
+        city:     order.shipping?.address?.city     || "",
+        address:  order.shipping?.address?.address1 || "",
+      }));
+
+      // Rebuild shipping object (confirm page uses paymentType + price)
+      localStorage.setItem("selectedShipping", JSON.stringify({
+        name:        pd.shippingCompany || "",
+        price:       pd.shippingCost    || 0,
+        isFree:      !pd.shippingCost,
+        paymentType: pd.paymentMethod === "cod_deposit" ? "cod_deposit" : "prepaid",
+        deposit:     pd.deposit || 0,
+      }));
+
+      // Rebuild payment method (confirm page uses .id to look up fresh bank info)
+      localStorage.setItem("selectedPaymentMethod", JSON.stringify({
+        id:       pd.paymentMethodId || null,
+        name:     pd.bankName        || "",
+        bankName: pd.bankName        || "",
+      }));
+
+      // Rebuild buyNow so confirm page can show the order summary
+      const buyNow = (order.products?.items || []).map(item => ({
+        productId:  item.productId,
+        title:      item.title    || "",
+        price:      item.price    || 0,
+        quantity:   item.quantity || 1,
+        images:     Array.isArray(item.images) ? item.images : [],
+        isFreeGift: item.isFreeGift || item._isGift || false,
+        _giftId:    item._giftId   || undefined,
+      }));
+      localStorage.setItem("buyNow", JSON.stringify(buyNow));
+    } catch {}
+
+    router.push("/checkout/confirm");
+  };
+
   // ── Derived values ───────────────────────────────────────────────────────
   const pd        = order?.paymentDetails || {};
   const items     = order?.products?.items || [];
@@ -278,12 +200,12 @@ function SuccessContent() {
   const isDeposit = pd.paymentMethod === "cod_deposit";
   const isPrepaid = pd.paymentMethod === "bank_transfer" || pd.paymentMethod === "prepaid";
 
-  // Pending detection
-  const isBankTransfer  = pd.paymentMethod === "bank_transfer" || pd.paymentMethod === "cod_deposit";
-  const isPending       = order?.status === "pending" && order?.paymentStatus !== "success";
-  const receiptReady    = receiptUrl || pd.bankScreenshot;
-  const underReview     = isPending && receiptReady;
-  const needsReceipt    = isPending && isBankTransfer && !receiptReady;
+  // Status detection
+  const isBankTransfer = pd.paymentMethod === "bank_transfer" || pd.paymentMethod === "cod_deposit";
+  const isPending      = order?.status === "pending" && order?.paymentStatus !== "success";
+  const hasReceipt     = !!pd.bankScreenshot;
+  const underReview    = isPending && hasReceipt;     // receipt submitted, waiting admin
+  const needsPayment   = isPending && isBankTransfer; // needs to pay (with or without receipt)
 
   const whatsappNumber = storeSettings?.whatsappNumber || "";
   const whatsappUrl    = whatsappNumber
@@ -327,18 +249,22 @@ function SuccessContent() {
           </button>
         </div>
 
-        {/* ── Status banner — green (paid) OR orange (pending) ── */}
+        {/* ── Status banner ── */}
         {underReview ? (
-          /* Receipt submitted, waiting admin review */
           <div className="bg-blue-50 border border-blue-200 rounded-2xl px-5 py-4 flex items-center gap-4 mb-5 print:hidden">
             <Clock className="w-9 h-9 text-blue-500 flex-shrink-0" />
             <div>
-              <p className="font-black text-blue-800 text-base">Reçu envoyé — en attente de validation</p>
-              <p className="text-sm text-blue-600 mt-0.5">Votre reçu a été reçu. Nous confirmerons votre commande très bientôt.</p>
+              <p className="font-black text-blue-800 text-base">
+                {lang === "ar" ? "الوصل قيد المراجعة" : "Reçu envoyé — en attente de validation"}
+              </p>
+              <p className="text-sm text-blue-600 mt-0.5">
+                {lang === "ar"
+                  ? "تم استلام إثبات الدفع. سنؤكد طلبك قريباً."
+                  : "Votre reçu a été reçu. Nous confirmerons votre commande très bientôt."}
+              </p>
             </div>
           </div>
-        ) : needsReceipt ? (
-          /* Pending — needs receipt upload */
+        ) : needsPayment ? (
           <div className="bg-orange-50 border border-orange-200 rounded-2xl px-5 py-4 flex items-center gap-4 mb-5 print:hidden">
             <AlertCircle className="w-9 h-9 text-orange-500 flex-shrink-0" />
             <div>
@@ -347,13 +273,12 @@ function SuccessContent() {
               </p>
               <p className="text-sm text-orange-600 mt-0.5">
                 {lang === "ar"
-                  ? "يرجى رفع إثبات التحويل البنكي لتأكيد طلبك."
-                  : "Veuillez joindre votre reçu de virement pour confirmer la commande."}
+                  ? "يرجى إتمام الدفع لتأكيد طلبك."
+                  : "Veuillez finaliser le paiement pour confirmer votre commande."}
               </p>
             </div>
           </div>
         ) : (
-          /* Fully confirmed / paid */
           <div className="bg-green-50 border border-green-200 rounded-2xl px-5 py-4 flex items-center gap-4 mb-5 print:hidden">
             <CheckCircle className="w-9 h-9 text-green-500 flex-shrink-0" />
             <div>
@@ -361,6 +286,17 @@ function SuccessContent() {
               <p className="text-sm text-green-600 mt-0.5">{t("success_confirmed_sub")}</p>
             </div>
           </div>
+        )}
+
+        {/* ── "Complete Payment" button — only for pending bank-transfer orders ── */}
+        {needsPayment && (
+          <button
+            onClick={handleCompletePayment}
+            className="w-full flex items-center justify-center gap-3 bg-gray-900 hover:bg-gray-800 active:scale-[0.98] text-white py-4 rounded-2xl font-black text-base transition-all shadow-lg mb-5 print:hidden"
+          >
+            <CreditCard className="w-5 h-5" />
+            {lang === "ar" ? "إتمام الدفع الآن" : "Finaliser le paiement"}
+          </button>
         )}
 
         {/* ── WhatsApp CTA ── */}
@@ -374,42 +310,6 @@ function SuccessContent() {
             <MessageCircle className="w-5 h-5" />
             {t("success_whatsapp")}
           </a>
-        )}
-
-        {/* ── Receipt upload panel (pending + bank transfer + no receipt yet) ── */}
-        {needsReceipt && order?._id && (
-          <ReceiptUploadPanel
-            orderId={order._id}
-            onUploaded={(url, uploadedAt) => {
-              setReceiptUrl(url);
-              setReceiptTime(uploadedAt);
-            }}
-          />
-        )}
-
-        {/* ── Uploaded receipt thumbnail (after upload or if already in order) ── */}
-        {receiptReady && (
-          <div className="bg-white rounded-2xl shadow-sm border border-blue-100 overflow-hidden mt-4 mb-4 print:hidden">
-            <div className="px-5 py-3 border-b border-gray-50 flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <CheckCircle className="w-4 h-4 text-green-500" />
-                <span className="text-sm font-bold text-gray-800">Reçu de paiement joint</span>
-              </div>
-              {receiptTime && (
-                <span className="text-xs text-gray-400">
-                  {new Date(receiptTime).toLocaleTimeString("fr-MA", { hour: "2-digit", minute: "2-digit" })}
-                  {" "}— {new Date(receiptTime).toLocaleDateString("fr-MA")}
-                </span>
-              )}
-            </div>
-            <div className="p-3">
-              <img
-                src={receiptUrl || pd.bankScreenshot}
-                alt="Reçu"
-                className="w-full max-h-48 object-contain rounded-xl border border-gray-100 bg-gray-50"
-              />
-            </div>
-          </div>
         )}
 
         {/* ── Invoice card ── */}
@@ -478,7 +378,7 @@ function SuccessContent() {
               <p className="text-xs font-bold text-gray-400 uppercase tracking-wide mb-3">{t("success_products")}</p>
               <div className="space-y-3">
                 {items.map((item, i) => {
-                  const img = item.image || item.images?.[0];
+                  const img = resolveImg(item);
                   return (
                     <div key={i} className="flex items-start gap-3 py-3 border-b border-gray-50 last:border-0">
                       {img && (
