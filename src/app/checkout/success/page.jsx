@@ -231,8 +231,8 @@ function SuccessContent() {
   const isBankTransfer = pd.paymentMethod === "bank_transfer" || pd.paymentMethod === "cod_deposit";
   const isPending      = order?.status === "pending" && order?.paymentStatus !== "success";
   const hasReceipt     = !!pd.bankScreenshot;
-  const underReview    = isPending && hasReceipt;     // receipt submitted, waiting admin
-  const needsPayment   = isPending && isBankTransfer; // needs to pay (with or without receipt)
+  const underReview    = isPending && hasReceipt;                  // receipt submitted, waiting admin
+  const needsPayment   = isPending && isBankTransfer && !hasReceipt; // still needs to pay (no receipt yet)
 
   const whatsappNumber = storeSettings?.whatsappNumber || "";
   const whatsappUrl    = whatsappNumber

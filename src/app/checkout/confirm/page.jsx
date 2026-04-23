@@ -70,7 +70,7 @@ async function createInvoice({ orderId, cartItems, address, shipping, subtotal, 
 }
 
 function clearCheckoutStorage() {
-  ["buyNow","cart","promoCode","promoDiscount","selectedShipping","selectedPaymentMethod","checkoutAddress"].forEach(k => {
+  ["buyNow","cart","promoCode","promoDiscount","selectedShipping","selectedPaymentMethod","checkoutAddress","pendingOrderId"].forEach(k => {
     try { localStorage.removeItem(k); } catch {}
   });
 }
@@ -304,21 +304,20 @@ export default function ConfirmPage() {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ orderId: pendingOrderId, screenshotUrl: screenshot }),
         });
-        if (!res.ok) {
-          const j = await res.json().catch(() => ({}));
-          setSubmitError(j?.error || t("checkout_error_submit"));
-          setSubmitting(false);
+        if (res.ok) {
+          // Receipt attached — go back to success page
+          clearCheckoutStorage(); // also clears pendingOrderId
+          router.push(`/checkout/success?orderId=${pendingOrderId}`);
           return;
         }
-        // Clean up and go back to success page
+        // Order not found / already confirmed — stale pendingOrderId, clear it and fall through
+        // to create a new order so the customer isn't stuck.
+        console.warn("[confirm] PATCH receipt failed, clearing pendingOrderId and creating new order");
         try { localStorage.removeItem("pendingOrderId"); } catch {}
-        clearCheckoutStorage();
-        router.push(`/checkout/success?orderId=${pendingOrderId}`);
-        return;
+        // fall through to normal POST below ↓
       } catch {
-        setSubmitError(t("checkout_error_unexpected"));
-        setSubmitting(false);
-        return;
+        // Network error — also fall through to normal POST
+        try { localStorage.removeItem("pendingOrderId"); } catch {}
       }
     }
 
