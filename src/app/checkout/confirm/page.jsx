@@ -272,6 +272,39 @@ export default function ConfirmPage() {
     setSubmitting(true);
 
     try {
+      // ── Pre-flight: remove stale products from cart ───────────────────────
+      // Products can be deleted from DB while a customer has them in localStorage.
+      // Validate paid items against the live product list and silently drop any
+      // that no longer exist so the order doesn't fail with PRODUCT_NOT_FOUND.
+      let validatedItems = cartItems;
+      try {
+        const prodRes = await fetch("/api/products");
+        if (prodRes.ok) {
+          const allProds = await prodRes.json();
+          const liveIds  = new Set(allProds.map((p) => p._id || p.id));
+          const filtered = cartItems.filter(
+            (i) => (i.isFreeGift || i._isGift) || liveIds.has(i.productId)
+          );
+          if (filtered.length !== cartItems.length) {
+            // Some products were removed — update state + localStorage
+            validatedItems = filtered;
+            setCartItems(filtered);
+            localStorage.setItem("buyNow", JSON.stringify(filtered));
+            const removedCount = cartItems.length - filtered.length;
+            console.warn(`[confirm] removed ${removedCount} stale product(s) from cart`);
+          }
+          // If no paid items remain after filtering, abort
+          const stillHasPaid = filtered.some((i) => !(i.isFreeGift || i._isGift));
+          if (!stillHasPaid) {
+            setSubmitError(t("checkout_cart_error") || "Votre panier ne contient plus de produits disponibles. Veuillez retourner au panier.");
+            setSubmitting(false);
+            return;
+          }
+        }
+      } catch {
+        // If validation fetch fails, proceed anyway — server will catch it
+      }
+
       const affiliateId  = localStorage.getItem("affiliateId")  || null;
       const affiliateRef = localStorage.getItem("affiliateRef") || null;
 
@@ -290,7 +323,7 @@ export default function ConfirmPage() {
           phone: address.phone,
         },
         products: {
-          items: cartItems.map(item => ({
+          items: validatedItems.map(item => ({
             productId:    item.productId,
             title:        item.title,
             quantity:     item.quantity,
@@ -400,7 +433,7 @@ export default function ConfirmPage() {
       } catch {}
 
       await createInvoice({
-        orderId: order._id, cartItems, address, shipping,
+        orderId: order._id, cartItems: validatedItems, address, shipping,
         subtotal, shippingCost, promoDiscount, total, deposit, paymentMethod,
       });
 
