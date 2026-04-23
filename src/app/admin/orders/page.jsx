@@ -4,7 +4,7 @@ import { useState, useEffect, useMemo } from "react";
 import { useRouter } from "next/navigation";
 import {
   ShoppingBag, Eye, RefreshCw, Search, ChevronDown,
-  ArrowUpDown, CheckCircle, XCircle, Loader2,
+  ArrowUpDown, CheckCircle, XCircle, Loader2, Copy, Link2,
 } from "lucide-react";
 
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -117,6 +117,31 @@ function StatusDropdown({ orderId, current, onUpdated }) {
         </>
       )}
     </div>
+  );
+}
+
+// ── Copy success-page link ────────────────────────────────────────────────────
+function CopyLink({ orderId }) {
+  const [copied, setCopied] = useState(false);
+  if (!orderId) return null;
+  const url = `${typeof window !== "undefined" ? window.location.origin : "https://proprogiftvip.com"}/checkout/success?orderId=${orderId}`;
+  const copy = () => {
+    navigator.clipboard.writeText(url).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    });
+  };
+  return (
+    <button
+      onClick={copy}
+      title={url}
+      className={`flex items-center gap-1 text-xs px-2 py-1 rounded-lg transition-colors ${
+        copied ? "bg-green-50 text-green-700" : "bg-gray-50 text-gray-500 hover:bg-gray-100"
+      }`}
+    >
+      {copied ? <CheckCircle className="w-3 h-3" /> : <Link2 className="w-3 h-3" />}
+      <span className="hidden sm:inline">{copied ? "Copié" : "Lien"}</span>
+    </button>
   );
 }
 
@@ -348,6 +373,7 @@ export default function OrdersPage() {
                             <Eye className="w-3 h-3" />
                             <span className="hidden sm:inline">عرض</span>
                           </button>
+                          <CopyLink orderId={order._id} />
                           <StatusDropdown
                             orderId={order._id}
                             current={order.status}
