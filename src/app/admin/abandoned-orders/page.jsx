@@ -65,18 +65,46 @@ function ItemsTooltip({ items }) {
 }
 
 // ── Success-page link for admin to send to customer ──────────────────────────
-function OrderLink({ orderId }) {
-  const [copied, setCopied] = useState(false);
-  if (!orderId) return <span className="text-gray-300 text-xs">—</span>;
+function OrderLink({ cartId, orderId: initialOrderId }) {
+  const [orderId, setOrderId] = useState(initialOrderId || null);
+  const [copied,  setCopied]  = useState(false);
+  const [loading, setLoading] = useState(false);
 
-  const url = `${typeof window !== "undefined" ? window.location.origin : "https://proprogiftvip.com"}/checkout/success?orderId=${orderId}`;
+  const url = orderId
+    ? `${typeof window !== "undefined" ? window.location.origin : "https://proprogiftvip.com"}/checkout/success?orderId=${orderId}`
+    : null;
 
   const copy = () => {
+    if (!url) return;
     navigator.clipboard.writeText(url).then(() => {
       setCopied(true);
       setTimeout(() => setCopied(false), 2000);
     });
   };
+
+  const generate = async () => {
+    setLoading(true);
+    try {
+      const res  = await fetch("/api/abandoned-carts", {
+        method:  "PUT",
+        headers: { "Content-Type": "application/json" },
+        body:    JSON.stringify({ cartId }),
+      });
+      const data = await res.json();
+      if (data.orderId) setOrderId(data.orderId);
+    } catch {}
+    setLoading(false);
+  };
+
+  if (!orderId) {
+    return (
+      <button onClick={generate} disabled={loading}
+        className="flex items-center gap-1 text-xs px-2 py-1 rounded-lg font-semibold bg-orange-50 text-orange-600 hover:bg-orange-100 transition-all disabled:opacity-50">
+        {loading ? <RefreshCw className="w-3 h-3 animate-spin" /> : <Link2 className="w-3 h-3" />}
+        {loading ? "…" : "Générer"}
+      </button>
+    );
+  }
 
   return (
     <div className="flex items-center gap-1">
@@ -312,7 +340,7 @@ export default function AbandonedOrdersPage() {
                     </td>
                     {/* Lien success page */}
                     <td className="px-4 py-3">
-                      <OrderLink orderId={cart.orderId} />
+                      <OrderLink cartId={cart.id} orderId={cart.orderId} />
                     </td>
                     {/* Actions */}
                     <td className="px-4 py-3 text-right">

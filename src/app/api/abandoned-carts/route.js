@@ -186,6 +186,56 @@ export async function PATCH(req) {
   }
 }
 
+// ── PUT /api/abandoned-carts ──────────────────────────────────────────────────
+// Admin: generate a draft order for a cart that has no orderId yet.
+// Body: { cartId }  →  returns { orderId }
+async function _PUT(req) {
+  try {
+    const { cartId } = await req.json();
+    if (!cartId) return NextResponse.json({ error: "Missing cartId" }, { status: 400 });
+
+    const cart = await prisma.abandonedCart.findUnique({
+      where:  { id: cartId },
+      select: { id: true, orderId: true, phone: true, fullName: true, email: true, city: true, items: true, cartTotal: true },
+    });
+    if (!cart) return NextResponse.json({ error: "Cart not found" }, { status: 404 });
+
+    // Already has one — return it
+    if (cart.orderId) return NextResponse.json({ orderId: cart.orderId });
+
+    // Create draft order
+    const safeItems = Array.isArray(cart.items) ? cart.items : [];
+    const draft = await prisma.order.create({
+      data: {
+        customerName:    cart.fullName || cart.phone,
+        customerPhone:   cart.phone,
+        customerEmail:   cart.email   || null,
+        shippingAddress: { city: cart.city || "" },
+        status:          "pending",
+        paymentStatus:   "pending",
+        paymentDetails:  {
+          paymentMethod: "bank_transfer",
+          total:         cart.cartTotal || 0,
+          cartTotal:     cart.cartTotal || 0,
+          draftItems:    safeItems,
+        },
+        sessionId: `draft_${cart.phone}_${Date.now()}`,
+      },
+    });
+
+    await prisma.abandonedCart.update({
+      where: { id: cartId },
+      data:  { orderId: draft.id },
+    });
+
+    return NextResponse.json({ orderId: draft.id });
+  } catch (err) {
+    console.error("PUT /api/abandoned-carts error:", err);
+    return NextResponse.json({ error: "Server error" }, { status: 500 });
+  }
+}
+export const PUT = withAdminAuth(_PUT);
+
 // ── DELETE /api/abandoned-carts?id=xxx ───────────────────────────────────────
 // Admin: delete a single abandoned cart record.
 async function _DELETE(req) {
