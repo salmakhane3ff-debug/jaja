@@ -500,6 +500,32 @@ function SuccessContent() {
             </div>
           )}
 
+          {/* Payment receipt screenshot — shown when customer already uploaded one */}
+          {hasReceipt && (
+            <div className="px-6 py-4 border-t border-gray-100">
+              <p className="text-xs font-bold text-gray-400 uppercase tracking-wide mb-3">
+                {lang === "ar" ? "إثبات الدفع المرسل" : "Reçu de paiement envoyé"}
+              </p>
+              <div className="rounded-2xl overflow-hidden border border-gray-200 bg-gray-50">
+                <img
+                  src={pd.bankScreenshot}
+                  alt="receipt"
+                  className="w-full max-h-72 object-contain"
+                  onError={(e) => { e.currentTarget.style.display = "none"; }}
+                />
+              </div>
+              {pd.receiptUploadedAt && (
+                <p className="text-xs text-gray-400 mt-2 text-center">
+                  {lang === "ar" ? "تم الإرسال" : "Envoyé le"}{" "}
+                  {new Date(pd.receiptUploadedAt).toLocaleString(
+                    lang === "fr" ? "fr-MA" : "ar-MA",
+                    { day: "2-digit", month: "short", hour: "2-digit", minute: "2-digit" }
+                  )}
+                </p>
+              )}
+            </div>
+          )}
+
           {/* Footer */}
           <div className="px-6 py-4 text-center border-t border-gray-100">
             <p className="text-xs text-gray-400">{t("success_thank_you")}</p>
