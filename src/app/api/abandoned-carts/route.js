@@ -63,74 +63,57 @@ export async function POST(req) {
       cartId = created.id;
     }
 
-    // ── Ensure abandoned cart always has an orderId ───────────────────────────
-    // Reuse existing orderId if already set, otherwise resolve one:
-    //   1. Latest real order for this phone → link to it
-    //   2. No real order → create a draft order immediately (even at address stage)
-    //      Items stored in paymentDetails.draftItems (no FK risk, success page reads them)
+    // ── Ensure abandoned cart always has its own dedicated orderId ───────────
+    // Rule: NEVER link by phone. Each abandoned cart session owns one draft order.
+    // Reuse the same orderId across all steps (address → payment → confirm).
     const alreadyHasOrder = existing?.orderId;
-    if (!alreadyHasOrder && cartId) {
-      const latestOrder = await prisma.order.findFirst({
-        where:   { customerPhone: cleanPhone },
-        orderBy: { createdAt: "desc" },
-        select:  { id: true },
-      });
 
-      if (latestOrder) {
+    if (!alreadyHasOrder && cartId) {
+      // No orderId yet — create a fresh draft order for this session.
+      // Items stored in paymentDetails.draftItems (avoids FK risk on stale productIds).
+      try {
+        const draft = await prisma.order.create({
+          data: {
+            customerName:    fullName || cleanPhone,
+            customerPhone:   cleanPhone,
+            customerEmail:   email    || null,
+            shippingAddress: { city: city || "" },
+            status:          "pending",
+            paymentStatus:   "pending",
+            paymentDetails:  {
+              paymentMethod: "bank_transfer",
+              total:         safeTotal,
+              cartTotal:     safeTotal,
+              draftItems:    safeItems,
+            },
+            sessionId: `draft_${cleanPhone}_${Date.now()}`,
+          },
+        });
         await prisma.abandonedCart.update({
           where: { id: cartId },
-          data:  { orderId: latestOrder.id },
+          data:  { orderId: draft.id },
         });
-      } else {
-        // Create a draft order — no nested items (avoids FK issues with stale productIds).
-        // Items are kept in paymentDetails.draftItems for display on the success page.
-        try {
-          const draft = await prisma.order.create({
-            data: {
-              customerName:    fullName || cleanPhone,
-              customerPhone:   cleanPhone,
-              customerEmail:   email    || null,
-              shippingAddress: { city: city || "" },
-              status:          "pending",
-              paymentStatus:   "pending",
-              paymentDetails:  {
-                paymentMethod: "bank_transfer",
-                total:         safeTotal,
-                cartTotal:     safeTotal,
-                draftItems:    safeItems,   // used by /api/order/status for display
-              },
-              sessionId: `draft_${cleanPhone}_${Date.now()}`,
-            },
-          });
-          await prisma.abandonedCart.update({
-            where: { id: cartId },
-            data:  { orderId: draft.id },
-          });
-        } catch (e) {
-          console.warn("[abandoned-carts] draft order creation failed:", e.message);
-        }
+      } catch (e) {
+        console.warn("[abandoned-carts] draft order creation failed:", e.message);
       }
+
     } else if (existing?.orderId && cartId) {
-      // Cart already has orderId — update draftItems so success page shows latest cart
+      // Session already has an orderId — keep it. Only update draftItems if the
+      // order is still a draft (not confirmed/paid and no real screenshot attached).
       try {
         const order = await prisma.order.findUnique({
           where:  { id: existing.orderId },
-          select: { paymentDetails: true },
+          select: { status: true, paymentDetails: true },
         });
         if (order) {
-          const pd = (order.paymentDetails && typeof order.paymentDetails === "object")
+          const locked = ["confirmed", "paid"].includes(order.status);
+          const pd     = (order.paymentDetails && typeof order.paymentDetails === "object")
             ? order.paymentDetails : {};
-          // Only update if it's still a draft (no real screenshot attached)
-          if (!pd.bankScreenshot) {
+          if (!locked && !pd.bankScreenshot) {
             await prisma.order.update({
               where: { id: existing.orderId },
               data:  {
-                paymentDetails: {
-                  ...pd,
-                  draftItems: safeItems,
-                  total:      safeTotal,
-                  cartTotal:  safeTotal,
-                },
+                paymentDetails: { ...pd, draftItems: safeItems, total: safeTotal, cartTotal: safeTotal },
               },
             });
           }
