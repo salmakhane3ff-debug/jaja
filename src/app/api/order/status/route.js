@@ -78,19 +78,22 @@ export async function GET(req) {
         ...payDetails,
       },
       createdAt: order.createdAt,
-      // Rebuild products.items from OrderItem rows + productSnapshot
+      // Rebuild products.items from OrderItem rows + productSnapshot.
+      // For draft orders (no real items), fall back to paymentDetails.draftItems
+      // which are stored by /api/abandoned-carts for display purposes.
       products: {
-        items: (order.items || []).map((item) => ({
-          _id:      item.id,
-          productId: item.productId,
-          quantity:  item.quantity,
-          price:     item.price,
-          regularPrice: item.regularPrice,
-          // productSnapshot spreads title, images, variants, isFreeGift, etc.
-          ...(item.productSnapshot && typeof item.productSnapshot === "object"
-            ? item.productSnapshot
-            : {}),
-        })),
+        items: order.items && order.items.length > 0
+          ? order.items.map((item) => ({
+              _id:         item.id,
+              productId:   item.productId,
+              quantity:    item.quantity,
+              price:       item.price,
+              regularPrice: item.regularPrice,
+              ...(item.productSnapshot && typeof item.productSnapshot === "object"
+                ? item.productSnapshot
+                : {}),
+            }))
+          : (Array.isArray(payDetails.draftItems) ? payDetails.draftItems : []),
       },
     };
 

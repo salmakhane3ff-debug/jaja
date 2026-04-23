@@ -63,28 +63,28 @@ export async function POST(req) {
       cartId = created.id;
     }
 
-    // ── Link abandoned cart to an order ──────────────────────────────────────
-    // Only attempt if cart doesn't already have an orderId.
+    // ── Ensure abandoned cart always has an orderId ───────────────────────────
+    // Reuse existing orderId if already set, otherwise resolve one:
+    //   1. Latest real order for this phone → link to it
+    //   2. No real order → create a draft order immediately (even at address stage)
+    //      Items stored in paymentDetails.draftItems (no FK risk, success page reads them)
     const alreadyHasOrder = existing?.orderId;
     if (!alreadyHasOrder && cartId) {
-      // 1. Find the most recent existing order for this phone
       const latestOrder = await prisma.order.findFirst({
-        where: { customerPhone: cleanPhone },
+        where:   { customerPhone: cleanPhone },
         orderBy: { createdAt: "desc" },
-        select: { id: true },
+        select:  { id: true },
       });
 
       if (latestOrder) {
-        // Link to existing order
         await prisma.abandonedCart.update({
           where: { id: cartId },
           data:  { orderId: latestOrder.id },
         });
-      } else if (safePage === "confirm" && safeItems.length > 0) {
-        // 2. No existing order — create a minimal draft order so the admin
-        //    can send the customer a success-page link to complete payment.
+      } else {
+        // Create a draft order — no nested items (avoids FK issues with stale productIds).
+        // Items are kept in paymentDetails.draftItems for display on the success page.
         try {
-          const paidItems = safeItems.filter((i) => i.productId && !(i.isFreeGift || i._isGift));
           const draft = await prisma.order.create({
             data: {
               customerName:    fullName || cleanPhone,
@@ -97,30 +97,45 @@ export async function POST(req) {
                 paymentMethod: "bank_transfer",
                 total:         safeTotal,
                 cartTotal:     safeTotal,
+                draftItems:    safeItems,   // used by /api/order/status for display
               },
               sessionId: `draft_${cleanPhone}_${Date.now()}`,
-              items: {
-                create: paidItems.map((item) => ({
-                  productId:       item.productId,
-                  quantity:        item.quantity || 1,
-                  price:           item.price    || 0,
-                  productSnapshot: {
-                    title:   item.title  || "",
-                    images:  Array.isArray(item.images) ? item.images : [],
-                    variants: item.variants || [],
-                  },
-                })),
-              },
             },
           });
           await prisma.abandonedCart.update({
             where: { id: cartId },
             data:  { orderId: draft.id },
           });
-        } catch {
-          // Silently skip if draft creation fails (e.g. stale productId FK error)
+        } catch (e) {
+          console.warn("[abandoned-carts] draft order creation failed:", e.message);
         }
       }
+    } else if (existing?.orderId && cartId) {
+      // Cart already has orderId — update draftItems so success page shows latest cart
+      try {
+        const order = await prisma.order.findUnique({
+          where:  { id: existing.orderId },
+          select: { paymentDetails: true },
+        });
+        if (order) {
+          const pd = (order.paymentDetails && typeof order.paymentDetails === "object")
+            ? order.paymentDetails : {};
+          // Only update if it's still a draft (no real screenshot attached)
+          if (!pd.bankScreenshot) {
+            await prisma.order.update({
+              where: { id: existing.orderId },
+              data:  {
+                paymentDetails: {
+                  ...pd,
+                  draftItems: safeItems,
+                  total:      safeTotal,
+                  cartTotal:  safeTotal,
+                },
+              },
+            });
+          }
+        }
+      } catch { /* non-critical */ }
     }
 
     return NextResponse.json({ ok: true });
