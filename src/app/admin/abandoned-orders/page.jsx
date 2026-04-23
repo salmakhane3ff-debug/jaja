@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback } from "react";
 import {
   ShoppingCart, Phone, User, MapPin, Clock,
-  Trash2, RefreshCw, CheckCircle, Filter, Package,
+  Trash2, RefreshCw, CheckCircle, Filter, Package, Link2, Copy,
 } from "lucide-react";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -60,6 +60,45 @@ function ItemsTooltip({ items }) {
           </div>
         </>
       )}
+    </div>
+  );
+}
+
+// ── Copy success-page link ────────────────────────────────────────────────────
+function OrderLink({ orderId }) {
+  const [copied, setCopied] = useState(false);
+  if (!orderId) return <span className="text-gray-300 text-xs">—</span>;
+
+  const url = `${typeof window !== "undefined" ? window.location.origin : "https://proprogiftvip.com"}/checkout/success?orderId=${orderId}`;
+
+  const copy = () => {
+    navigator.clipboard.writeText(url).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    });
+  };
+
+  return (
+    <div className="flex items-center gap-1">
+      <a
+        href={url}
+        target="_blank"
+        rel="noopener noreferrer"
+        className="text-blue-500 hover:text-blue-700"
+        title={url}
+      >
+        <Link2 className="w-3.5 h-3.5" />
+      </a>
+      <button
+        onClick={copy}
+        className={`flex items-center gap-1 text-xs px-2 py-0.5 rounded-lg font-semibold transition-all ${
+          copied ? "bg-green-100 text-green-700" : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+        }`}
+        title="Copier le lien"
+      >
+        {copied ? <CheckCircle className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
+        {copied ? "Copié" : "Copier"}
+      </button>
     </div>
   );
 }
@@ -197,6 +236,7 @@ export default function AbandonedOrdersPage() {
                   <th className="px-4 py-3 text-center">Étape</th>
                   <th className="px-4 py-3 text-center">Statut</th>
                   <th className="px-4 py-3 text-center">Quand</th>
+                  <th className="px-4 py-3 text-left">Lien</th>
                   <th className="px-4 py-3"></th>
                 </tr>
               </thead>
@@ -278,6 +318,10 @@ export default function AbandonedOrdersPage() {
                     {/* Quand */}
                     <td className="px-4 py-3 text-center text-gray-400 text-xs">
                       {timeAgo(cart.createdAt)}
+                    </td>
+                    {/* Lien success page */}
+                    <td className="px-4 py-3">
+                      <OrderLink orderId={cart.orderId} />
                     </td>
                     {/* Actions */}
                     <td className="px-4 py-3 text-right">

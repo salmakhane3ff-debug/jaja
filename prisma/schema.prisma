@@ -165,6 +165,7 @@ model AbandonedCart {
   itemCount     Int      @default(0)
   pageAbandoned String?  // "address" | "payment" | "confirm"
   recovered     Boolean  @default(false)
+  orderId       String?  // set when the customer completes checkout → used for success page link
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 

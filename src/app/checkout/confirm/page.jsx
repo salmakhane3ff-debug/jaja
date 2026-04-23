@@ -493,7 +493,7 @@ export default function ConfirmPage() {
           fetch("/api/abandoned-carts", {
             method: "PATCH",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ phone: address.phone }),
+            body: JSON.stringify({ phone: address.phone, orderId: order._id }),
             keepalive: true,
           }).catch(() => {});
         }

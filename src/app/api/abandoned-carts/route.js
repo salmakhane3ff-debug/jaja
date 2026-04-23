@@ -100,17 +100,23 @@ export const GET = withAdminAuth(_GET);
 
 // ── PATCH /api/abandoned-carts ────────────────────────────────────────────────
 // Mark carts as recovered after a successful order.
-// Body: { phone } — marks all non-recovered carts for this phone as recovered.
-// Public: called client-side from orderCreate.jsx after order success.
+// Body: { phone, orderId? } — marks all non-recovered carts for this phone as
+// recovered and stores the orderId so the admin can send the success page link.
+// Public: called client-side from confirm page after order success.
 export async function PATCH(req) {
   try {
-    const body  = await req.json();
-    const phone = (body?.phone || "").toString().trim();
+    const body    = await req.json();
+    const phone   = (body?.phone   || "").toString().trim();
+    const orderId = (body?.orderId || "").toString().trim() || null;
     if (!phone) return NextResponse.json({ ok: true }); // no-op
 
     await prisma.abandonedCart.updateMany({
       where: { phone, recovered: false },
-      data:  { recovered: true, updatedAt: new Date() },
+      data:  {
+        recovered: true,
+        ...(orderId ? { orderId } : {}),
+        updatedAt: new Date(),
+      },
     });
 
     return NextResponse.json({ ok: true });
