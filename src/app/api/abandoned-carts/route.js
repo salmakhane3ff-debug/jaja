@@ -2,6 +2,18 @@ import { NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { withAdminAuth } from "@/lib/middleware/withAdminAuth";
 
+// ── Phone normalizer ──────────────────────────────────────────────────────────
+// Strips non-digits, then normalizes Moroccan prefix so +212XXXXXXXXX,
+// 212XXXXXXXXX and 0XXXXXXXXX all map to the same canonical form (0XXXXXXXXX).
+function normalizePhone(raw) {
+  let digits = (raw || "").toString().replace(/\D/g, "");
+  // +212 / 212 prefix → replace with leading 0
+  if (digits.startsWith("212") && digits.length >= 11) {
+    digits = "0" + digits.slice(3);
+  }
+  return digits;
+}
+
 // ── POST /api/abandoned-carts ─────────────────────────────────────────────────
 // Called from checkout/address page when the user enters a valid phone.
 // Upserts by phone so duplicate submissions are idempotent.
@@ -15,6 +27,9 @@ export async function POST(req) {
       return NextResponse.json({ error: "Invalid phone" }, { status: 400 });
     }
 
+    // Canonical phone used for dedup — prevents duplicate drafts from format variations
+    const normalizedPhone = normalizePhone(cleanPhone);
+
     const VALID_PAGES  = ["address", "payment", "confirm"];
     const safePage     = VALID_PAGES.includes(page) ? page : "address";
     const safeItems    = Array.isArray(items) ? items : [];
@@ -23,9 +38,15 @@ export async function POST(req) {
 
     // Upsert: update existing row for this phone, or create a new one.
     // Always keep the furthest page (address < payment < confirm).
+    // Search by NORMALIZED phone to avoid duplicates from format variations.
     const PAGE_RANK = { address: 0, payment: 1, confirm: 2 };
     const existing = await prisma.abandonedCart.findFirst({
-      where: { phone: cleanPhone, recovered: false },
+      where: {
+        OR: [
+          { phone: cleanPhone,     recovered: false },
+          { phone: normalizedPhone, recovered: false },
+        ],
+      },
       select: { id: true, pageAbandoned: true, orderId: true },
     });
 
@@ -50,7 +71,7 @@ export async function POST(req) {
     } else {
       const created = await prisma.abandonedCart.create({
         data: {
-          phone:         cleanPhone,
+          phone:         normalizedPhone, // always store normalized form
           fullName:      fullName  || null,
           email:         email     || null,
           city:          city      || null,
@@ -74,19 +95,20 @@ export async function POST(req) {
       try {
         const draft = await prisma.order.create({
           data: {
-            customerName:    fullName || cleanPhone,
-            customerPhone:   cleanPhone,
+            customerName:    fullName || normalizedPhone,
+            customerPhone:   normalizedPhone,
             customerEmail:   email    || null,
             shippingAddress: { city: city || "" },
             status:          "pending",
             paymentStatus:   "pending",
             paymentDetails:  {
+              isDraft:       true,          // ← hides from admin orders list
               paymentMethod: "bank_transfer",
               total:         safeTotal,
               cartTotal:     safeTotal,
               draftItems:    safeItems,
             },
-            sessionId: `draft_${cleanPhone}_${Date.now()}`,
+            sessionId: `draft_${normalizedPhone}_${Date.now()}`,
           },
         });
         await prisma.abandonedCart.update({
@@ -214,6 +236,7 @@ async function _PUT(req) {
         status:          "pending",
         paymentStatus:   "pending",
         paymentDetails:  {
+          isDraft:       true,          // ← hides from admin orders list
           paymentMethod: "bank_transfer",
           total:         cart.cartTotal || 0,
           cartTotal:     cart.cartTotal || 0,

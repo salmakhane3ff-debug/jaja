@@ -174,7 +174,11 @@ export default function OrderDetailPage() {
   // ── Derived values ────────────────────────────────────────────────────────
   const pd      = order.paymentDetails || {};
   const addr    = order.shipping?.address || {};
-  const items   = order.products?.items   || [];
+  // Real items first; fall back to draftItems stored by abandoned-cart system
+  const rawItems = order.products?.items || [];
+  const items    = rawItems.length > 0
+    ? rawItems
+    : (Array.isArray(pd.draftItems) ? pd.draftItems : []);
   const subtotal        = pd.subtotal     ?? items.reduce((s, i) => s + (i.price || 0) * (i.quantity || 1), 0);
   const shippingCost    = pd.shippingCost ?? 0;
   const promoDiscount   = pd.promoDiscount ?? 0;
@@ -204,7 +208,14 @@ export default function OrderDetailPage() {
             <p className="font-mono text-sm text-gray-800 font-bold">{order._id}</p>
             <p className="text-xs text-gray-400 mt-2">{fmtDate(order.createdAt)}</p>
           </div>
-          <StatusBadge status={order.status} />
+          <div className="flex items-center gap-2">
+            {pd.isDraft && (
+              <span className="inline-flex items-center px-2.5 py-1 rounded-full text-xs font-bold bg-amber-50 text-amber-600 border border-amber-200">
+                Draft
+              </span>
+            )}
+            <StatusBadge status={order.status} />
+          </div>
         </div>
       </div>
 
@@ -220,7 +231,7 @@ export default function OrderDetailPage() {
       </Section>
 
       {/* ── 3. PRODUCTS ── */}
-      <Section icon={Package} title="المنتجات">
+      <Section icon={Package} title={`المنتجات${rawItems.length === 0 && items.length > 0 ? " (من السلة)" : ""}`}>
         {items.length === 0 ? (
           <p className="text-sm text-gray-400 text-center py-4">لا توجد منتجات</p>
         ) : (

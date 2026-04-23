@@ -176,6 +176,9 @@ export default function OrdersPage() {
   const displayed = useMemo(() => {
     let list = [...orders];
 
+    // Hide draft orders created by abandoned-cart system
+    list = list.filter((o) => !o.paymentDetails?.isDraft);
+
     // Search by phone, name, or short order ID
     if (search.trim()) {
       const q = search.trim().toLowerCase();
