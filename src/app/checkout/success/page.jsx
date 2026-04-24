@@ -22,8 +22,16 @@ const PAY_LABELS = {
   },
 };
 
-function payLabel(method, lang) {
-  return PAY_LABELS[lang]?.[method] || PAY_LABELS.ar[method] || method || "—";
+function payLabel(method, lang, bankMethods = []) {
+  if (!method) return "—";
+  // Known static keys first
+  if (PAY_LABELS[lang]?.[method]) return PAY_LABELS[lang][method];
+  if (PAY_LABELS.ar[method])      return PAY_LABELS.ar[method];
+  // Resolve dynamic bank method ID → name
+  const found = bankMethods.find((m) => m.id === method);
+  if (found?.name) return found.name;
+  // Last resort: return raw value (better than ID)
+  return method;
 }
 
 function buildWhatsAppMsg(order, lang) {
@@ -49,7 +57,7 @@ function buildWhatsAppMsg(order, lang) {
       "",
       `🚚 *${isAr ? "التوصيل" : "Livraison"}:* ${pd.shippingCompany || ""} — ${pd.shippingCost || 0} MAD`,
       `💰 *${isAr ? "المجموع" : "Total"}:* ${(pd.total || 0).toFixed(0)} MAD`,
-      `💳 *${isAr ? "نوع الدفع" : "Paiement"}:* ${payLabel(pd.paymentMethod, lang)}`,
+      `💳 *${isAr ? "نوع الدفع" : "Paiement"}:* ${payLabel(pd.paymentMethod, lang, [])}`,
       "",
       `🔖 *${isAr ? "رقم الطلب" : "N° commande"}:* ${order._id || ""}`,
     ].join("\n"),
@@ -75,6 +83,7 @@ function SuccessContent() {
 
   const [order,         setOrder]         = useState(null);
   const [storeSettings, setStoreSettings] = useState(null);
+  const [bankMethods,   setBankMethods]   = useState([]);
   const [loading,       setLoading]       = useState(true);
   const orderIdRef = useRef(null); // stable ref so polling closure always has latest orderId
 
@@ -86,6 +95,15 @@ function SuccessContent() {
       try {
         const r = await fetch("/api/setting?type=store");
         if (r.ok) setStoreSettings(await r.json());
+      } catch {}
+
+      // Fetch bank methods so we can resolve payment method IDs to readable names
+      try {
+        const r = await fetch("/api/setting?type=bank-settings");
+        if (r.ok) {
+          const d = await r.json();
+          if (Array.isArray(d?.methods)) setBankMethods(d.methods);
+        }
       } catch {}
 
       if (orderId) {
@@ -369,7 +387,7 @@ function SuccessContent() {
                 {pd.paymentMethod && (
                   <div>
                     <p className="text-gray-400 text-xs">{t("success_payment_method")}</p>
-                    <p className="font-semibold">{payLabel(pd.paymentMethod, lang)}</p>
+                    <p className="font-semibold">{payLabel(pd.paymentMethod, lang, bankMethods)}</p>
                   </div>
                 )}
               </div>
@@ -490,7 +508,7 @@ function SuccessContent() {
                 : isDeposit  ? "bg-orange-50 text-orange-600"
                 : "bg-gray-100 text-gray-600"}`}>
                 {isPrepaid ? "💳 " : isDeposit ? "💰 " : "💵 "}
-                {payLabel(pd.paymentMethod, lang)}
+                {payLabel(pd.paymentMethod, lang, bankMethods)}
               </span>
               {isPending && (
                 <span className="text-xs px-3 py-1.5 rounded-full font-bold bg-orange-50 text-orange-600">
