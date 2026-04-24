@@ -20,7 +20,7 @@ function normalizePhone(raw) {
 export async function POST(req) {
   try {
     const body = await req.json();
-    const { phone, fullName, email, city, items, cartTotal, page } = body;
+    const { phone, fullName, email, city, items, cartTotal, page, shippingCompany, shippingCost, paymentMethod } = body;
 
     const cleanPhone  = (phone || "").toString().trim();
     if (!cleanPhone || cleanPhone.replace(/\D/g, "").length < 8) {
@@ -102,11 +102,13 @@ export async function POST(req) {
             status:          "pending",
             paymentStatus:   "pending",
             paymentDetails:  {
-              isDraft:       true,          // ← hides from admin orders list
-              paymentMethod: "bank_transfer",
-              total:         safeTotal,
-              cartTotal:     safeTotal,
-              draftItems:    safeItems,
+              isDraft:         true,          // ← hides from admin orders list
+              paymentMethod:   paymentMethod || "bank_transfer",
+              shippingCompany: shippingCompany || null,
+              shippingCost:    shippingCost    ?? null,
+              total:           safeTotal,
+              cartTotal:       safeTotal,
+              draftItems:      safeItems,
             },
             sessionId: `draft_${normalizedPhone}_${Date.now()}`,
           },
@@ -135,7 +137,15 @@ export async function POST(req) {
             await prisma.order.update({
               where: { id: existing.orderId },
               data:  {
-                paymentDetails: { ...pd, draftItems: safeItems, total: safeTotal, cartTotal: safeTotal },
+                paymentDetails: {
+                  ...pd,
+                  draftItems:      safeItems,
+                  total:           safeTotal,
+                  cartTotal:       safeTotal,
+                  ...(shippingCompany ? { shippingCompany }             : {}),
+                  ...(shippingCost != null ? { shippingCost }           : {}),
+                  ...(paymentMethod   ? { paymentMethod: paymentMethod } : {}),
+                },
               },
             });
           }
