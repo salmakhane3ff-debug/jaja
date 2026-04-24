@@ -172,7 +172,26 @@ async function _GET(req) {
       prisma.abandonedCart.count({ where }),
     ]);
 
-    return NextResponse.json({ carts, total, page, pages: Math.ceil(total / limit) });
+    // ── Enrich carts with shipping & payment info from linked draft orders ──
+    const orderIds = carts.map((c) => c.orderId).filter(Boolean);
+    const linkedOrders = orderIds.length > 0
+      ? await prisma.order.findMany({
+          where:  { id: { in: orderIds } },
+          select: { id: true, paymentDetails: true },
+        })
+      : [];
+    const orderMap = Object.fromEntries(linkedOrders.map((o) => [o.id, o]));
+
+    const enrichedCarts = carts.map((cart) => {
+      const pd = cart.orderId ? (orderMap[cart.orderId]?.paymentDetails || {}) : {};
+      return {
+        ...cart,
+        shippingCompany: pd.shippingCompany || null,
+        paymentMethod:   pd.paymentMethod   || null,
+      };
+    });
+
+    return NextResponse.json({ carts: enrichedCarts, total, page, pages: Math.ceil(total / limit) });
   } catch (err) {
     console.error("GET /api/abandoned-carts error:", err);
     return NextResponse.json({ error: "Server error" }, { status: 500 });

@@ -252,6 +252,8 @@ export default function AbandonedOrdersPage() {
                   <th className="px-4 py-3 text-left">Ville</th>
                   <th className="px-4 py-3 text-left">Articles</th>
                   <th className="px-4 py-3 text-right">Total</th>
+                  <th className="px-4 py-3 text-center">Livraison</th>
+                  <th className="px-4 py-3 text-center">Paiement</th>
                   <th className="px-4 py-3 text-center">Étape</th>
                   <th className="px-4 py-3 text-center">Statut</th>
                   <th className="px-4 py-3 text-center">Quand</th>
@@ -303,6 +305,37 @@ export default function AbandonedOrdersPage() {
                     {/* Total */}
                     <td className="px-4 py-3 text-right font-bold text-gray-900">
                       {formatMAD(cart.cartTotal)}
+                    </td>
+                    {/* Livraison */}
+                    <td className="px-4 py-3 text-center">
+                      {cart.shippingCompany ? (
+                        <span className="inline-flex items-center px-2 py-0.5 bg-purple-50 text-purple-700 rounded-full text-xs font-semibold">
+                          🚚 {cart.shippingCompany}
+                        </span>
+                      ) : (
+                        <span className="text-gray-300 text-xs">—</span>
+                      )}
+                    </td>
+                    {/* Paiement */}
+                    <td className="px-4 py-3 text-center">
+                      {cart.paymentMethod === "cod" && (
+                        <span className="inline-flex items-center px-2 py-0.5 bg-green-50 text-green-700 rounded-full text-xs font-semibold">
+                          💵 COD
+                        </span>
+                      )}
+                      {cart.paymentMethod === "bank_transfer" && (
+                        <span className="inline-flex items-center px-2 py-0.5 bg-blue-50 text-blue-700 rounded-full text-xs font-semibold">
+                          🏦 Virement
+                        </span>
+                      )}
+                      {cart.paymentMethod === "cod_deposit" && (
+                        <span className="inline-flex items-center px-2 py-0.5 bg-orange-50 text-orange-700 rounded-full text-xs font-semibold">
+                          💰 Acompte
+                        </span>
+                      )}
+                      {!cart.paymentMethod && (
+                        <span className="text-gray-300 text-xs">—</span>
+                      )}
                     </td>
                     {/* Étape */}
                     <td className="px-4 py-3 text-center">
