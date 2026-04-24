@@ -246,7 +246,11 @@ function SuccessContent() {
   const isPrepaid = pd.paymentMethod === "bank_transfer" || pd.paymentMethod === "prepaid";
 
   // Status detection
-  const isBankTransfer = pd.paymentMethod === "bank_transfer" || pd.paymentMethod === "cod_deposit";
+  // isBankTransfer: matches static keys AND dynamic bank method IDs stored in DB
+  const isBankTransfer =
+    pd.paymentMethod === "bank_transfer" ||
+    pd.paymentMethod === "cod_deposit"   ||
+    (pd.paymentMethod && bankMethods.some((m) => m.id === pd.paymentMethod));
   const isPending      = order?.status === "pending" && order?.paymentStatus !== "success";
   const hasReceipt     = !!pd.bankScreenshot;
   const underReview    = isPending && hasReceipt;                  // receipt submitted, waiting admin
