@@ -665,7 +665,7 @@ export default function Product({ data }) {
       </div>
 
       <StickyAddToCart
-        product={data}
+        product={{ ...data, salePrice: unitPrice, regularPrice: data.regularPrice }}
         quantity={quantity}
         onQuantityChange={handleQuantityChange}
         onAddToCart={handleAddToCart}
