@@ -56,6 +56,7 @@ export async function generateMetadata() {
   const image       = toAbsoluteUrl(settings?.ogImage) || toAbsoluteUrl(settings?.logoImage) || null;
 
   return {
+    metadataBase: new URL(PROD_ORIGIN),
     title,
     description,
     icons: {
