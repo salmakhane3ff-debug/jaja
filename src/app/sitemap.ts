@@ -1,5 +1,8 @@
 import { MetadataRoute } from "next";
-import prisma from "@/lib/prisma";
+import { PrismaClient } from "@/generated/prisma";
+// prisma.js is a JS file — cast to PrismaClient so TS knows the type
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const prisma: PrismaClient = require("@/lib/prisma").default;
 
 const BASE_URL = "https://proprogiftvip.com";
 
