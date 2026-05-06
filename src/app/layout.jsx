@@ -35,12 +35,25 @@ const rubik = Rubik({
 export const dynamic = "force-dynamic";
 
 // Generate metadata dynamically from store settings
+const PROD_ORIGIN = "https://proprogiftvip.com";
+
+/** Replace localhost URLs saved during development with the production origin */
+function toAbsoluteUrl(url) {
+  if (!url) return null;
+  // Skip localhost / 127.0.0.1 URLs — they are invalid for og:image
+  if (/localhost|127\.0\.0\.1/.test(url)) return null;
+  // Already absolute → return as-is
+  if (url.startsWith("http://") || url.startsWith("https://")) return url;
+  // Relative path → prefix with production origin
+  return `${PROD_ORIGIN}${url.startsWith("/") ? "" : "/"}${url}`;
+}
+
 export async function generateMetadata() {
   const settings = await getStoreSettings();
 
   const title       = settings?.storeName        || "Shop Gold - Online Shopping Experience";
   const description = settings?.websiteDescription || "Shop Gold is a modern online shopping experience built with Next.js";
-  const image       = settings?.ogImage || settings?.logoImage || null;
+  const image       = toAbsoluteUrl(settings?.ogImage) || toAbsoluteUrl(settings?.logoImage) || null;
 
   return {
     title,
@@ -51,11 +64,17 @@ export async function generateMetadata() {
     openGraph: {
       title,
       description,
-      url:      "https://proprogiftvip.com",
+      url:      PROD_ORIGIN,
       siteName: title,
       ...(image ? { images: [{ url: image, alt: title }] } : {}),
       locale:   "fr_MA",
       type:     "website",
+    },
+    twitter: {
+      card:        "summary_large_image",
+      title,
+      description,
+      ...(image ? { images: [image] } : {}),
     },
   };
 }
