@@ -5,7 +5,7 @@ import type { PrismaClient } from "@/generated/prisma";
 // (not pre-rendered as a static file at build time without DB access)
 export const dynamic = "force-dynamic";
 
-// @ts-ignore — prisma.js is a plain JS module; cast so TS knows its shape
+// @ts-expect-error — prisma.js is a plain JS module; cast so TS knows its shape
 import prismaModule from "@/lib/prisma";
 const prisma = prismaModule as PrismaClient;
 
