@@ -93,7 +93,21 @@ export default function Product({ data }) {
       body: JSON.stringify({ productId: data._id }),
       keepalive: true,
     }).catch(() => {});
-  }, [data._id]);
+
+    // Facebook Pixel — ViewContent
+    try {
+      if (typeof window.fbq === "function") {
+        const price = parseFloat(data.salePrice || data.regularPrice || 0);
+        window.fbq("track", "ViewContent", {
+          content_ids:  [String(data._id)],
+          content_name: data.title || "",
+          content_type: "product",
+          value:        price,
+          currency:     "MAD",
+        });
+      }
+    } catch {}
+  }, [data._id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
     const savedWishlist = JSON.parse(localStorage.getItem("wishlist") || "[]");
@@ -199,6 +213,22 @@ export default function Product({ data }) {
     } else {
       await addToCart(data, quantity, { variants: variantsList });
     }
+
+    // Facebook Pixel — AddToCart
+    try {
+      if (typeof window.fbq === "function") {
+        const qty   = selectedBundle === "2+1" ? 3 : quantity;
+        const total = parseFloat((effectivePrice * (selectedBundle === "2+1" ? 2 : quantity)).toFixed(2));
+        window.fbq("track", "AddToCart", {
+          content_ids:  [String(data._id)],
+          content_name: data.title || "",
+          content_type: "product",
+          value:        total,
+          currency:     "MAD",
+          num_items:    qty,
+        });
+      }
+    } catch {}
   };
 
   const handleBuyNow = async () => {

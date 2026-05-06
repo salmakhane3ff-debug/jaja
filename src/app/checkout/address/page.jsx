@@ -332,6 +332,22 @@ export default function CheckoutAddressPage() {
         setPromoInput(savedPromo.code || "");
       }
     } catch {}
+
+    // Facebook Pixel — InitiateCheckout (fire once per checkout session)
+    try {
+      if (typeof window.fbq === "function" && validItems.length > 0) {
+        const _total   = validItems.reduce((s, i) => s + i.price * (i.quantity || 1), 0);
+        const _ids     = validItems.map((i) => String(i.productId || i._id || "")).filter(Boolean);
+        const _count   = validItems.reduce((s, i) => s + (i.quantity || 1), 0);
+        window.fbq("track", "InitiateCheckout", {
+          content_ids:  _ids,
+          content_type: "product",
+          value:        parseFloat(_total.toFixed(2)),
+          currency:     "MAD",
+          num_items:    _count,
+        });
+      }
+    } catch {}
   }, []);
 
   // Fetch shipping companies
