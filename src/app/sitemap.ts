@@ -1,50 +1,28 @@
 import { MetadataRoute } from "next";
-import type { PrismaClient } from "@/generated/prisma";
+import { PrismaClient } from "@/generated/prisma";
+import { PrismaPg } from "@prisma/adapter-pg";
 
-// Force dynamic rendering so the sitemap is generated fresh on each request
-// (not pre-rendered as a static file at build time without DB access)
+// Force dynamic rendering so the sitemap reads from DB at request time
 export const dynamic = "force-dynamic";
 
-// @ts-expect-error — prisma.js is a plain JS module; cast so TS knows its shape
-import prismaModule from "@/lib/prisma";
-const prisma = prismaModule as PrismaClient;
-
 const BASE_URL = "https://proprogiftvip.com";
+
+function getPrisma(): PrismaClient {
+  const adapter = new PrismaPg({ connectionString: process.env.DATABASE_URL });
+  return new PrismaClient({ adapter } as ConstructorParameters<typeof PrismaClient>[0]);
+}
 
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   // ── Static pages ──────────────────────────────────────────────────────────
   const staticPages: MetadataRoute.Sitemap = [
-    {
-      url: BASE_URL,
-      lastModified: new Date(),
-      changeFrequency: "daily",
-      priority: 1.0,
-    },
-    {
-      url: `${BASE_URL}/products`,
-      lastModified: new Date(),
-      changeFrequency: "daily",
-      priority: 0.9,
-    },
-    {
-      url: `${BASE_URL}/blog`,
-      lastModified: new Date(),
-      changeFrequency: "weekly",
-      priority: 0.7,
-    },
-    {
-      url: `${BASE_URL}/contact`,
-      lastModified: new Date(),
-      changeFrequency: "monthly",
-      priority: 0.5,
-    },
-    {
-      url: `${BASE_URL}/faqs`,
-      lastModified: new Date(),
-      changeFrequency: "monthly",
-      priority: 0.5,
-    },
+    { url: BASE_URL,                    lastModified: new Date(), changeFrequency: "daily",   priority: 1.0 },
+    { url: `${BASE_URL}/products`,      lastModified: new Date(), changeFrequency: "daily",   priority: 0.9 },
+    { url: `${BASE_URL}/blog`,          lastModified: new Date(), changeFrequency: "weekly",  priority: 0.7 },
+    { url: `${BASE_URL}/contact`,       lastModified: new Date(), changeFrequency: "monthly", priority: 0.5 },
+    { url: `${BASE_URL}/faqs`,          lastModified: new Date(), changeFrequency: "monthly", priority: 0.5 },
   ];
+
+  const prisma = getPrisma();
 
   // ── Products ───────────────────────────────────────────────────────────────
   let productEntries: MetadataRoute.Sitemap = [];
@@ -54,7 +32,6 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
       select: { id: true, updatedAt: true },
       orderBy: { createdAt: "desc" },
     });
-
     productEntries = products.map((p) => ({
       url: `${BASE_URL}/products/${p.id}`,
       lastModified: p.updatedAt,
@@ -73,7 +50,6 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
       select: { slug: true, updatedAt: true },
       orderBy: { createdAt: "desc" },
     });
-
     blogEntries = posts.map((post) => ({
       url: `${BASE_URL}/blog/${post.slug}`,
       lastModified: post.updatedAt,
@@ -83,6 +59,8 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
   } catch (err) {
     console.error("[sitemap] failed to fetch blog posts:", err);
   }
+
+  await prisma.$disconnect();
 
   return [...staticPages, ...productEntries, ...blogEntries];
 }
