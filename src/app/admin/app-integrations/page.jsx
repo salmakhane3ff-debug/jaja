@@ -71,9 +71,10 @@ export default function AppIntegrationsPage() {
             trackingIds: Array.isArray(data.googleAnalytics?.trackingIds) ? data.googleAnalytics.trackingIds : []
           },
           metaPixel: {
-            enabled:     data.metaPixel?.enabled || false,
-            pixelIds:    Array.isArray(data.metaPixel?.pixelIds) ? data.metaPixel.pixelIds : [],
-            accessToken: data.metaPixel?.accessToken || '',
+            enabled:                data.metaPixel?.enabled || false,
+            pixelIds:               Array.isArray(data.metaPixel?.pixelIds) ? data.metaPixel.pixelIds : [],
+            accessToken:            data.metaPixel?.accessToken || '',
+            domainVerificationCode: data.metaPixel?.domainVerificationCode || '',
           },
           googleTagManager: {
             enabled: data.googleTagManager?.enabled || false,
@@ -251,6 +252,22 @@ export default function AppIntegrationsPage() {
                           />
                           <p className="text-xs text-gray-400">
                             Events Manager → Settings → Conversions API → Generate Access Token
+                          </p>
+                        </div>
+                        {/* Domain Verification Code */}
+                        <div className="pt-2 border-t border-gray-100 space-y-1">
+                          <p className="text-xs font-semibold text-gray-700">
+                            Domain Verification Code
+                            <span className="ml-1 text-gray-400 font-normal">(pour vérifier le domaine)</span>
+                          </p>
+                          <Input
+                            placeholder="ex: 0senvjdl1n2pey5r1r50opj7wfj4km"
+                            value={integration.domainVerificationCode || ""}
+                            onChange={(e) => updateIntegration("metaPixel", "domainVerificationCode", e.target.value)}
+                            size="sm"
+                          />
+                          <p className="text-xs text-gray-400">
+                            Meta Business → Brand Safety → Domains → Add meta-tag → copier le content="..."
                           </p>
                         </div>
                       </>

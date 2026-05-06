@@ -70,8 +70,10 @@ export default async function RootLayout({ children }) {
       <head>
         {/* Block Chrome/Google Translate popup — site has its own AR/FR switcher */}
         <meta name="google" content="notranslate" />
-        {/* Facebook Domain Verification */}
-        <meta name="facebook-domain-verification" content="0senvjdl1n2pey5r1r50opj7wfj4km" />
+        {/* Facebook Domain Verification — loaded dynamically from DB */}
+        {integrations?.metaPixel?.domainVerificationCode && (
+          <meta name="facebook-domain-verification" content={integrations.metaPixel.domainVerificationCode} />
+        )}
         <script
           dangerouslySetInnerHTML={{
             __html: `(function(){try{var l=localStorage.getItem('store_lang');var h=document.documentElement;if(l==='fr'||l==='ar'){h.setAttribute('data-lang',l);h.setAttribute('lang',l);var a=window.location.pathname.startsWith('/admin');h.setAttribute('dir',(!a&&l==='ar')?'rtl':'ltr');}else{var a=window.location.pathname.startsWith('/admin');if(a)h.setAttribute('dir','ltr');}}catch(e){}}())`,
