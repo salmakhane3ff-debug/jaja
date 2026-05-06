@@ -38,13 +38,24 @@ export const dynamic = "force-dynamic";
 export async function generateMetadata() {
   const settings = await getStoreSettings();
 
+  const title       = settings?.storeName        || "Shop Gold - Online Shopping Experience";
+  const description = settings?.websiteDescription || "Shop Gold is a modern online shopping experience built with Next.js";
+  const image       = settings?.ogImage || settings?.logoImage || null;
+
   return {
-    title: settings?.storeName || "Shop Gold - Online Shopping Experience",
-    description:
-      settings?.websiteDescription ||
-      "Shop Gold is a modern online shopping experience built with Next.js",
+    title,
+    description,
     icons: {
       icon: settings?.faviconImage || "/favicon.ico",
+    },
+    openGraph: {
+      title,
+      description,
+      url:      "https://proprogiftvip.com",
+      siteName: title,
+      ...(image ? { images: [{ url: image, alt: title }] } : {}),
+      locale:   "fr_MA",
+      type:     "website",
     },
   };
 }
