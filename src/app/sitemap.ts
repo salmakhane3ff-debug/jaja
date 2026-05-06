@@ -1,8 +1,13 @@
 import { MetadataRoute } from "next";
-import { PrismaClient } from "@/generated/prisma";
-// prisma.js is a JS file — cast to PrismaClient so TS knows the type
-// eslint-disable-next-line @typescript-eslint/no-require-imports
-const prisma: PrismaClient = require("@/lib/prisma").default;
+import type { PrismaClient } from "@/generated/prisma";
+
+// Force dynamic rendering so the sitemap is generated fresh on each request
+// (not pre-rendered as a static file at build time without DB access)
+export const dynamic = "force-dynamic";
+
+// @ts-ignore — prisma.js is a plain JS module; cast so TS knows its shape
+import prismaModule from "@/lib/prisma";
+const prisma = prismaModule as PrismaClient;
 
 const BASE_URL = "https://proprogiftvip.com";
 
