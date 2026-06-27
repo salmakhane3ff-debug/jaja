@@ -63,7 +63,8 @@ function getConnectionType() {
 
 // ── Click ID alias resolution ─────────────────────────────────────────────────
 // Different trackers use different URL param names for the same concept.
-// Bemob defaults to "clickid", some setups use "cid" or "subid". Priority
+// Bemob defaults to "clickid" (also seen as camelCase "clickId"), some
+// setups use "cid" or "subid". Priority
 // order below means an explicit click_id always wins if more than one is
 // present. "subid" (no underscore) is checked here as a click-ID alias —
 // it is intentionally distinct from "sub_id" (publisher ID), which is read
@@ -72,6 +73,7 @@ function resolveClickIdParam(searchParams) {
   return (
     searchParams.get("click_id") ||
     searchParams.get("clickid") ||
+    searchParams.get("clickId") ||
     searchParams.get("cid") ||
     searchParams.get("subid") ||
     null
