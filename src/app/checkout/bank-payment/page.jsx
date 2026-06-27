@@ -5,6 +5,7 @@ import {
   ArrowLeft, Building2, Upload, Shield,
   MessageCircle, CheckCircle, X, Copy, CreditCard,
 } from "lucide-react";
+import { resolveClickId } from "@/lib/tracking/clickId";
 
 // ── Steps bar (both step 1 and 2 done) ───────────────────────────────────────
 
@@ -242,6 +243,9 @@ export default function BankPaymentPage() {
       const affiliateId  = localStorage.getItem("affiliateId")  || null;
       const affiliateRef = localStorage.getItem("affiliateRef") || null;
 
+      // Bemob click ID (last-click attribution)
+      const bemobClickId = resolveClickId();
+
       const paymentMethod = shipping?.paymentType === "cod_deposit"
         ? "cod_deposit"
         : "bank_transfer";
@@ -289,6 +293,7 @@ export default function BankPaymentPage() {
         },
         status:    "pending",
         sessionId: Date.now().toString(),
+        bemobClickId,
       };
 
       const res = await fetch("/api/order", {

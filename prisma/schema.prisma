@@ -122,6 +122,18 @@ model Order {
   user            User?           @relation(fields: [userId], references: [id])
   spinEvents      SpinEvent[]
 
+  // ── Bemob conversion tracking ──────────────────────────────────────────
+  // bemobClickId          — the Bemob click ID captured at checkout (last_click_id).
+  //                         Null when the visitor arrived with no click ID (organic/direct).
+  // bemobConversionSentAt — set ONLY after a successful postback. This is the
+  //                         idempotency guard: null = never sent, non-null = sent.
+  // bemobConversionStatus — "sent" | "failed" | null. Lets the admin see a
+  //                         failed attempt distinctly from "never attempted",
+  //                         without needing bemobConversionSentAt to be set.
+  bemobClickId          String?
+  bemobConversionSentAt DateTime?
+  bemobConversionStatus String?
+
   @@index([status])
   @@index([affiliateId])
   @@index([customerPhone])

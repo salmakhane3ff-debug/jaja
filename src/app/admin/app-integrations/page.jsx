@@ -15,6 +15,7 @@ export default function AppIntegrationsPage() {
     googleTagManager: { enabled: false, containerIds: [] },
     googleAds: { enabled: false, conversionIds: [] },
     customCode: { enabled: false, scripts: [] },
+    bemob: { enabled: false, postbackUrl: "" },
   });
 
   const integrationConfig = {
@@ -53,6 +54,13 @@ export default function AppIntegrationsPage() {
       icon: Code,
       color: "purple",
     },
+    bemob: {
+      name: "Bemob",
+      description: "Send conversion postbacks when orders are confirmed",
+      status: "active",
+      icon: Globe,
+      color: "teal",
+    },
   };
 
   useEffect(() => {
@@ -87,6 +95,10 @@ export default function AppIntegrationsPage() {
           customCode: {
             enabled: data.customCode?.enabled || false,
             scripts: Array.isArray(data.customCode?.scripts) ? data.customCode.scripts : []
+          },
+          bemob: {
+            enabled: data.bemob?.enabled || false,
+            postbackUrl: data.bemob?.postbackUrl || "",
           },
         });
       }
@@ -308,6 +320,24 @@ export default function AppIntegrationsPage() {
                         removeItem={removeItem}
                         updateItem={updateItem}
                       />
+                    )}
+
+                    {key === "bemob" && (
+                      <div className="space-y-1">
+                        <p className="text-xs font-semibold text-gray-700">
+                          Postback URL
+                          <span className="ml-1 text-gray-400 font-normal">(from your Bemob affiliate network settings)</span>
+                        </p>
+                        <Input
+                          placeholder="https://xxxxx.bemobtrk.com/postback?cid=REPLACE&payout=OPTIONAL"
+                          value={integration.postbackUrl || ""}
+                          onChange={(e) => updateIntegration("bemob", "postbackUrl", e.target.value)}
+                          size="sm"
+                        />
+                        <p className="text-xs text-gray-400">
+                          Paste the postback URL as copied from the Bemob panel — leave REPLACE/OPTIONAL placeholders as-is, they are filled in automatically per order.
+                        </p>
+                      </div>
                     )}
                   </div>
                 )}

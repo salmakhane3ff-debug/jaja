@@ -20,22 +20,7 @@
  */
 
 import { useEffect } from "react";
-
-// ── Helpers ───────────────────────────────────────────────────────────────────
-function getCookie(name) {
-  const pair = document.cookie.split(";")
-    .map((c) => c.trim())
-    .find((c) => c.startsWith(`${name}=`));
-  return pair ? decodeURIComponent(pair.split("=")[1]) : null;
-}
-
-function resolveClickId() {
-  return (
-    localStorage.getItem("last_click_id") || getCookie("last_click_id") ||
-    localStorage.getItem("click_id")       || getCookie("click_id")      ||
-    null
-  );
-}
+import { resolveClickId } from "@/lib/tracking/clickId";
 
 export function fireFunnelEvent({ event, productId, orderId, metadata } = {}) {
   if (!event) return;

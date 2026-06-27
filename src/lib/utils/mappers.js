@@ -138,6 +138,7 @@ export function parseOrderBody(body) {
     affiliateId,
     campaignSource,
     userId,
+    bemobClickId,
     // Strip timestamps — we manage these ourselves
     createdAt: _createdAt, updatedAt: _updatedAt,
     // Anything else is ignored (prevents unknown-field errors in Prisma)
@@ -172,6 +173,7 @@ export function parseOrderBody(body) {
     affiliateId:     affiliateId                || null,
     campaignSource:  campaignSource             || null,
     userId:          userId                     || null,
+    bemobClickId:    bemobClickId               || null,
     // Timestamp overrides (PUT only)
     ...(_createdAt ? { createdAt: new Date(_createdAt) } : {}),
     ...(_updatedAt ? { updatedAt: new Date(_updatedAt) } : {}),

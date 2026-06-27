@@ -7,7 +7,11 @@
  * cookie + localStorage, then fires POST to /api/tracking/click.
  *
  * URL params captured:
- *   click_id    — unique click ID from tracker (Voluum, RedTrack, DaoPush)
+ *   click_id    — unique click ID from tracker (Voluum, RedTrack, DaoPush, Bemob)
+ *                 aliases also accepted: clickid, cid, subid
+ *                 (priority: click_id > clickid > cid > subid)
+ *                 Note: "subid" here is a click-ID alias, distinct from the
+ *                 separate "sub_id" (publisher/sub-affiliate ID) param below.
  *   source_id   — traffic source ID
  *   campaign_id — campaign ID
  *   sub_id      — sub-ID / publisher ID
@@ -57,19 +61,36 @@ function getConnectionType() {
   }
 }
 
+// ── Click ID alias resolution ─────────────────────────────────────────────────
+// Different trackers use different URL param names for the same concept.
+// Bemob defaults to "clickid", some setups use "cid" or "subid". Priority
+// order below means an explicit click_id always wins if more than one is
+// present. "subid" (no underscore) is checked here as a click-ID alias —
+// it is intentionally distinct from "sub_id" (publisher ID), which is read
+// separately later and unaffected by this function.
+function resolveClickIdParam(searchParams) {
+  return (
+    searchParams.get("click_id") ||
+    searchParams.get("clickid") ||
+    searchParams.get("cid") ||
+    searchParams.get("subid") ||
+    null
+  );
+}
+
 export default function TrackingCapture() {
   const searchParams = useSearchParams();
 
   useEffect(() => {
     try {
-      const clickId    = searchParams.get("click_id");
+      const clickId    = resolveClickIdParam(searchParams);
       const sourceId   = searchParams.get("source_id");
       const campaignId = searchParams.get("campaign_id");
       const subId      = searchParams.get("sub_id");
       const cpc        = searchParams.get("cpc");
       const cpm        = searchParams.get("cpm");
 
-      if (!clickId) return; // No click_id in URL — nothing to track
+      if (!clickId) return; // No click_id (or alias) in URL — nothing to track
 
       // ── Skip if already sent for this clickId this session ─────────────────
       const sentKey = `tc_sent_${clickId}`;

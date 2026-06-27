@@ -14,6 +14,8 @@
 
 import prisma               from '../prisma.js';
 import { mapOrder, parseOrderBody } from '../utils/mappers.js';
+import { sendBemobPostback } from '../bemobApi.js';
+import { getSettings } from './settingsService.js';
 
 // ── Analytics helper ──────────────────────────────────────────────────────────
 /**
@@ -382,6 +384,97 @@ export async function updateOrder(id, body) {
   if (_createdAt !== undefined) data.createdAt = new Date(_createdAt);
   if (_updatedAt !== undefined) data.updatedAt = new Date(_updatedAt);
 
+  // ── Bemob conversion trigger ────────────────────────────────────────────
+  // Fires ONLY on a genuine transition into CONFIRMED (previous status was
+  // anything else) AND only if Bemob has not already been successfully
+  // notified for this order. bemobConversionSentAt is set ONLY by a
+  // successful send (see triggerBemobConversion below) — it is therefore a
+  // complete, sufficient signal for "has this order already converted",
+  // without needing to also check bemobConversionStatus here. This is what
+  // lets a previously-FAILED postback be retried by a later CONFIRMED
+  // transition (e.g. CONFIRMED -> SHIPPED -> CONFIRMED again — sentAt is
+  // still null after a failure), while permanently preventing a re-send
+  // once a postback has already succeeded (sentAt is set, guard excludes
+  // it even if status later cycles back to CONFIRMED).
+  //
+  // bemobConversionSentAt: null is a direct equality-to-null check, not a
+  // negation — unlike a negated equals/not filter on a nullable column,
+  // this has no NULL-comparison ambiguity to worry about (see Prisma's own
+  // documented `where: { content: null }` pattern for filtering on null
+  // fields). bemobConversionStatus remains on the Order model purely for
+  // admin visibility / logging ("sent" | "failed" | null) and is
+  // deliberately NOT part of this WHERE clause.
+  //
+  // Every other update — including edits to an order that is already
+  // CONFIRMED, or a status change to any other value — takes the existing
+  // plain-update path below, completely unchanged.
+  const isConfirmingNow = typeof data.status === 'string'
+    && data.status.toUpperCase() === 'CONFIRMED';
+
+  if (isConfirmingNow) {
+    // Atomic guard: updateMany's WHERE clause is evaluated and the row is
+    // written in a single database operation, so two concurrent requests
+    // for the same order can never both see "eligible to trigger" — only
+    // one can ever match this WHERE clause and perform the write. This is
+    // the mechanism that makes "never trigger twice" hold even under a race
+    // (two admins, a double-click, or a retried request), not just under
+    // normal sequential use.
+    const result = await prisma.order.updateMany({
+      where: {
+        id,
+        bemobConversionSentAt: null,
+        NOT: { status: { equals: 'CONFIRMED', mode: 'insensitive' } },
+      },
+      data,
+    });
+
+    if (result.count === 1) {
+      // We performed the actual NEW→CONFIRMED transition — fire the Bemob
+      // postback. Order status changes are never blocked by this: failures
+      // are caught and logged inside triggerBemobConversion, never thrown
+      // back to the caller.
+      const order = await prisma.order.findUnique({ where: { id }, include: { items: true } });
+      if (!order) return null; // record not found (shouldn't happen here, but stay safe)
+
+      triggerBemobConversion(order).catch((err) =>
+        console.error('[bemob] postback trigger failed:', err?.message ?? err),
+      );
+      return mapOrder(order);
+    }
+
+    // result.count === 0: the guarded write above did NOT apply `data`.
+    // This now happens for two distinct reasons that must be told apart:
+    //   (a) status was already CONFIRMED — no real transition occurred.
+    //   (b) status was NOT already CONFIRMED, but bemobConversionSentAt was
+    //       already set (Bemob was already sent successfully for this
+    //       order) — a real transition IS happening, it just must not
+    //       re-trigger Bemob.
+    // In case (b) the status change itself must still be written — it is
+    // the requested, real edit; only the Bemob trigger is suppressed.
+    // We re-check here (a second, ordinary read) purely to decide whether
+    // status still needs writing; this does not reintroduce a race for the
+    // *trigger* decision, since that was already settled atomically above.
+    const current = await prisma.order.findUnique({ where: { id }, select: { status: true } });
+    if (!current) return null; // record not found
+
+    const wasAlreadyConfirmed = (current.status || '').toUpperCase() === 'CONFIRMED';
+    const writeData = wasAlreadyConfirmed
+      ? (() => { const { status: _drop, ...rest } = data; return rest; })()
+      : data; // not previously CONFIRMED — Bemob already sent; still write status
+
+    try {
+      const order = await prisma.order.update({
+        where:   { id },
+        data:    writeData,
+        include: { items: true },
+      });
+      return mapOrder(order);
+    } catch (err) {
+      if (err.code === 'P2025') return null; // record not found
+      throw err;
+    }
+  }
+
   try {
     const order = await prisma.order.update({
       where:   { id },
@@ -392,6 +485,68 @@ export async function updateOrder(id, body) {
   } catch (err) {
     if (err.code === 'P2025') return null; // record not found
     throw err;
+  }
+}
+
+/**
+ * Send the Bemob conversion postback for an order that has just transitioned
+ * into CONFIRMED, and record the outcome on the order itself.
+ *
+ * Called fire-and-forget from updateOrder() — never awaited by the admin's
+ * request, and any failure here must never surface as a failure of the
+ * status update itself (the order is already CONFIRMED in the database by
+ * the time this runs).
+ */
+async function triggerBemobConversion(order) {
+  if (!order.bemobClickId) {
+    // No click ID was ever attached to this order (organic/direct visitor,
+    // or it predates this feature) — nothing to report to Bemob.
+    return;
+  }
+
+  // Same settings shape/pattern as the Meta Pixel integration in
+  // facebookCapi.js's route: a sub-key on the "integrations" settings row,
+  // gated by its own enabled flag. No business logic from this service
+  // leaks into bemobApi.js itself — it only ever receives the resolved
+  // template string.
+  const cfg       = await getSettings('integrations');
+  const bemobCfg  = cfg?.bemob;
+
+  if (!bemobCfg?.enabled) {
+    return; // Bemob integration not enabled — nothing to send
+  }
+
+  const postbackUrlTemplate = bemobCfg?.postbackUrl;
+  if (!postbackUrlTemplate) {
+    console.error('[bemob] integration is enabled but no postbackUrl is configured — order', order.id);
+    await prisma.order.update({
+      where: { id: order.id },
+      data:  { bemobConversionStatus: 'failed' },
+    }).catch((updateErr) =>
+      console.error('[bemob] failed to record failure status for order', order.id, ':', updateErr?.message ?? updateErr),
+    );
+    return;
+  }
+
+  try {
+    await sendBemobPostback(postbackUrlTemplate, {
+      clickId: order.bemobClickId,
+      payout:  order.paymentTotal ?? undefined,
+      orderId: order.id,
+    });
+
+    await prisma.order.update({
+      where: { id: order.id },
+      data:  { bemobConversionSentAt: new Date(), bemobConversionStatus: 'sent' },
+    });
+  } catch (err) {
+    console.error('[bemob] postback failed for order', order.id, ':', err?.message ?? err);
+    await prisma.order.update({
+      where: { id: order.id },
+      data:  { bemobConversionStatus: 'failed' },
+    }).catch((updateErr) =>
+      console.error('[bemob] failed to record failure status for order', order.id, ':', updateErr?.message ?? updateErr),
+    );
   }
 }
 

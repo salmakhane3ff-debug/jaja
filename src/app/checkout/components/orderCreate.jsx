@@ -1,10 +1,15 @@
 import { getStoredUtmSource } from '@/utils/utmTracking';
+import { resolveClickId } from '@/lib/tracking/clickId';
 
 export default async function orderCreate({ products, paymentDetails, billingDetails, status = "success", extraData = {} }) {
   try {
     // Get utm_source for the order
     const utmSource = getStoredUtmSource();
     console.log('UTM source for order:', utmSource);
+
+    // Bemob click ID (last-click attribution) — only relevant when creating
+    // a brand-new order; an existing pending order already has this set.
+    const bemobClickId = resolveClickId();
     
     // Check if there's a pending order to update
     const pendingOrderId = localStorage.getItem("pendingOrderId");
@@ -112,6 +117,7 @@ export default async function orderCreate({ products, paymentDetails, billingDet
         status: paymentDetails.status === "paid" ? "success" : "failed",
         utm_source: utmSource,
         sessionId: Date.now().toString() + Math.random().toString(36).substr(2, 9), // Generate unique session ID
+        bemobClickId,
         ...extraData, // optional metadata (storeId, userId, etc.)
       };
 
