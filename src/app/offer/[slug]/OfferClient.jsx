@@ -5,6 +5,7 @@ import { useParams, useRouter, useSearchParams } from "next/navigation";
 import { Star, Check, X, Zap, Home, ChevronDown, ChevronUp } from "lucide-react";
 import Link from "next/link";
 import { fetchCached } from "@/lib/dataCache";
+import StickyCTA from "@/components/Product/StickyCTA";
 
 // ══════════════════════════════════════════════════════════════════════════════
 //  HELPERS
@@ -652,7 +653,7 @@ function BlockRenderer({ block, product, landingPage, onBuyNow, buying }) {
       return <AudioBlock cfg={cfg} />;
 
     case "orderForm":
-      return <OrderFormBlock cfg={cfg} product={product} />;
+      return <div id="lp-order-form"><OrderFormBlock cfg={cfg} product={product} /></div>;
 
     case "upsell": {
       const lpProds = Array.isArray(landingPage?.products) ? landingPage.products : [];
@@ -1347,9 +1348,23 @@ function OfferContent({ initialLandingPage = null, initialProduct = null }) {
 
   // ── Derived values ─────────────────────────────────────────────────────────
   const sections      = Array.isArray(landingPage?.sections) ? landingPage.sections : [];
-  const price         = product ? (product.salePrice || product.regularPrice) : null;
-  const originalPrice = product?.salePrice && product?.regularPrice && product.regularPrice > product.salePrice
-    ? product.regularPrice : null;
+
+  // ── Sticky CTA: content + action derived from existing blocks ───────────────
+  // Content reuses the CTA Button block's own config (no hardcoded text); the
+  // sticky bar only renders when such a block exists. Action priority mirrors
+  // the page's own logic: an existing COD order form wins (scroll to it), else
+  // a configured custom URL redirects, else the existing Buy Now handler runs.
+  const ctaBlock     = sections.find((b) => b.type === "cta" && b.visible !== false);
+  const hasOrderForm = sections.some((b) => b.type === "orderForm" && b.visible !== false);
+  const handleStickyCTA = () => {
+    if (hasOrderForm) {
+      document.getElementById("lp-order-form")?.scrollIntoView({ behavior: "smooth", block: "start" });
+    } else if (ctaBlock?.config?.buttonUrl) {
+      window.location.href = ctaBlock.config.buttonUrl;
+    } else {
+      handleBuyNow();
+    }
+  };
 
   // ════════════════════════════════════════════════════════════════════════════
   //  Empty by default — only renders what Builder explicitly added
@@ -1376,24 +1391,10 @@ function OfferContent({ initialLandingPage = null, initialProduct = null }) {
         return popupBlock ? <ActivityPopup cfg={popupBlock.config || {}} product={product} /> : null;
       })()}
 
-      {/* Sticky buy button */}
-      {product && (
-        <div className="fixed bottom-0 left-0 right-0 z-50 bg-white border-t border-gray-100 shadow-xl px-4 py-3 flex items-center gap-3">
-          <div className="flex-1 min-w-0">
-            <p className="text-sm font-black text-gray-900 truncate">{product.title}</p>
-            {price != null && (
-              <div className="flex items-center gap-2">
-                <span className="text-amber-500 font-black text-sm">{Number(price).toFixed(0)} MAD</span>
-                {originalPrice && <span className="text-xs text-gray-400 line-through">{Number(originalPrice).toFixed(0)} MAD</span>}
-              </div>
-            )}
-          </div>
-          <button onClick={handleBuyNow} disabled={buying}
-            className="flex items-center gap-1.5 px-5 py-3 bg-amber-400 hover:bg-amber-500 active:scale-[0.97] text-white rounded-xl font-black text-sm transition-all shadow-md shadow-amber-200 whitespace-nowrap disabled:opacity-70">
-            <Zap className="w-4 h-4" />
-            {buying ? "..." : "اطلب الآن"}
-          </button>
-        </div>
+      {/* Sticky CTA — config-driven, COD-form aware; reuses existing handlers.
+          Only renders when the page has a CTA Button block. */}
+      {ctaBlock && (
+        <StickyCTA cfg={ctaBlock.config || {}} onOrder={handleStickyCTA} buying={buying} />
       )}
     </div>
   );
