@@ -6,6 +6,7 @@ import { Star, Check, X, Zap, Home, ChevronDown, ChevronUp } from "lucide-react"
 import Link from "next/link";
 import { fetchCached } from "@/lib/dataCache";
 import StickyCTA from "@/components/Product/StickyCTA";
+import { resolveClickId } from "@/lib/tracking/clickId";
 
 // ══════════════════════════════════════════════════════════════════════════════
 //  HELPERS
@@ -653,7 +654,7 @@ function BlockRenderer({ block, product, landingPage, onBuyNow, buying }) {
       return <AudioBlock cfg={cfg} />;
 
     case "orderForm":
-      return <div id="lp-order-form"><OrderFormBlock cfg={cfg} product={product} /></div>;
+      return <div id="lp-order-form"><OrderFormBlock cfg={cfg} product={product} landingPage={landingPage} /></div>;
 
     case "upsell": {
       const lpProds = Array.isArray(landingPage?.products) ? landingPage.products : [];
@@ -878,7 +879,7 @@ function AudioBlock({ cfg }) {
 //  ORDER FORM BLOCK (inline COD checkout)
 // ══════════════════════════════════════════════════════════════════════════════
 
-function OrderFormBlock({ cfg, product }) {
+function OrderFormBlock({ cfg, product, landingPage }) {
   const [form,   setForm]   = useState({ name: "", phone: "", city: "", address: "" });
   const [status, setStatus] = useState("idle"); // idle | submitting | success | error
   const setF = (k, v) => setForm((f) => ({ ...f, [k]: v }));
@@ -890,15 +891,27 @@ function OrderFormBlock({ cfg, product }) {
     try {
       const sessionId = `lp-${Date.now()}-${Math.random().toString(36).slice(2)}`;
       const price = product?.salePrice || product?.regularPrice || 0;
+
+      // Attribution + tracking — reuse existing storage/fields the working
+      // checkout already relies on (no new capture logic, no schema change).
+      const affiliateId = (() => {
+        try { return localStorage.getItem("affiliateId") || null; } catch { return null; }
+      })();
+      const bemobClickId = resolveClickId();
+      const city    = form.city.trim();
+      const address = form.address.trim();
+
       const res = await fetch("/api/order", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           name:  form.name.trim(),
           phone: form.phone.trim(),
+          // Nested shape so admin shows city/address (matches working checkout).
           shipping: {
-            city:    form.city.trim(),
-            address: form.address.trim(),
+            address: { city, address1: address || city },
+            name:  form.name.trim(),
+            phone: form.phone.trim(),
           },
           products: {
             items: [{
@@ -915,6 +928,11 @@ function OrderFormBlock({ cfg, product }) {
           },
           status: "pending",
           sessionId,
+          // Affiliate attribution + landing source marker (existing fields only).
+          affiliateId,
+          orderSource: "landing",
+          utm_source:  landingPage?.slug || null,
+          bemobClickId,
         }),
       });
       setStatus(res.ok ? "success" : "error");
