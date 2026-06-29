@@ -30,13 +30,14 @@ function Modal({ title, onClose, children }) {
   );
 }
 
-function AffiliateForm({ initial, onSave, onClose, saving }) {
+function AffiliateForm({ initial, onSave, onClose, saving, affiliates = [] }) {
   const [form, setForm] = useState({
     name: initial?.name || "",
     username: initial?.username || "",
     password: "",
     commissionRate: initial?.commissionRate ?? 0.5,
     isActive: initial?.isActive ?? false,
+    parentId: "",
   });
 
   const set = (k, v) => setForm((f) => ({ ...f, [k]: v }));
@@ -82,6 +83,24 @@ function AffiliateForm({ initial, onSave, onClose, saving }) {
           ))}
         </select>
       </div>
+
+      {/* Parent affiliate — create only. Empty = standalone (unchanged behavior). */}
+      {!initial && (
+        <div>
+          <label className="block text-xs font-semibold text-gray-600 mb-1.5">Affilié parent</label>
+          <select
+            value={form.parentId}
+            onChange={(e) => set("parentId", e.target.value)}
+            className="w-full px-3 py-2.5 text-sm border border-gray-200 rounded-xl bg-gray-50 focus:outline-none focus:border-gray-400"
+          >
+            <option value="">Aucun (None)</option>
+            {affiliates.map((a) => (
+              <option key={a._id} value={a._id}>{a.username}</option>
+            ))}
+          </select>
+          <p className="text-xs text-gray-400 mt-1">Place ce nouvel affilié dans l'équipe du parent sélectionné</p>
+        </div>
+      )}
 
       <div className="flex items-center gap-3">
         <label className="relative inline-flex items-center cursor-pointer">
@@ -743,6 +762,7 @@ export default function AdminAffiliatesPage() {
             onSave={handleSave}
             onClose={() => setModal(null)}
             saving={saving}
+            affiliates={affiliates}
           />
         </Modal>
       )}

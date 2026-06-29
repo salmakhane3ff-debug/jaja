@@ -27,17 +27,20 @@ async function getHandler() {
 async function postHandler(req) {
   try {
     const body = await req.json();
-    const { name, username, password, commissionRate } = body;
+    const { name, username, password, commissionRate, parentId } = body;
 
     if (!username || !password) {
       return Response.json({ error: 'username et password requis' }, { status: 400 });
     }
 
-    const affiliate = await adminCreateAffiliate({ name, username, password, commissionRate });
+    const affiliate = await adminCreateAffiliate({ name, username, password, commissionRate, parentId });
     return Response.json(affiliate, { status: 201 });
   } catch (err) {
     if (err.code === 'P2002') {
       return Response.json({ error: 'Ce nom d\'utilisateur est déjà pris' }, { status: 409 });
+    }
+    if (err.code === 'PARENT_NOT_FOUND') {
+      return Response.json({ error: 'Affilié parent introuvable' }, { status: 400 });
     }
     console.error('Admin affiliates POST error:', err);
     return Response.json({ error: 'Erreur serveur' }, { status: 500 });

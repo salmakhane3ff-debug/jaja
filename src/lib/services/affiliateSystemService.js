@@ -715,8 +715,20 @@ export async function adminGetAllAffiliates() {
   }));
 }
 
-export async function adminCreateAffiliate({ name, username, password, commissionRate }) {
+export async function adminCreateAffiliate({ name, username, password, commissionRate, parentId }) {
   if (!username || !password) throw new Error('username et password sont requis');
+
+  // Optional team parent — verify it exists before linking (avoids FK P2003).
+  // Empty/absent parentId → standalone affiliate, exactly as before.
+  let validParentId = null;
+  if (parentId) {
+    const parentExists = await prisma.affiliate.count({ where: { id: parentId } });
+    if (parentExists === 0) {
+      throw Object.assign(new Error('Affilié parent introuvable'), { code: 'PARENT_NOT_FOUND' });
+    }
+    validParentId = parentId;
+  }
+
   const hashed = await hashPassword(password);
   const a = await prisma.affiliate.create({
     data: {
@@ -725,8 +737,13 @@ export async function adminCreateAffiliate({ name, username, password, commissio
       password:       hashed,
       commissionRate: parseFloat(commissionRate) || 0.5,
       isActive:       false,
+      ...(validParentId ? { parentId: validParentId } : {}),
     },
   });
+
+  // Refresh the parent's cached "Mon équipe" so the new member shows immediately.
+  if (validParentId) invalidateTeamCache(validParentId);
+
   return mapAffiliate(a);
 }
 
