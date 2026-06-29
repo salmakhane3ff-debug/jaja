@@ -922,6 +922,9 @@ function OrderFormBlock({ cfg, product, landingPage }) {
               title:     product?.title || "منتج",
               quantity:  1,
               price,
+              // Same image shape as the working checkout so admin + affiliate
+              // order details render the product image (stored in productSnapshot).
+              images:    (product?.images || []).map(imgSrc).filter(Boolean),
             }],
           },
           paymentDetails: {
