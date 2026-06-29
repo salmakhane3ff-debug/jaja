@@ -897,6 +897,9 @@ function OrderFormBlock({ cfg, product, landingPage }) {
       const affiliateId = (() => {
         try { return localStorage.getItem("affiliateId") || null; } catch { return null; }
       })();
+      const affiliateRef = (() => {
+        try { return localStorage.getItem("affiliateRef") || null; } catch { return null; }
+      })();
       const bemobClickId = resolveClickId();
       const city    = form.city.trim();
       const address = form.address.trim();
@@ -935,7 +938,28 @@ function OrderFormBlock({ cfg, product, landingPage }) {
           bemobClickId,
         }),
       });
-      setStatus(res.ok ? "success" : "error");
+      if (res.ok) {
+        // Affiliate recording — identical flow/payload to confirm/page.jsx.
+        // Fire-and-forget: must never block or fail the order itself.
+        try {
+          const created = await res.json();
+          const orderId = created?._id || created?.id || null;
+          if (affiliateRef || affiliateId) {
+            fetch("/api/affiliate/record-order", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                username: affiliateRef, affiliateId, orderId,
+                clientName: form.name.trim(), clientPhone: form.phone.trim() || "",
+                productTitle: product?.title || "", total: price,
+              }),
+            }).catch(() => {});
+          }
+        } catch {}
+        setStatus("success");
+      } else {
+        setStatus("error");
+      }
     } catch {
       setStatus("error");
     }
