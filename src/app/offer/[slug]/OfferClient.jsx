@@ -1394,7 +1394,12 @@ function OfferContent({ initialLandingPage = null, initialProduct = null }) {
       {/* Sticky CTA — config-driven, COD-form aware; reuses existing handlers.
           Only renders when the page has a CTA Button block. */}
       {ctaBlock && (
-        <StickyCTA cfg={ctaBlock.config || {}} onOrder={handleStickyCTA} buying={buying} />
+        <StickyCTA
+          cfg={ctaBlock.config || {}}
+          onOrder={handleStickyCTA}
+          buying={buying}
+          hideWhenInViewId={hasOrderForm ? "lp-order-form" : undefined}
+        />
       )}
     </div>
   );

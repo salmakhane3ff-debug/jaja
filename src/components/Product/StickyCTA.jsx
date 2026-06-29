@@ -22,10 +22,11 @@ import { Zap } from "lucide-react";
 // Show once the visitor has scrolled at least this fraction of the page.
 const SCROLL_THRESHOLD = 0.35;
 
-export default function StickyCTA({ cfg = {}, onOrder, buying = false }) {
+export default function StickyCTA({ cfg = {}, onOrder, buying = false, hideWhenInViewId }) {
   const [visible, setVisible] = useState(false);
   const [pulse, setPulse] = useState(false);
   const [reducedMotion, setReducedMotion] = useState(false);
+  const [formInView, setFormInView] = useState(false);
 
   // Respect prefers-reduced-motion.
   useEffect(() => {
@@ -57,9 +58,27 @@ export default function StickyCTA({ cfg = {}, onOrder, buying = false }) {
     return () => window.removeEventListener("scroll", onScroll);
   }, []);
 
+  // Hide the bar while the COD order form is in view, so it never covers the
+  // form's submit button. Only active when the page provides a form anchor id
+  // (i.e. an order form exists); otherwise behavior is unchanged.
+  useEffect(() => {
+    if (!hideWhenInViewId || typeof IntersectionObserver === "undefined") return;
+    const el = document.getElementById(hideWhenInViewId);
+    if (!el) return;
+    const observer = new IntersectionObserver(
+      ([entry]) => setFormInView(entry.isIntersecting),
+      { threshold: 0 }
+    );
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, [hideWhenInViewId]);
+
+  // Final visibility: scrolled-in AND not currently over the order form.
+  const show = visible && !formInView;
+
   // Subtle pulse every 8–12s (skipped under reduced motion / when hidden).
   useEffect(() => {
-    if (reducedMotion || !visible) return;
+    if (reducedMotion || !show) return;
     let timeoutId;
     let releaseId;
     const schedule = () => {
@@ -72,7 +91,7 @@ export default function StickyCTA({ cfg = {}, onOrder, buying = false }) {
     };
     schedule();
     return () => { clearTimeout(timeoutId); clearTimeout(releaseId); };
-  }, [reducedMotion, visible]);
+  }, [reducedMotion, show]);
 
   // All visible text/colors come from the page's CTA block config.
   const headingText = cfg.text;
@@ -80,7 +99,7 @@ export default function StickyCTA({ cfg = {}, onOrder, buying = false }) {
   const buttonColor = cfg.buttonColor || "#f59e0b";
   const barBg = cfg.bgColor || "#ffffff";
 
-  const barCls = `md:hidden fixed bottom-0 left-0 right-0 z-50 will-change-transform ${reducedMotion ? "" : "transition-transform duration-300 ease-out"} ${visible ? "translate-y-0" : "translate-y-full"}`;
+  const barCls = `md:hidden fixed bottom-0 left-0 right-0 z-50 will-change-transform ${reducedMotion ? "" : "transition-transform duration-300 ease-out"} ${show ? "translate-y-0" : "translate-y-full"}`;
   const innerCls = "rounded-t-2xl border-t border-gray-100 shadow-[0_-4px_28px_rgba(0,0,0,0.13)] px-4 py-3 flex items-center gap-3 min-h-[64px]";
   const buttonCls = "shrink-0 flex items-center gap-1.5 px-6 py-3 rounded-xl text-white font-black text-base whitespace-nowrap shadow-md disabled:opacity-70";
 
