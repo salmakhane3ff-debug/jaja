@@ -390,6 +390,9 @@ function AvatarUpload({ affiliate, authHeaders, onUpdate }) {
 // ── Demo Competition helpers ──────────────────────────────────────────────────
 
 const RANK_MEDALS  = ['🥇', '🥈', '🥉'];
+// UI-only: hide the internal demo_ prefix from competition usernames.
+// Strips a single leading "demo_"; all other usernames are returned unchanged.
+const displayUsername = (u) => (u || "").replace(/^demo_/, "");
 const GROWTH_BADGE = {
   aggressive: { label: 'Top Performer',  cls: 'bg-red-100 text-red-700'    },
   consistent: { label: 'Régulier ⚡',    cls: 'bg-blue-100 text-blue-700'  },
@@ -462,7 +465,7 @@ function DemoAffiliateModal({ affiliateId, onClose, lang }) {
                   <p className="font-black text-gray-900 text-base truncate">{data.name}</p>
                   {data.rank <= 3 && <span className="text-xl">{RANK_MEDALS[data.rank - 1]}</span>}
                 </div>
-                <p className="text-xs text-gray-400 font-mono">@{data.username}</p>
+                <p className="text-xs text-gray-400 font-mono">@{displayUsername(data.username)}</p>
                 <div className="flex items-center gap-2 mt-1 flex-wrap">
                   <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-gray-900 text-white">
                     #{data.rank} {fr ? 'classement' : 'ترتيب'}
@@ -822,7 +825,7 @@ function CompetitionTab({ lang }) {
                         </span>
                       )}
                     </div>
-                    <p className="text-[10px] text-gray-400 font-mono">@{a.username}</p>
+                    <p className="text-[10px] text-gray-400 font-mono">@{displayUsername(a.username)}</p>
                   </div>
 
                   {/* Stats */}
