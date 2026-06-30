@@ -27,13 +27,13 @@ async function getHandler() {
 async function postHandler(req) {
   try {
     const body = await req.json();
-    const { name, username, password, commissionRate, parentId } = body;
+    const { name, username, password, commissionRate, parentId, goalOrders, goalValidReferrals } = body;
 
     if (!username || !password) {
       return Response.json({ error: 'username et password requis' }, { status: 400 });
     }
 
-    const affiliate = await adminCreateAffiliate({ name, username, password, commissionRate, parentId });
+    const affiliate = await adminCreateAffiliate({ name, username, password, commissionRate, parentId, goalOrders, goalValidReferrals });
     return Response.json(affiliate, { status: 201 });
   } catch (err) {
     if (err.code === 'P2002') {

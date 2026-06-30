@@ -241,6 +241,8 @@ model Affiliate {
   generatedRevenue     Float                   @default(0)           // sum of delivered order totals
   teamBonusClaimed     Boolean                 @default(false)
   bonusBalance         Float                   @default(0)           // credited on bonus claim
+  goalOrders           Int?                                          // Objectif commandes (per-affiliate; null → default 5)
+  goalValidReferrals   Int?                                          // Objectif parrainages valides (per-affiliate; null → computed)
   clicks          AffiliateClick[]
   notifications   AffiliateNotification[]
   affiliateOrders AffiliateOrder[]

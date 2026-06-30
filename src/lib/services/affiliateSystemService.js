@@ -34,6 +34,8 @@ function mapAffiliate(a) {
     generatedRevenue:    a.generatedRevenue     ?? 0,
     teamBonusClaimed:    a.teamBonusClaimed     ?? false,
     bonusBalance:        a.bonusBalance         ?? 0,
+    goalOrders:          a.goalOrders           ?? null,
+    goalValidReferrals:  a.goalValidReferrals   ?? null,
     createdAt:           a.createdAt,
   };
 }
@@ -610,8 +612,12 @@ export async function getAffiliateDashboardStats(affiliateId) {
  * Goal: reach `target` valid referrals to unlock the bonus.
  * Target scales down as the team grows (max reduction: -2 per 2 members, floor 3).
  */
-export function computeGamification(validReferrals, teamSize) {
-  const target   = Math.max(3, 5 - Math.floor(teamSize / 2));
+export function computeGamification(validReferrals, teamSize, explicitTarget) {
+  // Per-affiliate "Objectif parrainages valides" wins when set; otherwise the
+  // existing computed target behavior is preserved unchanged.
+  const target = (Number.isInteger(explicitTarget) && explicitTarget > 0)
+    ? explicitTarget
+    : Math.max(3, 5 - Math.floor(teamSize / 2));
   const progress = Math.min(100, Math.round((validReferrals / target) * 100));
   return { target, progress, remaining: Math.max(0, target - validReferrals), validReferrals };
 }
@@ -715,7 +721,7 @@ export async function adminGetAllAffiliates() {
   }));
 }
 
-export async function adminCreateAffiliate({ name, username, password, commissionRate, parentId }) {
+export async function adminCreateAffiliate({ name, username, password, commissionRate, parentId, goalOrders, goalValidReferrals }) {
   if (!username || !password) throw new Error('username et password sont requis');
 
   // Optional team parent — verify it exists before linking (avoids FK P2003).
@@ -729,6 +735,10 @@ export async function adminCreateAffiliate({ name, username, password, commissio
     validParentId = parentId;
   }
 
+  // Optional per-affiliate objectives — stored only when a valid integer is given.
+  const parsedGoalOrders         = parseInt(goalOrders, 10);
+  const parsedGoalValidReferrals = parseInt(goalValidReferrals, 10);
+
   const hashed = await hashPassword(password);
   const a = await prisma.affiliate.create({
     data: {
@@ -738,6 +748,8 @@ export async function adminCreateAffiliate({ name, username, password, commissio
       commissionRate: parseFloat(commissionRate) || 0.5,
       isActive:       false,
       ...(validParentId ? { parentId: validParentId } : {}),
+      ...(Number.isInteger(parsedGoalOrders)         ? { goalOrders: parsedGoalOrders } : {}),
+      ...(Number.isInteger(parsedGoalValidReferrals) ? { goalValidReferrals: parsedGoalValidReferrals } : {}),
     },
   });
 

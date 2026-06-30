@@ -29,7 +29,7 @@ async function getHandler(req, _ctx, decoded) {
       getTeamBonusConfig(),
     ]);
 
-    const gamification = computeGamification(stats.validReferrals, team.length);
+    const gamification = computeGamification(stats.validReferrals, team.length, affiliate.goalValidReferrals);
 
     // Enrich each team member with their dynamic commission %
     const tiers = bonusConfig.commissionTiers;

@@ -38,6 +38,8 @@ function AffiliateForm({ initial, onSave, onClose, saving, affiliates = [] }) {
     commissionRate: initial?.commissionRate ?? 0.5,
     isActive: initial?.isActive ?? false,
     parentId: "",
+    goalOrders: "",
+    goalValidReferrals: "",
   });
 
   const set = (k, v) => setForm((f) => ({ ...f, [k]: v }));
@@ -99,6 +101,34 @@ function AffiliateForm({ initial, onSave, onClose, saving, affiliates = [] }) {
             ))}
           </select>
           <p className="text-xs text-gray-400 mt-1">Place ce nouvel affilié dans l'équipe du parent sélectionné</p>
+        </div>
+      )}
+
+      {/* Per-affiliate objectives — create only. Empty = defaults on the dashboard. */}
+      {!initial && (
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label className="block text-xs font-semibold text-gray-600 mb-1.5">Objectif commandes</label>
+            <input
+              type="number"
+              min={0}
+              value={form.goalOrders}
+              onChange={(e) => set("goalOrders", e.target.value)}
+              placeholder="5"
+              className="w-full px-3 py-2.5 text-sm border border-gray-200 rounded-xl bg-gray-50 focus:outline-none focus:border-gray-400"
+            />
+          </div>
+          <div>
+            <label className="block text-xs font-semibold text-gray-600 mb-1.5">Objectif parrainages valides</label>
+            <input
+              type="number"
+              min={0}
+              value={form.goalValidReferrals}
+              onChange={(e) => set("goalValidReferrals", e.target.value)}
+              placeholder="auto"
+              className="w-full px-3 py-2.5 text-sm border border-gray-200 rounded-xl bg-gray-50 focus:outline-none focus:border-gray-400"
+            />
+          </div>
         </div>
       )}
 
