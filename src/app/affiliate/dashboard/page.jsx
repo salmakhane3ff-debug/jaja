@@ -1329,14 +1329,14 @@ export default function AffiliateDashboard() {
                     </div>
                   </div>
 
-                  {/* Orders objective */}
+                  {/* Orders objective — counts delivered orders only (same basis as commissions) */}
                   <div>
                     <p className="mb-1.5 text-xs font-bold">
-                      {stats?.totalOrders ?? 0} / {affiliate?.goalOrders || 5} commandes
+                      {affiliate?.deliveredOrdersCount ?? 0} / {affiliate?.goalOrders || 5} commandes
                     </p>
                     <div className="w-full overflow-hidden rounded-full h-2" style={{ background: "rgba(255,255,255,0.25)" }}>
                       <div className="h-full rounded-full bg-white transition-all duration-700"
-                        style={{ width: `${Math.min(100, ((stats?.totalOrders ?? 0) / (affiliate?.goalOrders || 5)) * 100)}%` }} />
+                        style={{ width: `${Math.min(100, ((affiliate?.deliveredOrdersCount ?? 0) / (affiliate?.goalOrders || 5)) * 100)}%` }} />
                     </div>
                   </div>
                 </div>

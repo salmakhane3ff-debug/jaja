@@ -38,8 +38,8 @@ function AffiliateForm({ initial, onSave, onClose, saving, affiliates = [] }) {
     commissionRate: initial?.commissionRate ?? 0.5,
     isActive: initial?.isActive ?? false,
     parentId: "",
-    goalOrders: "",
-    goalValidReferrals: "",
+    goalOrders: initial?.goalOrders ?? "",
+    goalValidReferrals: initial?.goalValidReferrals ?? "",
   });
 
   const set = (k, v) => setForm((f) => ({ ...f, [k]: v }));
@@ -104,9 +104,8 @@ function AffiliateForm({ initial, onSave, onClose, saving, affiliates = [] }) {
         </div>
       )}
 
-      {/* Per-affiliate objectives — create only. Empty = defaults on the dashboard. */}
-      {!initial && (
-        <div className="grid grid-cols-2 gap-3">
+      {/* Per-affiliate objectives — shown on create AND edit. Empty = dashboard fallback. */}
+      <div className="grid grid-cols-2 gap-3">
           <div>
             <label className="block text-xs font-semibold text-gray-600 mb-1.5">Objectif commandes</label>
             <input
@@ -130,7 +129,6 @@ function AffiliateForm({ initial, onSave, onClose, saving, affiliates = [] }) {
             />
           </div>
         </div>
-      )}
 
       <div className="flex items-center gap-3">
         <label className="relative inline-flex items-center cursor-pointer">

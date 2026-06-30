@@ -767,6 +767,16 @@ export async function adminUpdateAffiliate(id, data) {
   if (data.password       !== undefined && data.password.trim()) {
     update.password = await hashPassword(data.password);
   }
+  // Per-affiliate objectives — only touched when present in the payload (so the
+  // quick active-toggle never wipes them). Empty/invalid → null = dashboard fallback.
+  if (data.goalOrders !== undefined) {
+    const n = parseInt(data.goalOrders, 10);
+    update.goalOrders = Number.isInteger(n) ? n : null;
+  }
+  if (data.goalValidReferrals !== undefined) {
+    const n = parseInt(data.goalValidReferrals, 10);
+    update.goalValidReferrals = Number.isInteger(n) ? n : null;
+  }
   const a = await prisma.affiliate.update({ where: { id }, data: update });
   return mapAffiliate(a);
 }
