@@ -13,6 +13,7 @@ import HomeFeedbackSection from "@/components/HomeFeedbackSection";
 import { useLanguage }   from "@/context/LanguageContext";
 import ShoppableReels      from "@/components/ShoppableReels";
 import BeforeAfterSlider   from "@/components/BeforeAfterSlider";
+import { trackClarity }    from "@/lib/trackClarity";
 
 // ── Countdown section ─────────────────────────────────────────────────────────
 function CountdownTimer({ targetDate }) {
@@ -141,7 +142,7 @@ function ContactSection({ data }) {
     <div className="bg-white rounded-3xl border border-gray-200 px-6 py-8 text-center max-w-lg mx-auto shadow-sm">
       {data.title && <h2 className="text-xl font-bold text-gray-900 mb-4">{data.title}</h2>}
       <div className="space-y-2 text-sm text-gray-600">
-        {data.phone   && <p>📞 <a href={`tel:${data.phone}`}   className="hover:text-black">{data.phone}</a></p>}
+        {data.phone   && <p>📞 <a href={`tel:${data.phone}`}   onClick={() => trackClarity("cta_phone", "footer")} className="hover:text-black">{data.phone}</a></p>}
         {data.email   && <p>✉️ <a href={`mailto:${data.email}`} className="hover:text-black">{data.email}</a></p>}
         {data.address && <p>📍 {data.address}</p>}
       </div>

@@ -7,6 +7,7 @@ import Link from "next/link";
 import { fetchCached } from "@/lib/dataCache";
 import StickyCTA from "@/components/Product/StickyCTA";
 import { resolveClickId } from "@/lib/tracking/clickId";
+import { trackClarity } from "@/lib/trackClarity";
 
 // ══════════════════════════════════════════════════════════════════════════════
 //  HELPERS
@@ -1345,6 +1346,7 @@ function OfferContent({ initialLandingPage = null, initialProduct = null }) {
   // ── Buy Now ────────────────────────────────────────────────────────────────
   const handleBuyNow = () => {
     if (buying || !product) return;
+    trackClarity("cta_buy_now", product._id || product.id);
     setBuying(true);
     const buyNow = [{
       productId:    product._id || product.id,

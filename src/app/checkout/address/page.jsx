@@ -3,6 +3,7 @@ import React, { useState, useEffect, useRef } from "react";
 import { applyGiftsToItems } from "@/lib/giftUtils";
 import { useRouter } from "next/navigation";
 import FunnelTracker from "@/components/tracking/FunnelTracker";
+import ClarityTag from "@/components/tracking/ClarityTag";
 import {
   User, Phone, Mail, MapPin, Truck, Package,
   Clock, ArrowRight, ShoppingBag, Home, Shield,
@@ -547,6 +548,7 @@ export default function CheckoutAddressPage() {
   return (
     <div className="min-h-screen bg-gray-50">
       <FunnelTracker event="checkout_start" />
+      <ClarityTag tag="checkout_start" />
 
 
       <div className="max-w-lg mx-auto px-4 py-6">

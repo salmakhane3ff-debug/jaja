@@ -14,6 +14,7 @@ import ProductLabel from "@/components/ProductLabel";
 import { Skeleton } from "@heroui/skeleton";
 import { ShoppingBag, Trash2, Plus, Minus, ArrowRight, Heart, X } from "lucide-react";
 import { useLanguage } from "@/context/LanguageContext";
+import { trackClarity } from "@/lib/trackClarity";
 
 const CURRENCY = "MAD";
 
@@ -186,6 +187,7 @@ export default function CartPage() {
   };
 
   const handleBuyNow = () => {
+    trackClarity("cta_buy_now", "cart");
     // Selected regular items + all gift items
     const selectedCartItems = cartItems.filter(
       item => selectedItems[item.productId] || item._isGift

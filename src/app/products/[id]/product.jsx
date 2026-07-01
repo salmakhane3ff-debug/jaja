@@ -11,6 +11,7 @@ import { ShoppingBag, Heart, Star, Truck, Shield, Share2, Plus, Minus, Award, Bo
 import { Button } from "@heroui/react";
 import { useCart } from "@/hooks/useCart";
 import { fireFunnelEvent } from "@/components/tracking/FunnelTracker";
+import { trackClarity } from "@/lib/trackClarity";
 import { useUIControl } from "@/hooks/useUIControl";
 import { useLanguage } from "@/context/LanguageContext";
 import { useSetting } from "@/context/SettingsContext";
@@ -111,6 +112,7 @@ export default function Product({ data }) {
 
     // First-party funnel event (internal analytics — separate from the pixel)
     fireFunnelEvent({ event: "product_click", productId: data._id });
+    trackClarity("view_product", data._id);
   }, [data._id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
@@ -236,6 +238,7 @@ export default function Product({ data }) {
   };
 
   const handleBuyNow = async () => {
+    trackClarity("cta_buy_now", data._id);
     let baseItems;
     if (selectedBundle === "2+1") {
       const freeTitle = giftProduct?.title

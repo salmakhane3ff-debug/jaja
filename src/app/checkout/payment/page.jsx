@@ -2,6 +2,7 @@
 import React, { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import FunnelTracker from "@/components/tracking/FunnelTracker";
+import ClarityTag from "@/components/tracking/ClarityTag";
 import { useLanguage } from "@/context/LanguageContext";
 import {
   ArrowLeft, Building2, Package, CheckCircle,
@@ -543,6 +544,7 @@ export default function PaymentPage() {
   return (
     <div className="min-h-screen bg-gray-50">
       <FunnelTracker event="payment_selected" />
+      <ClarityTag tag="payment_selected" />
 
       {/* Top bar */}
       <div className="bg-white border-b border-gray-100 sticky top-0 z-10">

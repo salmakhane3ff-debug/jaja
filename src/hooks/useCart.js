@@ -3,6 +3,7 @@
 import { useState, createContext, useContext } from 'react';
 import { useDiscountRules } from '@/hooks/useDiscountRules';
 import { fireFunnelEvent } from '@/components/tracking/FunnelTracker';
+import { trackClarity } from '@/lib/trackClarity';
 
 // Create cart context for global cart drawer state
 const CartContext = createContext();
@@ -81,6 +82,7 @@ export const useCart = () => {
           // First-party funnel event — fires once here for every add-to-cart
           // entry point (PDP, grid, slider, wishlist). Not the Meta Pixel event.
           fireFunnelEvent({ event: "add_to_cart", productId: product._id });
+          trackClarity("add_to_cart", product._id);
 
           setAddingToCart((prev) => ({ ...prev, [product._id]: false }));
           

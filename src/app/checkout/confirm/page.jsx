@@ -7,6 +7,7 @@ import {
   X, Shield, CreditCard, Zap, MessageCircle,
 } from "lucide-react";
 import { resolveClickId } from "@/lib/tracking/clickId";
+import { trackClarity } from "@/lib/trackClarity";
 
 // ── Steps bar — step 3 active ─────────────────────────────────────────────────
 
@@ -801,6 +802,7 @@ export default function ConfirmPage() {
             href={`https://wa.me/${bankInfo.whatsapp.replace(/\D/g, "")}?text=${encodeURIComponent("أريد تأكيد معلومات الدفع")}`}
             target="_blank"
             rel="noreferrer"
+            onClick={() => trackClarity("cta_whatsapp", "confirm")}
             className="w-full flex items-center justify-center gap-2 py-4 border-2 border-green-400 text-green-600 rounded-2xl font-black text-base hover:bg-green-50 active:scale-[0.98] transition-all">
             <MessageCircle className="w-5 h-5" /> {t("checkout_whatsapp_btn")}
           </a>

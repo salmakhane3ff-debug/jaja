@@ -4,6 +4,7 @@ import { useSearchParams, useRouter } from "next/navigation";
 import { CheckCircle, Home, MessageCircle, Printer, Clock, AlertCircle, CreditCard } from "lucide-react";
 import Link from "next/link";
 import { useLanguage } from "@/context/LanguageContext";
+import { trackClarity } from "@/lib/trackClarity";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -149,6 +150,8 @@ function SuccessContent() {
         );
       }
     } catch {}
+
+    trackClarity("purchase", order._id);
 
     try {
       const getCookie = (name) => {
@@ -354,6 +357,7 @@ function SuccessContent() {
             href={whatsappUrl}
             target="_blank"
             rel="noreferrer"
+            onClick={() => trackClarity("cta_whatsapp", "success")}
             className="w-full flex items-center justify-center gap-3 bg-[#25D366] hover:bg-[#1ebe59] active:scale-[0.98] text-white py-4 rounded-2xl font-black text-base transition-all shadow-lg shadow-green-200 mb-5 print:hidden"
           >
             <MessageCircle className="w-5 h-5" />
@@ -584,6 +588,7 @@ function SuccessContent() {
               href={whatsappUrl}
               target="_blank"
               rel="noreferrer"
+              onClick={() => trackClarity("cta_whatsapp", "success")}
               className="flex-1 flex items-center justify-center gap-2 py-3.5 bg-[#25D366] text-white rounded-2xl font-semibold text-sm hover:bg-[#1ebe59] active:scale-[0.98] transition-all"
             >
               <MessageCircle className="w-4 h-4" />

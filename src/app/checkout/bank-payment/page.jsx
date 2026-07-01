@@ -6,6 +6,7 @@ import {
   MessageCircle, CheckCircle, X, Copy, CreditCard,
 } from "lucide-react";
 import { resolveClickId } from "@/lib/tracking/clickId";
+import { trackClarity } from "@/lib/trackClarity";
 
 // ── Steps bar (both step 1 and 2 done) ───────────────────────────────────────
 
@@ -594,6 +595,7 @@ export default function BankPaymentPage() {
             href={`https://wa.me/${displayInfo.whatsapp.replace(/\D/g, "")}`}
             target="_blank"
             rel="noreferrer"
+            onClick={() => trackClarity("cta_whatsapp", "bank_payment")}
             className="w-full flex items-center justify-center gap-2 py-3.5 border-2 border-green-400 text-green-600 rounded-2xl font-bold text-sm hover:bg-green-50 active:scale-[0.98] transition-all mb-4">
             <MessageCircle className="w-4 h-4" /> راسلنا على واتساب قبل الدفع
           </a>

@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import { Input, Textarea, Button } from "@heroui/react";
 import { Send, Mail, Phone, MapPin } from "lucide-react";
+import { trackClarity } from "@/lib/trackClarity";
 
 export default function ContactPage() {
   const [formData, setFormData] = useState({
@@ -127,6 +128,7 @@ export default function ContactPage() {
                       <h3 className="font-semibold text-gray-900 mb-1">Phone</h3>
                       <a
                         href={`tel:${storeSettings.footerPhone}`}
+                        onClick={() => trackClarity("cta_phone", "contact")}
                         className="text-gray-600 hover:text-green-600 transition-colors"
                       >
                         {storeSettings.footerPhone}
