@@ -8,6 +8,7 @@ import { Providers } from "./providers";
 import MainFooterWrapper from "@/components/template/FooterClientWrapper";
 import MainHeaderWrapper from "@/components/template/MainHeaderWrapper";
 import ScriptInjector from "@/components/ScriptInjector";
+import ClarityScript from "@/components/ClarityScript";
 import UtmTracker from "@/components/UtmTracker";
 import AffiliateRefCapture from "@/components/AffiliateRefCapture";
 import TrackingCapture from "@/components/tracking/TrackingCapture";
@@ -126,6 +127,7 @@ export default async function RootLayout({ children }) {
             <TrackingCapture />
           </Suspense>
           <ScriptInjector integrations={integrations} />
+          <ClarityScript />
           <Suspense fallback={null}>
             <PreloaderWrapper config={preloaderConfig}>
               <MainHeaderWrapper />
