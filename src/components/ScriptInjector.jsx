@@ -48,11 +48,7 @@ export default function ScriptInjector({ integrations }) {
         integrations.metaPixel?.pixelIds?.map(
           (pixel, index) =>
             pixel.id && (
-              <Script key={`pixel-${index}`} id={`pixel-${index}`} strategy="afterInteractive" onLoad={() => {
-                if (typeof window !== 'undefined' && typeof window.fbq === 'function') {
-                  window.fbq('track', 'PageView');
-                }
-              }}>
+              <Script key={`pixel-${index}`} id={`pixel-${index}`} strategy="afterInteractive">
                 {`
               !function(f,b,e,v,n,t,s)
               {if(f.fbq)return;n=f.fbq=function(){n.callMethod?

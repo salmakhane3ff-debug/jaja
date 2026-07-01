@@ -50,28 +50,32 @@ export default function OverviewDashboard() {
   const [affiliates, setAffiliates] = useState([]);
   const [landingPages, setLandingPages] = useState([]);
   const [tracking, setTracking] = useState(null);
+  const [funnelData, setFunnelData] = useState(null); // live funnel from /api/tracking/event
   const [feedback, setFeedback] = useState([]);
 
   useEffect(() => {
     async function fetchAll() {
       try {
-        const [affRes, lpRes, trackRes, fbRes] = await Promise.all([
+        const [affRes, lpRes, trackRes, fbRes, funnelRes] = await Promise.all([
           fetch("/api/affiliate"),
           fetch("/api/landing-page?admin=true"),
           fetch("/api/track"),
           fetch("/api/feedback?admin=true"),
+          fetch("/api/tracking/event"),
         ]);
 
-        const [affData, lpData, trackData, fbData] = await Promise.all([
+        const [affData, lpData, trackData, fbData, funnelResData] = await Promise.all([
           affRes.ok ? affRes.json() : [],
           lpRes.ok ? lpRes.json() : [],
           trackRes.ok ? trackRes.json() : null,
           fbRes.ok ? fbRes.json() : [],
+          funnelRes.ok ? funnelRes.json() : null,
         ]);
 
         setAffiliates(Array.isArray(affData) ? affData : []);
         setLandingPages(Array.isArray(lpData) ? lpData : []);
         setTracking(trackData);
+        setFunnelData(funnelResData);
         setFeedback(Array.isArray(fbData) ? fbData : []);
       } catch (err) {
         console.error("Dashboard fetch error:", err);
@@ -103,8 +107,8 @@ export default function OverviewDashboard() {
   // Traffic sources
   const sources = Array.isArray(tracking?.sources) ? tracking.sources.slice(0, 5) : [];
 
-  // Funnel
-  const funnel = Array.isArray(tracking?.funnel) ? tracking.funnel : [];
+  // Funnel — live data from /api/tracking/event ({ step, count, dropOff } per stage)
+  const funnel = Array.isArray(funnelData?.funnel) ? funnelData.funnel : [];
 
   // Event counts
   const counts = tracking?.counts || {};

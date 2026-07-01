@@ -10,6 +10,7 @@ import SectionRenderer from "@/components/SectionRenderer";
 import { ShoppingBag, Heart, Star, Truck, Shield, Share2, Plus, Minus, Award, Box, Tag, Check } from "lucide-react";
 import { Button } from "@heroui/react";
 import { useCart } from "@/hooks/useCart";
+import { fireFunnelEvent } from "@/components/tracking/FunnelTracker";
 import { useUIControl } from "@/hooks/useUIControl";
 import { useLanguage } from "@/context/LanguageContext";
 import { useSetting } from "@/context/SettingsContext";
@@ -107,6 +108,9 @@ export default function Product({ data }) {
         });
       }
     } catch {}
+
+    // First-party funnel event (internal analytics — separate from the pixel)
+    fireFunnelEvent({ event: "product_click", productId: data._id });
   }, [data._id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
