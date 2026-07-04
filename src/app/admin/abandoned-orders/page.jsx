@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
+import { SITE_ORIGIN } from "@/lib/siteUrl";
 import {
   ShoppingCart, Phone, User, MapPin, Clock,
   Trash2, RefreshCw, CheckCircle, Filter, Package, Link2, Copy,
@@ -71,7 +72,7 @@ function OrderLink({ cartId, orderId: initialOrderId }) {
   const [loading, setLoading] = useState(false);
 
   const url = orderId
-    ? `${typeof window !== "undefined" ? window.location.origin : "https://proprogiftvip.com"}/checkout/success?orderId=${orderId}`
+    ? `${typeof window !== "undefined" ? window.location.origin : SITE_ORIGIN}/checkout/success?orderId=${orderId}`
     : null;
 
   const copy = () => {

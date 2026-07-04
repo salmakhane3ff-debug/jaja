@@ -2,8 +2,9 @@ import { fetchAllProducts } from "@/lib/data/products";
 import { getActiveCollections } from "@/lib/services/collectionService";
 import { getStoreSettings } from "@/lib/getStoreSettings";
 import ProductsClient from "./ProductsClient";
+import { SITE_ORIGIN } from "@/lib/siteUrl";
 
-const PROD_ORIGIN = "https://proprogiftvip.com";
+const PROD_ORIGIN = SITE_ORIGIN;
 
 // Read the `collection` query value (string | null) from the resolved searchParams.
 function readCollection(sp) {

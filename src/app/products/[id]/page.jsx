@@ -1,5 +1,6 @@
 import { notFound } from "next/navigation";
 import { fetchProductById } from "@/lib/data/products";
+import { absoluteUrl } from "@/lib/siteUrl";
 import Product from "./product";
 
 export async function generateMetadata({ params }) {
@@ -19,7 +20,7 @@ export async function generateMetadata({ params }) {
     openGraph: {
       title,
       description,
-      url:      `https://proprogiftvip.com/products/${id}`,
+      url:      absoluteUrl(`/products/${id}`),
       siteName: "ProPro Gift VIP",
       ...(image ? { images: [{ url: image, alt: title }] } : {}),
       locale: "fr_MA",

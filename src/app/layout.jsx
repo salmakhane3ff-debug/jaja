@@ -18,6 +18,7 @@ import PreloaderWrapper from "@/components/PreloaderWrapper";
 import { getStoreSettings } from "@/lib/getStoreSettings";
 import { getPreloaderSettings } from "@/lib/getPreloaderSettings";
 import { getIntegrationsSettings } from "@/lib/getIntegrationsSettings";
+import { SITE_ORIGIN } from "@/lib/siteUrl";
 import { Suspense } from "react";
 
 // Rubik supports both Latin and Arabic scripts — load both subsets.
@@ -36,7 +37,7 @@ const rubik = Rubik({
 export const dynamic = "force-dynamic";
 
 // Generate metadata dynamically from store settings
-const PROD_ORIGIN = "https://proprogiftvip.com";
+const PROD_ORIGIN = SITE_ORIGIN;
 
 /** Replace localhost URLs saved during development with the production origin */
 function toAbsoluteUrl(url) {

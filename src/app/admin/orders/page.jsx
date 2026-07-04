@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useMemo } from "react";
 import { useRouter } from "next/navigation";
+import { SITE_ORIGIN } from "@/lib/siteUrl";
 import {
   ShoppingBag, Eye, RefreshCw, Search, ChevronDown,
   ArrowUpDown, CheckCircle, XCircle, Loader2, Copy, Link2,
@@ -124,7 +125,7 @@ function StatusDropdown({ orderId, current, onUpdated }) {
 function CopyLink({ orderId }) {
   const [copied, setCopied] = useState(false);
   if (!orderId) return null;
-  const url = `${typeof window !== "undefined" ? window.location.origin : "https://proprogiftvip.com"}/checkout/success?orderId=${orderId}`;
+  const url = `${typeof window !== "undefined" ? window.location.origin : SITE_ORIGIN}/checkout/success?orderId=${orderId}`;
   const copy = () => {
     navigator.clipboard.writeText(url).then(() => {
       setCopied(true);

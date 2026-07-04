@@ -1,11 +1,12 @@
 import { MetadataRoute } from "next";
 import { PrismaClient } from "@/generated/prisma";
 import { PrismaPg } from "@prisma/adapter-pg";
+import { SITE_ORIGIN } from "@/lib/siteUrl";
 
 // Force dynamic rendering so the sitemap reads from DB at request time
 export const dynamic = "force-dynamic";
 
-const BASE_URL = "https://proprogiftvip.com";
+const BASE_URL = SITE_ORIGIN;
 
 function getPrisma(): PrismaClient {
   const adapter = new PrismaPg({ connectionString: process.env.DATABASE_URL });
