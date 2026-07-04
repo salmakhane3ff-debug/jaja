@@ -17,4 +17,10 @@ export const UI_DEFAULTS = {
   showRelatedProducts:   true,
   enableImageZoom:       true,
   enableVideo:           true,
+  // ── Floating WhatsApp contact button ──────────────────────────────────────
+  showFloatingWhatsapp:     false,
+  floatingWhatsappNumber:   "",
+  floatingWhatsappMessage:  "",
+  floatingWhatsappPosition: "right",
+  floatingWhatsappBottom:   24,
 };

@@ -12,7 +12,7 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import {
   ToggleLeft, ToggleRight, RefreshCw, Save, Check, AlertTriangle,
   ShoppingCart, Heart, Share2, Tag, Layers, Palette, Layout,
-  Eye, EyeOff, Zap, Star, LayoutDashboard, ChevronRight,
+  Eye, EyeOff, Zap, Star, LayoutDashboard, ChevronRight, MessageCircle,
 } from "lucide-react";
 
 // ── Default values (must match API defaults) ──────────────────────────────────
@@ -34,6 +34,11 @@ const DEFAULTS = {
   showRelatedProducts: true,
   enableImageZoom:     true,
   enableVideo:         true,
+  showFloatingWhatsapp:     false,
+  floatingWhatsappNumber:   "",
+  floatingWhatsappMessage:  "",
+  floatingWhatsappPosition: "right",
+  floatingWhatsappBottom:   24,
 };
 
 // ── Control Groups ────────────────────────────────────────────────────────────
@@ -91,6 +96,25 @@ const GROUPS = [
     controls: [
       { key: "primaryColor",   label: "Primary Color",   type: "color", desc: "Main brand color (buttons, accents)" },
       { key: "secondaryColor", label: "Secondary Color", type: "color", desc: "Secondary / background color" },
+    ],
+  },
+  {
+    id:    "whatsapp",
+    label: "Floating WhatsApp",
+    icon:  MessageCircle,
+    color: "blue",
+    controls: [
+      { key: "showFloatingWhatsapp",    label: "Floating WhatsApp Button", type: "toggle", desc: "Show a fixed WhatsApp contact button on all public pages." },
+      { key: "floatingWhatsappNumber",  label: "WhatsApp Number",          type: "text",   desc: "International format, digits only (e.g. 2126XXXXXXXX)." },
+      { key: "floatingWhatsappMessage", label: "Default Message",          type: "text",   desc: "Pre-filled message shown when the chat opens." },
+      {
+        key:     "floatingWhatsappPosition",
+        label:   "Position",
+        type:    "select",
+        options: [{ value: "right", label: "Right" }, { value: "left", label: "Left" }],
+        desc:    "Side of the screen for the button.",
+      },
+      { key: "floatingWhatsappBottom",  label: "Bottom Spacing (px)",      type: "number", desc: "Distance from the bottom of the screen, in pixels." },
     ],
   },
 ];
@@ -350,6 +374,17 @@ export default function UIControlPage() {
                           onChange={(e) => handleChange(ctrl.key, e.target.value)}
                           placeholder="slug-du-produit"
                           className="border border-gray-200 rounded-xl px-3 py-1.5 text-xs font-mono text-gray-700 bg-white focus:outline-none focus:border-indigo-300 w-44"
+                        />
+                      )}
+
+                      {/* Number */}
+                      {ctrl.type === "number" && (
+                        <input
+                          type="number"
+                          min={0}
+                          value={settings[ctrl.key] ?? 0}
+                          onChange={(e) => handleChange(ctrl.key, e.target.value === "" ? 0 : Number(e.target.value))}
+                          className="border border-gray-200 rounded-xl px-3 py-1.5 text-xs font-mono text-gray-700 bg-white focus:outline-none focus:border-indigo-300 w-24"
                         />
                       )}
 

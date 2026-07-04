@@ -9,6 +9,7 @@ import MainFooterWrapper from "@/components/template/FooterClientWrapper";
 import MainHeaderWrapper from "@/components/template/MainHeaderWrapper";
 import ScriptInjector from "@/components/ScriptInjector";
 import ClarityScript from "@/components/ClarityScript";
+import FloatingWhatsApp from "@/components/FloatingWhatsApp";
 import UtmTracker from "@/components/UtmTracker";
 import AffiliateRefCapture from "@/components/AffiliateRefCapture";
 import TrackingCapture from "@/components/tracking/TrackingCapture";
@@ -138,6 +139,7 @@ export default async function RootLayout({ children }) {
           </Suspense>
           <SpinWheelProvider />
           <GiftSystemInit />
+          <FloatingWhatsApp />
         </Providers>
       </body>
     </html>
