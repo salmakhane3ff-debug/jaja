@@ -56,3 +56,8 @@ next-env.d.ts
 
 # large zip backups
 *.zip
+
+# whatsapp order bot runtime files (session + sent-state)
+.whatsapp-sent-orders.json
+.wwebjs_auth/
+.wwebjs_cache/
