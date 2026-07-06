@@ -441,6 +441,36 @@ async function controlLogout() {
   return { body: { ok: true } };
 }
 
+// Prefer a real c.us chat id for Moroccan numbers. getNumberId may return a
+// LID (@lid) that does not deliver — in that case fall back to <phone>@c.us.
+function resolveChatId(normalized, numberId) {
+  const ser = numberId && numberId._serialized;
+  if (ser && ser.endsWith("@c.us")) return ser;
+  return `${normalized}@c.us`;
+}
+
+// Poll the message ack for up to `timeoutMs`. ack >= 1 means WhatsApp's server
+// acknowledged/delivered the message. Returns the latest ack seen.
+async function waitForAck(client, chatId, messageId, initialAck, timeoutMs = 15000) {
+  let ack = typeof initialAck === "number" ? initialAck : 0;
+  if (!messageId) return ack;
+  const start = Date.now();
+  while (ack < 1 && Date.now() - start < timeoutMs) {
+    await sleep(1500);
+    let fresh = null;
+    try { fresh = await client.getMessageById(messageId); } catch {}
+    if (!fresh) {
+      try {
+        const chat = await client.getChatById(chatId);
+        const msgs = await chat.fetchMessages({ limit: 10 });
+        fresh = msgs.find((m) => (m.id && (m.id._serialized || m.id.id)) === messageId) || null;
+      } catch {}
+    }
+    if (fresh && typeof fresh.ack === "number") ack = fresh.ack;
+  }
+  return ack;
+}
+
 // Send a one-off test message with full delivery diagnostics.
 // Never writes the sent-state file (no dedupe entry).
 async function controlSendTest(payload) {
@@ -479,56 +509,41 @@ async function controlSendTest(payload) {
       return { status: 422, body: { ok: false, error: "This number is not registered on WhatsApp.", diagnostics: diag } };
     }
 
-    const chatId = numberId._serialized;
-    diag.chatId = chatId;
+    // Prefer c.us; if getNumberId returned a LID, send to <phone>@c.us instead.
+    diag.getNumberIdSerialized = numberId._serialized;
+    const chatId = resolveChatId(normalized, numberId);
+    diag.chatIdAttempted = chatId;
 
     // 2. Send.
     const sent = await waClient.sendMessage(chatId, text);
     const messageId = (sent && sent.id && (sent.id._serialized || sent.id.id)) || null;
+    const initialAck = sent && typeof sent.ack === "number" ? sent.ack : 0;
     diag.messageId = messageId;
     diag.sent = {
-      ack:       sent ? sent.ack : undefined,
+      ack:       initialAck,
       fromMe:    sent ? sent.fromMe : undefined,
       to:        (sent && sent.to && (sent.to._serialized || sent.to)) || null,
       timestamp: sent ? sent.timestamp : null,
     };
 
-    // 3. Immediately fetch the chat and verify the message exists.
-    let verified = false;
-    try {
-      const chat = await waClient.getChatById(chatId);
-      const msgs = await chat.fetchMessages({ limit: 5 });
-      const found = msgs.find((m) => (m.id && (m.id._serialized || m.id.id)) === messageId);
-      if (found) {
-        verified = true;
-        diag.verified = {
-          ack: found.ack, fromMe: found.fromMe,
-          to: (found.to && (found.to._serialized || found.to)) || null,
-          timestamp: found.timestamp,
-        };
-      } else {
-        diag.verified = null;
-      }
-    } catch (e) {
-      diag.verifyError = e?.message ?? String(e);
-    }
+    // 3. Wait up to 15s for the ack to reach >= 1 (server acknowledged/delivered).
+    const finalAck = await waitForAck(waClient, chatId, messageId, initialAck, 15000);
+    diag.finalAck = finalAck;
 
-    // Log the full diagnostics.
-    log(`test diagnostics | phone=${normalized} chatId=${chatId} id=${messageId} ack=${diag.sent.ack} fromMe=${diag.sent.fromMe} to=${diag.sent.to} ts=${diag.sent.timestamp} state=${diag.clientState} verified=${verified}`);
+    log(`test send | phone=${normalized} chatId=${chatId} id=${messageId} initialAck=${initialAck} finalAck=${finalAck} state=${diag.clientState}`);
 
-    // 4. Fail if ack is undefined/null/-1 or the message was not actually created.
-    const ackOk = diag.sent.ack !== undefined && diag.sent.ack !== null && diag.sent.ack !== -1;
-    if (!messageId || !ackOk || !verified) {
+    // 4. Success only if a message id exists AND ack >= 1.
+    if (!messageId || finalAck < 1) {
       stats.failedTotal++;
-      recordMessage({ orderId: "TEST", state: "TEST", phone: normalized, result: "failed", error: "not verified", messageId });
-      errl(`test send NOT verified | ${normalized} | ack=${diag.sent.ack} verified=${verified}`);
-      return { status: 502, body: { ok: false, error: `Message not confirmed (ack=${diag.sent.ack}, verified=${verified}).`, diagnostics: diag } };
+      recordMessage({ orderId: "TEST", state: "TEST", phone: normalized, result: "failed", error: `ack=${finalAck}`, messageId });
+      errl(`test send NOT acknowledged | ${normalized} | chatId=${chatId} ack=${finalAck}`);
+      return { status: 502, body: { ok: false, error: "Message created but not acknowledged by WhatsApp.", diagnostics: diag } };
     }
 
     touchActivity();
     recordMessage({ orderId: "TEST", state: "TEST", phone: normalized, result: "sent", messageId });
-    log(`test message sent + verified | ${normalized} | id=${messageId} ack=${diag.sent.ack}`);
-    return { body: { ok: true, phone: normalized, messageId, diagnostics: diag } };
+    log(`test message acknowledged | ${normalized} | chatId=${chatId} id=${messageId} ack=${finalAck}`);
+    return { body: { ok: true, phone: normalized, messageId, ack: finalAck, chatId, diagnostics: diag } };
   } catch (e) {
     stats.failedTotal++;
     recordMessage({ orderId: "TEST", state: "TEST", phone: normalized, result: "failed", error: e?.message });
@@ -650,18 +665,30 @@ async function runCycle() {
         warn("aborting send cycle — WhatsApp is no longer ready.");
         break;
       }
+      const chatId = `${a.phone}@c.us`; // prefer c.us for Moroccan numbers
       try {
-        await waClient.sendMessage(`${a.phone}@c.us`, a.msg);
+        const msg = await waClient.sendMessage(chatId, a.msg);
+        const messageId = (msg && msg.id && (msg.id._serialized || msg.id.id)) || null;
+        const initialAck = msg && typeof msg.ack === "number" ? msg.ack : 0;
+        // Mark as sent immediately to preserve "send once" (never resend/spam).
         sent[a.key] = new Date().toISOString();
-        saveSent(sent); // persist immediately → restart-safe, no duplicates
-        stats.sentTotal++;
+        saveSent(sent);
         touchActivity();
-        recordMessage({ orderId: a.id, state: a.state, phone: a.phone, result: "sent" });
-        log(`message sent      | order ${a.id} | ${a.state} | ${a.phone}`);
+        // Wait up to 15s for the ack to confirm delivery.
+        const finalAck = await waitForAck(waClient, chatId, messageId, initialAck, 15000);
+        if (finalAck >= 1) {
+          stats.sentTotal++;
+          recordMessage({ orderId: a.id, state: a.state, phone: a.phone, result: "sent", messageId });
+          log(`message sent      | order ${a.id} | ${a.state} | chatId=${chatId} ack=${finalAck}`);
+        } else {
+          stats.failedTotal++;
+          recordMessage({ orderId: a.id, state: a.state, phone: a.phone, result: "failed", error: `ack=${finalAck}`, messageId });
+          warn(`not acknowledged  | order ${a.id} | ${a.state} | chatId=${chatId} ack=${finalAck}`);
+        }
       } catch (e) {
         stats.failedTotal++;
         recordMessage({ orderId: a.id, state: a.state, phone: a.phone, result: "failed", error: e?.message });
-        errl(`failed send       | order ${a.id} | ${a.state} | ${a.phone} | ${e?.message ?? e}`);
+        errl(`failed send       | order ${a.id} | ${a.state} | chatId=${chatId} | ${e?.message ?? e}`);
       }
       stats.pending = actions.length - (i + 1);
       // Safe pacing between messages (20–40s).
