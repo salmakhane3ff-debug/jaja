@@ -37,9 +37,30 @@ const SEND    = args.includes("--send");
 const SENT_FILE = path.join(process.cwd(), ".whatsapp-sent-orders.json");
 const LOOKBACK_DAYS = 7;
 
+// ── Localhost control API (Phase 4a) config ───────────────────────────────────
+const CONTROL_PORT   = parseInt(process.env.WA_BOT_CONTROL_PORT || "4599", 10);
+const CONTROL_TOKEN  = process.env.WA_BOT_CONTROL_TOKEN || "";
+const LOG_BUFFER_MAX = 300;
+
+// In-memory, read-only state surfaced to the admin panel via the control API.
+const botState  = { state: "starting", since: new Date().toISOString(), lastError: null };
+const qrState   = { qr: null, ascii: null, at: null };
+const logBuffer = [];
+
+function setState(s, err) {
+  botState.state = s;
+  botState.since = new Date().toISOString();
+  if (err !== undefined) botState.lastError = err ? String(err) : null;
+}
+
 // ── Logging ─────────────────────────────────────────────────────────────────
-const ts  = () => new Date().toISOString();
-const log = (...a) => console.log(`[${ts()}]`, ...a);
+const ts = () => new Date().toISOString();
+function log(...a) {
+  const line = `[${ts()}] ${a.map((x) => (typeof x === "string" ? x : String(x))).join(" ")}`;
+  console.log(line);
+  logBuffer.push(line);
+  if (logBuffer.length > LOG_BUFFER_MAX) logBuffer.shift();
+}
 
 // ── Message templates (exact darija/arabic wording) ───────────────────────────
 const MESSAGES = {
@@ -176,6 +197,61 @@ async function runDryRun() {
   await pool.end().catch(() => {});
 }
 
+// ── Localhost control API (read-only: status / qr / logs) ─────────────────────
+// Bound to 127.0.0.1 only and gated by WA_BOT_CONTROL_TOKEN. Never serves the
+// WhatsApp session files — only ephemeral status/QR/log state. No send/control
+// endpoints in this phase.
+function startControlServer() {
+  if (!CONTROL_TOKEN) {
+    log("Control API disabled: WA_BOT_CONTROL_TOKEN is not set (nothing exposed).");
+    return;
+  }
+  const http = require("http");
+  const server = http.createServer((req, res) => {
+    res.setHeader("Content-Type", "application/json");
+
+    // Token check (constant header, localhost-only listener).
+    if ((req.headers["x-bot-token"] || "") !== CONTROL_TOKEN) {
+      res.writeHead(401);
+      res.end(JSON.stringify({ error: "unauthorized" }));
+      return;
+    }
+
+    const url = (req.url || "").split("?")[0];
+    if (req.method !== "GET") {
+      res.writeHead(405);
+      res.end(JSON.stringify({ error: "method not allowed" }));
+      return;
+    }
+
+    if (url === "/status") {
+      res.writeHead(200);
+      res.end(JSON.stringify({ ...botState }));
+    } else if (url === "/qr") {
+      // Only expose the QR while awaiting a scan; nothing once connected.
+      const showing = botState.state === "qr";
+      res.writeHead(200);
+      res.end(JSON.stringify({
+        state: botState.state,
+        qr:    showing ? qrState.qr    : null,
+        ascii: showing ? qrState.ascii : null,
+        at:    qrState.at,
+      }));
+    } else if (url === "/logs") {
+      res.writeHead(200);
+      res.end(JSON.stringify({ logs: logBuffer.slice(-200) }));
+    } else {
+      res.writeHead(404);
+      res.end(JSON.stringify({ error: "not found" }));
+    }
+  });
+
+  server.on("error", (err) => log("Control API error:", err.message));
+  server.listen(CONTROL_PORT, "127.0.0.1", () => {
+    log(`Control API listening on http://127.0.0.1:${CONTROL_PORT} (localhost only).`);
+  });
+}
+
 // ── Live send ───────────────────────────────────────────────────────────────
 async function runSend() {
   let Client, LocalAuth, qrcode;
@@ -189,6 +265,8 @@ async function runSend() {
   }
 
   log("LIVE SEND mode — connecting to WhatsApp. Each order+status message is sent once.");
+  setState("starting");
+  startControlServer();
   const pool = new Pool({ connectionString: process.env.DATABASE_URL });
 
   const client = new Client({
@@ -198,13 +276,20 @@ async function runSend() {
   });
 
   client.on("qr", (qr) => {
-    qrcode.generate(qr, { small: true });
-    log("QR ready — scan it in WhatsApp → Linked Devices.");
+    qrcode.generate(qr, { small: true }); // terminal QR
+    qrcode.generate(qr, { small: true }, (ascii) => { qrState.ascii = ascii; }); // for the admin panel
+    qrState.qr = qr;
+    qrState.at = new Date().toISOString();
+    setState("qr");
+    log("QR ready — scan it in WhatsApp → Linked Devices, or from the Admin panel.");
   });
-  client.on("authenticated", () => log("WhatsApp authenticated — session saved (LocalAuth)."));
-  client.on("auth_failure", (m) => log("WhatsApp auth failure:", m));
-  client.on("disconnected", (r) => log("WhatsApp disconnected:", r));
+  client.on("authenticated", () => { setState("authenticated"); log("WhatsApp authenticated — session saved (LocalAuth)."); });
+  client.on("auth_failure", (m) => { setState("auth_failure", m); log("WhatsApp auth failure:", m); });
+  client.on("disconnected", (r) => { setState("disconnected", r); log("WhatsApp disconnected:", r); });
   client.on("ready", () => {
+    qrState.qr = null;
+    qrState.ascii = null;
+    setState("ready");
     log("WhatsApp connected.");
     sendCycle(client, pool);
   });
