@@ -75,6 +75,7 @@ export default function WhatsAppBotPage() {
   const [testCustom, setTestCustom] = useState("");
   const [sending, setSending] = useState(false);
   const [testMsg, setTestMsg] = useState(null);
+  const [testDiag, setTestDiag] = useState(null);
 
   const [logFilter, setLogFilter] = useState("ALL");
   const [busyAction, setBusyAction] = useState(null);
@@ -145,7 +146,7 @@ export default function WhatsAppBotPage() {
   };
 
   const sendTest = async () => {
-    setSending(true); setTestMsg(null);
+    setSending(true); setTestMsg(null); setTestDiag(null);
     const message = testCustom.trim() || templates[testTpl] || "";
     try {
       const r = await fetch("/api/admin/whatsapp-bot/send-test", {
@@ -154,8 +155,9 @@ export default function WhatsAppBotPage() {
       });
       const d = await r.json().catch(() => ({}));
       setTestMsg(d.ok
-        ? { ok: true,  text: `Sent to ${d.phone || testPhone}${d.messageId ? ` (id ${d.messageId})` : ""}` }
+        ? { ok: true,  text: `Sent + verified to ${d.phone || testPhone}${d.messageId ? ` (id ${d.messageId})` : ""}` }
         : { ok: false, text: d.error || "Send failed" });
+      setTestDiag(d.diagnostics || null);
       await refresh();
     } catch {
       setTestMsg({ ok: false, text: "Network error" });
@@ -359,6 +361,12 @@ export default function WhatsAppBotPage() {
           {!connected && <span className="text-xs text-gray-400">Bot must be connected to send.</span>}
           {testMsg && <span className={`text-xs ${testMsg.ok ? "text-green-600" : "text-red-500"}`}>{testMsg.text}</span>}
         </div>
+        {testDiag && (
+          <div className="mt-3 bg-gray-50 border border-gray-100 rounded-xl p-3">
+            <p className="text-xs font-semibold text-gray-500 mb-2">Delivery diagnostics</p>
+            <pre className="text-[11px] font-mono text-gray-700 whitespace-pre-wrap overflow-auto max-h-72">{JSON.stringify(testDiag, null, 2)}</pre>
+          </div>
+        )}
       </Card>
 
       {/* Logs */}

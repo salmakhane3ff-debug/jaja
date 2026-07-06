@@ -441,33 +441,100 @@ async function controlLogout() {
   return { body: { ok: true } };
 }
 
-// Send a one-off test message. Never writes the sent-state file (no dedupe entry).
+// Send a one-off test message with full delivery diagnostics.
+// Never writes the sent-state file (no dedupe entry).
 async function controlSendTest(payload) {
-  if (!waClient || botState.state !== "ready") return { status: 409, body: { ok: false, error: "WhatsApp not connected" } };
-  const normalized = normalizeMoroccoPhone(payload && payload.phone);
-  if (!normalized) return { status: 400, body: { ok: false, error: "invalid phone" } };
-  const text = String((payload && payload.message) || "").trim();
-  if (!text) return { status: 400, body: { ok: false, error: "empty message" } };
+  const diag = { timestamp: new Date().toISOString(), botState: botState.state };
+
+  // client.getState() + client.info (logged and returned).
+  try { diag.clientState = waClient ? await waClient.getState() : "no-client"; }
+  catch (e) { diag.clientState = `getState error: ${e?.message ?? e}`; }
   try {
-    // Verify the destination is a registered WhatsApp number BEFORE sending.
+    diag.clientInfo = (waClient && waClient.info)
+      ? { wid: waClient.info.wid && waClient.info.wid._serialized, pushname: waClient.info.pushname, platform: waClient.info.platform }
+      : null;
+  } catch { diag.clientInfo = null; }
+
+  if (!waClient || botState.state !== "ready") {
+    return { status: 409, body: { ok: false, error: "WhatsApp not connected", diagnostics: diag } };
+  }
+
+  const normalized = normalizeMoroccoPhone(payload && payload.phone);
+  diag.normalizedPhone = normalized;
+  if (!normalized) return { status: 400, body: { ok: false, error: "invalid phone", diagnostics: diag } };
+
+  const text = String((payload && payload.message) || "").trim();
+  if (!text) return { status: 400, body: { ok: false, error: "empty message", diagnostics: diag } };
+
+  try {
+    // 1. Verify the destination is a registered WhatsApp number.
     const numberId = await waClient.getNumberId(normalized);
+    diag.getNumberId = numberId
+      ? { server: numberId.server, user: numberId.user, _serialized: numberId._serialized }
+      : null;
+
     if (!numberId) {
       recordMessage({ orderId: "TEST", state: "TEST", phone: normalized, result: "failed", error: "not on WhatsApp" });
-      warn(`test send rejected | ${normalized} | number not registered on WhatsApp`);
-      return { status: 422, body: { ok: false, error: "This number is not registered on WhatsApp." } };
+      warn(`test send rejected | ${normalized} | not registered on WhatsApp | state=${diag.clientState}`);
+      return { status: 422, body: { ok: false, error: "This number is not registered on WhatsApp.", diagnostics: diag } };
     }
+
     const chatId = numberId._serialized;
+    diag.chatId = chatId;
+
+    // 2. Send.
     const sent = await waClient.sendMessage(chatId, text);
     const messageId = (sent && sent.id && (sent.id._serialized || sent.id.id)) || null;
+    diag.messageId = messageId;
+    diag.sent = {
+      ack:       sent ? sent.ack : undefined,
+      fromMe:    sent ? sent.fromMe : undefined,
+      to:        (sent && sent.to && (sent.to._serialized || sent.to)) || null,
+      timestamp: sent ? sent.timestamp : null,
+    };
+
+    // 3. Immediately fetch the chat and verify the message exists.
+    let verified = false;
+    try {
+      const chat = await waClient.getChatById(chatId);
+      const msgs = await chat.fetchMessages({ limit: 5 });
+      const found = msgs.find((m) => (m.id && (m.id._serialized || m.id.id)) === messageId);
+      if (found) {
+        verified = true;
+        diag.verified = {
+          ack: found.ack, fromMe: found.fromMe,
+          to: (found.to && (found.to._serialized || found.to)) || null,
+          timestamp: found.timestamp,
+        };
+      } else {
+        diag.verified = null;
+      }
+    } catch (e) {
+      diag.verifyError = e?.message ?? String(e);
+    }
+
+    // Log the full diagnostics.
+    log(`test diagnostics | phone=${normalized} chatId=${chatId} id=${messageId} ack=${diag.sent.ack} fromMe=${diag.sent.fromMe} to=${diag.sent.to} ts=${diag.sent.timestamp} state=${diag.clientState} verified=${verified}`);
+
+    // 4. Fail if ack is undefined/null/-1 or the message was not actually created.
+    const ackOk = diag.sent.ack !== undefined && diag.sent.ack !== null && diag.sent.ack !== -1;
+    if (!messageId || !ackOk || !verified) {
+      stats.failedTotal++;
+      recordMessage({ orderId: "TEST", state: "TEST", phone: normalized, result: "failed", error: "not verified", messageId });
+      errl(`test send NOT verified | ${normalized} | ack=${diag.sent.ack} verified=${verified}`);
+      return { status: 502, body: { ok: false, error: `Message not confirmed (ack=${diag.sent.ack}, verified=${verified}).`, diagnostics: diag } };
+    }
+
     touchActivity();
     recordMessage({ orderId: "TEST", state: "TEST", phone: normalized, result: "sent", messageId });
-    log(`test message sent | ${normalized} | id=${messageId ?? "?"}`);
-    return { body: { ok: true, phone: normalized, messageId } };
+    log(`test message sent + verified | ${normalized} | id=${messageId} ack=${diag.sent.ack}`);
+    return { body: { ok: true, phone: normalized, messageId, diagnostics: diag } };
   } catch (e) {
     stats.failedTotal++;
     recordMessage({ orderId: "TEST", state: "TEST", phone: normalized, result: "failed", error: e?.message });
     errl(`test send failed | ${normalized} | ${e?.message ?? e}`);
-    return { status: 502, body: { ok: false, error: e?.message ?? String(e) } };
+    diag.error = e?.message ?? String(e);
+    return { status: 502, body: { ok: false, error: e?.message ?? String(e), diagnostics: diag } };
   }
 }
 
