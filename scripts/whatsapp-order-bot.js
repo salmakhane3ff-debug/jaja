@@ -47,7 +47,7 @@ const botState  = {
   state: "starting", since: new Date().toISOString(), lastError: null,
   lastActivity: null, number: null, connectedSince: null,
 };
-const qrState   = { qr: null, ascii: null, at: null };
+const qrState   = { qr: null, ascii: null, dataUrl: null, at: null };
 const logBuffer = [];               // { ts, level, msg }
 const messageHistory = [];          // { ts, orderId, state, phone, result, error }
 const MSG_HISTORY_MAX = 100;
@@ -309,7 +309,13 @@ function startControlServer() {
       if (url === "/qr") {
         const showing = botState.state === "qr";
         res.writeHead(200);
-        res.end(JSON.stringify({ state: botState.state, qr: showing ? qrState.qr : null, ascii: showing ? qrState.ascii : null, at: qrState.at }));
+        res.end(JSON.stringify({
+          state:   botState.state,
+          qr:      showing ? qrState.qr      : null,
+          ascii:   showing ? qrState.ascii   : null,
+          dataUrl: showing ? qrState.dataUrl : null,
+          at:      qrState.at,
+        }));
         return;
       }
       if (url === "/logs")     { res.writeHead(200); res.end(JSON.stringify({ logs: logBuffer.slice(-200) })); return; }
@@ -362,11 +368,15 @@ function buildClient() {
     puppeteer: { headless: true, args: ["--no-sandbox", "--disable-setuid-sandbox"] },
   });
 
-  client.on("qr", (qr) => {
+  client.on("qr", async (qr) => {
     _wa.qrcode.generate(qr, { small: true }); // terminal QR
-    _wa.qrcode.generate(qr, { small: true }, (ascii) => { qrState.ascii = ascii; }); // admin panel
+    _wa.qrcode.generate(qr, { small: true }, (ascii) => { qrState.ascii = ascii; }); // admin panel (fallback)
     qrState.qr = qr;
     qrState.at = new Date().toISOString();
+    if (_wa.QRCode) {
+      try { qrState.dataUrl = await _wa.QRCode.toDataURL(qr, { width: 350, margin: 2 }); }
+      catch { qrState.dataUrl = null; }
+    }
     setState("qr");
     log("QR ready — scan it in WhatsApp → Linked Devices, or from the Admin panel.");
   });
@@ -376,6 +386,7 @@ function buildClient() {
   client.on("ready", () => {
     qrState.qr = null;
     qrState.ascii = null;
+    qrState.dataUrl = null;
     botState.number = (client.info && client.info.wid && client.info.wid.user) || null;
     botState.connectedSince = new Date().toISOString();
     setState("ready");
@@ -438,11 +449,20 @@ async function controlSendTest(payload) {
   const text = String((payload && payload.message) || "").trim();
   if (!text) return { status: 400, body: { ok: false, error: "empty message" } };
   try {
-    await waClient.sendMessage(`${normalized}@c.us`, text);
+    // Verify the destination is a registered WhatsApp number BEFORE sending.
+    const numberId = await waClient.getNumberId(normalized);
+    if (!numberId) {
+      recordMessage({ orderId: "TEST", state: "TEST", phone: normalized, result: "failed", error: "not on WhatsApp" });
+      warn(`test send rejected | ${normalized} | number not registered on WhatsApp`);
+      return { status: 422, body: { ok: false, error: "This number is not registered on WhatsApp." } };
+    }
+    const chatId = numberId._serialized;
+    const sent = await waClient.sendMessage(chatId, text);
+    const messageId = (sent && sent.id && (sent.id._serialized || sent.id.id)) || null;
     touchActivity();
-    recordMessage({ orderId: "TEST", state: "TEST", phone: normalized, result: "sent" });
-    log(`test message sent | ${normalized}`);
-    return { body: { ok: true, phone: normalized } };
+    recordMessage({ orderId: "TEST", state: "TEST", phone: normalized, result: "sent", messageId });
+    log(`test message sent | ${normalized} | id=${messageId ?? "?"}`);
+    return { body: { ok: true, phone: normalized, messageId } };
   } catch (e) {
     stats.failedTotal++;
     recordMessage({ orderId: "TEST", state: "TEST", phone: normalized, result: "failed", error: e?.message });
@@ -456,6 +476,7 @@ async function runSend() {
   try {
     ({ Client: _wa.Client, LocalAuth: _wa.LocalAuth } = require("whatsapp-web.js"));
     _wa.qrcode = require("qrcode-terminal");
+    try { _wa.QRCode = require("qrcode"); } catch { _wa.QRCode = null; } // image QR (optional)
   } catch {
     errl("ERROR: whatsapp-web.js / qrcode-terminal are not installed.");
     errl("Install them first:  npm install whatsapp-web.js qrcode-terminal");

@@ -11,6 +11,7 @@ import { useState, useEffect, useCallback, useRef } from "react";
 import {
   MessageSquare, RefreshCw, Wifi, WifiOff, QrCode, AlertTriangle,
   Play, Square, RotateCw, Plug, LogOut, Send, Save, Trash2,
+  Maximize2, Download,
 } from "lucide-react";
 
 const TEMPLATE_KEYS = [
@@ -77,6 +78,7 @@ export default function WhatsAppBotPage() {
 
   const [logFilter, setLogFilter] = useState("ALL");
   const [busyAction, setBusyAction] = useState(null);
+  const [qrFull, setQrFull] = useState(false);
   const tplLoaded = useRef(false);
 
   const refresh = useCallback(async () => {
@@ -151,7 +153,9 @@ export default function WhatsAppBotPage() {
         body: JSON.stringify({ phone: testPhone, message }),
       });
       const d = await r.json().catch(() => ({}));
-      setTestMsg(d.ok ? { ok: true, text: `Sent to ${d.phone || testPhone}` } : { ok: false, text: d.error || "Send failed" });
+      setTestMsg(d.ok
+        ? { ok: true,  text: `Sent to ${d.phone || testPhone}${d.messageId ? ` (id ${d.messageId})` : ""}` }
+        : { ok: false, text: d.error || "Send failed" });
       await refresh();
     } catch {
       setTestMsg({ ok: false, text: "Network error" });
@@ -225,10 +229,36 @@ export default function WhatsAppBotPage() {
       </Card>
 
       {/* QR */}
-      {state === "qr" && qr?.ascii && (
-        <Card title="Scan this QR in WhatsApp → Linked Devices">
-          <pre className="text-[6px] leading-[6px] font-mono bg-white text-black overflow-auto">{qr.ascii}</pre>
+      {state === "qr" && (qr?.dataUrl || qr?.ascii) && (
+        <Card
+          title="Scan this QR in WhatsApp → Linked Devices"
+          right={qr?.dataUrl && (
+            <div className="flex items-center gap-2">
+              <button onClick={() => setQrFull(true)} className="flex items-center gap-1 px-2.5 py-1 text-xs font-medium rounded-lg bg-gray-100 text-gray-700 hover:bg-gray-200">
+                <Maximize2 size={12} /> Fullscreen
+              </button>
+              <a href={qr.dataUrl} download="whatsapp-qr.png" className="flex items-center gap-1 px-2.5 py-1 text-xs font-medium rounded-lg bg-gray-100 text-gray-700 hover:bg-gray-200">
+                <Download size={12} /> Download
+              </a>
+            </div>
+          )}
+        >
+          {qr.dataUrl ? (
+            <img src={qr.dataUrl} alt="WhatsApp QR" width={350} height={350} className="rounded-lg border border-gray-100" />
+          ) : (
+            <pre className="text-[6px] leading-[6px] font-mono bg-white text-black overflow-auto">{qr.ascii}</pre>
+          )}
         </Card>
+      )}
+
+      {/* Fullscreen QR overlay */}
+      {qrFull && qr?.dataUrl && (
+        <div className="fixed inset-0 z-[100] bg-black/70 flex items-center justify-center p-4" onClick={() => setQrFull(false)}>
+          <div className="bg-white rounded-2xl p-6 flex flex-col items-center gap-4" onClick={(e) => e.stopPropagation()}>
+            <img src={qr.dataUrl} alt="WhatsApp QR" className="w-[80vmin] h-[80vmin] max-w-[560px] max-h-[560px]" />
+            <button onClick={() => setQrFull(false)} className="px-4 py-2 text-sm font-semibold rounded-xl bg-gray-900 text-white hover:bg-gray-800">Close</button>
+          </div>
+        </div>
       )}
 
       {/* Statistics */}

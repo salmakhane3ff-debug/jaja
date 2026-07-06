@@ -27,6 +27,7 @@
     "mongoose": "^8.15.2",
     "next": "^15.5.3",
     "pg": "^8.20.0",
+    "qrcode": "^1.5.4",
     "qrcode-terminal": "^0.12.0",
     "razorpay": "^2.9.6",
     "react": "^19.0.0",
