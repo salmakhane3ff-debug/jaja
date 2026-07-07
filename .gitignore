@@ -59,5 +59,6 @@ next-env.d.ts
 
 # whatsapp order bot runtime files (session + sent-state)
 .whatsapp-sent-orders.json
+.whatsapp-abandoned-sent.json
 .wwebjs_auth/
 .wwebjs_cache/

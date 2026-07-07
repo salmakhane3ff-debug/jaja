@@ -35,7 +35,10 @@ const DRY_RUN = args.includes("--dry-run");
 const SEND    = args.includes("--send");
 
 const SENT_FILE = path.join(process.cwd(), ".whatsapp-sent-orders.json");
+const ABANDONED_SENT_FILE = path.join(process.cwd(), ".whatsapp-abandoned-sent.json");
 const LOOKBACK_DAYS = 7;
+const ABANDONED_DELAY_MIN = 30; // only remind carts idle for >= 30 minutes
+const SITE_URL = (process.env.NEXT_PUBLIC_SITE_URL || process.env.SITE_URL || "https://houseelectronic.ma").replace(/\/$/, "");
 
 // ── Localhost control API (Phase 4a) config ───────────────────────────────────
 const CONTROL_PORT   = parseInt(process.env.WA_BOT_CONTROL_PORT || "4599", 10);
@@ -144,7 +147,8 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 // "draft_" sessionId) so paniers never receive order notifications.
 async function fetchRecentOrders(pool) {
   const res = await pool.query(
-    `SELECT id, "customerName", "customerPhone", status, "updatedAt"
+    `SELECT id, "customerName", "customerPhone", status, "updatedAt",
+            "paymentMethod", "paymentStatus", "paymentTotal", "paymentDetails", "shippingAddress"
        FROM orders
       WHERE "updatedAt" >= NOW() - INTERVAL '${LOOKBACK_DAYS} days'
         AND COALESCE(("paymentDetails"->>'isDraft'), 'false') <> 'true'
@@ -154,22 +158,125 @@ async function fetchRecentOrders(pool) {
   return res.rows;
 }
 
-// ── Editable message templates (from the `settings` store) ────────────────────
-// Read via raw pg from settings.data.templates; falls back to built-in defaults.
-// Variables: {name}, {orderId}, {status}.
-const DEFAULT_TEMPLATES = {
-  NEW:       "Salam {name}, waslna talab dyalk. Ghadi nraj3o lik bach n2akdo talab.",
-  CONFIRMED: "Salam {name}, talab dyalk t2akkad. Ghadi nوجدوه ونرسلوا ليك التفاصيل.",
-  SHIPPED:   "Talab dyalk خرج للتوصيل.",
-  DELIVERED: "شكراً، نتمنى الطلب يكون عجبك.",
-  CANCELLED: "تم إلغاء طلبك.",
+// Read-only: order line items for the given order ids, grouped by orderId.
+// Returns { [orderId]: ["Title x2", ...] } built from productSnapshot.title.
+async function fetchOrderItems(pool, orderIds) {
+  const ids = (orderIds || []).filter(Boolean);
+  if (!ids.length) return {};
+  const res = await pool.query(
+    `SELECT "orderId", quantity, "productSnapshot"
+       FROM order_items
+      WHERE "orderId" = ANY($1)`,
+    [ids]
+  );
+  const byOrder = {};
+  for (const r of res.rows) {
+    const snap = r.productSnapshot && typeof r.productSnapshot === "object" ? r.productSnapshot : {};
+    const title = String(snap.title || snap.name || "Produit").trim();
+    const qty = Number(r.quantity) || 1;
+    (byOrder[r.orderId] = byOrder[r.orderId] || []).push(`${title} x${qty}`);
+  }
+  return byOrder;
+}
+
+// ── Abandoned carts (fully separate from real orders) ─────────────────────────
+// Read-only: paniers not recovered, idle for >= ABANDONED_DELAY_MIN, within window.
+async function fetchAbandonedCarts(pool) {
+  const res = await pool.query(
+    `SELECT id, phone, "fullName", city, items, "cartTotal", "updatedAt"
+       FROM abandoned_carts
+      WHERE recovered = false
+        AND "updatedAt" <= NOW() - INTERVAL '${ABANDONED_DELAY_MIN} minutes'
+        AND "updatedAt" >= NOW() - INTERVAL '${LOOKBACK_DAYS} days'
+      ORDER BY "updatedAt" DESC`
+  );
+  return res.rows;
+}
+
+// Separate dedupe store for abandoned reminders (keyed by cart id, send-once).
+function loadAbandoned() {
+  try { return JSON.parse(fs.readFileSync(ABANDONED_SENT_FILE, "utf8")); }
+  catch { return {}; }
+}
+function saveAbandoned(x) {
+  fs.writeFileSync(ABANDONED_SENT_FILE, JSON.stringify(x, null, 2));
+}
+
+const fmtMoney = (v) => {
+  const n = Number(v);
+  return Number.isFinite(n) ? `${Math.round(n)} MAD` : "";
 };
+
+// ── Editable message templates (from the `settings` store) ────────────────────
+// Read via raw pg from settings.data.templates (+ .abandonedTemplate); falls back
+// to built-in defaults. Variables:
+//   {name} {products} {total} {shipping} {payment} {status} {checkoutLink} {orderId}
+const DEFAULT_TEMPLATES = {
+  NEW: `Salam {name} 👋
+
+Wsalna talab dyalk ✅
+
+📦 Produit: {products}
+💰 Total: {total}
+🚚 Livraison: {shipping}
+💳 Paiement: {payment}
+
+Ghadi nraj3o lik bach n2akdo talab.`,
+  CONFIRMED: `Salam {name} 👋
+
+Talab dyalk t2akkad ✅
+
+📦 Produit: {products}
+💰 Total: {total}
+🚚 Livraison: {shipping}
+💳 Paiement: {payment}
+
+Ghadi nوجدوه ونرسلوا ليك التفاصيل.`,
+  SHIPPED: `Salam {name} 👋
+
+Talab dyalk خرج للتوصيل 🚚
+
+📦 Produit: {products}
+💰 Total: {total}
+🚚 Livraison: {shipping}
+
+غادي يوصلك قريبا.`,
+  DELIVERED: `Salam {name} 👋
+
+Talab dyalk توصل ✅
+
+📦 Produit: {products}
+💰 Total: {total}
+
+شكراً، نتمنى المنتج يعجبك 🙏`,
+  CANCELLED: `Salam {name} 👋
+
+تم إلغاء طلبك ❌
+
+📦 Produit: {products}
+💰 Total: {total}
+📊 Statut: {status}`,
+};
+
+const DEFAULT_ABANDONED_TEMPLATE = `Salam {name} 👋
+
+La7dna belli khlliti panier dyalk w makmltich commande.
+
+📦 Produit: {products}
+💰 Total: {total}
+🚚 Livraison: {shipping}
+🔗 Lien: {checkoutLink}
+
+Wash mazal mahtam nkmlouha lik? Wla nlghiwha?`;
+
 let templates = { ...DEFAULT_TEMPLATES };
+let abandonedTemplate = DEFAULT_ABANDONED_TEMPLATE;
 
 async function loadTemplates(pool) {
   try {
     const res = await pool.query(`SELECT data FROM settings WHERE id = 'whatsapp-bot' LIMIT 1`);
-    const t = (res.rows[0] && res.rows[0].data && res.rows[0].data.templates) || {};
+    const data = (res.rows[0] && res.rows[0].data) || {};
+    const t = data.templates || {};
     templates = {
       NEW:       t.NEW       || DEFAULT_TEMPLATES.NEW,
       CONFIRMED: t.CONFIRMED || DEFAULT_TEMPLATES.CONFIRMED,
@@ -177,16 +284,57 @@ async function loadTemplates(pool) {
       DELIVERED: t.DELIVERED || DEFAULT_TEMPLATES.DELIVERED,
       CANCELLED: t.CANCELLED || DEFAULT_TEMPLATES.CANCELLED,
     };
+    abandonedTemplate = (typeof data.abandonedTemplate === "string" && data.abandonedTemplate.trim())
+      ? data.abandonedTemplate
+      : DEFAULT_ABANDONED_TEMPLATE;
   } catch (e) {
     warn("Could not load templates from settings; using defaults:", e.message);
   }
 }
 
 function renderTemplate(tpl, vars) {
+  const v = vars || {};
   return String(tpl || "")
-    .split("{name}").join(vars.name || "")
-    .split("{orderId}").join(vars.orderId || "")
-    .split("{status}").join(vars.status || "");
+    .split("{name}").join(v.name || "")
+    .split("{products}").join(v.products || "")
+    .split("{total}").join(v.total || "")
+    .split("{shipping}").join(v.shipping || "")
+    .split("{payment}").join(v.payment || "")
+    .split("{status}").join(v.status || "")
+    .split("{checkoutLink}").join(v.checkoutLink || "")
+    .split("{orderId}").join(v.orderId || "");
+}
+
+// Build a real-order message: rich details from the order row + line items.
+function buildOrderMessage(o, state, itemsByOrder) {
+  const pd = o.paymentDetails && typeof o.paymentDetails === "object" ? o.paymentDetails : {};
+  const items = (itemsByOrder && itemsByOrder[o.id]) || [];
+  const products = items.length ? items.join(", ") : "—";
+  const total = fmtMoney(o.paymentTotal != null ? o.paymentTotal : pd.total) || "—";
+  const shipping = String(pd.shippingCompany || o.paymentMethod || "—").trim() || "—";
+  const payment = String(o.paymentStatus || pd.paymentMethod || o.paymentMethod || "—").trim() || "—";
+  const name = String(o.customerName || "").trim();
+  return renderTemplate(templates[state], {
+    name, products, total, shipping, payment,
+    status: state, orderId: o.id, checkoutLink: `${SITE_URL}/cart`,
+  });
+}
+
+// Build an abandoned-cart reminder: never claims an order was received.
+// Shipping falls back to the cart city when no company is known.
+function buildAbandonedMessage(cart) {
+  const items = Array.isArray(cart.items) ? cart.items : [];
+  const products = items.length
+    ? items.map((i) => `${String((i && (i.title || i.name)) || "Produit").trim()} x${Number(i && i.quantity) || 1}`).join(", ")
+    : "—";
+  const total = fmtMoney(cart.cartTotal) || "—";
+  const shipping = String(cart.city || "—").trim() || "—";
+  const name = String(cart.fullName || "").trim();
+  return renderTemplate(abandonedTemplate, {
+    name, products, total, shipping,
+    payment: "", status: "", orderId: "",
+    checkoutLink: `${SITE_URL}/cart`,
+  });
 }
 
 function recordMessage(entry) {
@@ -607,99 +755,177 @@ async function runCycle() {
   isSending = true;
   try {
     await loadTemplates(dbPool);
-
-    // ── First-run baseline ────────────────────────────────────────────────
-    // On the very first run (no sent-state file yet) mark every existing
-    // order+status as already seen and send NOTHING. Stops the backlog blast
-    // to old pending orders. After baseline, only genuinely new orders or
-    // future status changes produce a message.
-    const firstRun = !fs.existsSync(SENT_FILE);
-    const sent = loadSent();
-    const rows = await fetchRecentOrders(dbPool);
-    touchActivity();
-
-    if (firstRun) {
-      let n = 0;
-      for (const o of rows) {
-        const state = mapStatus(o.status);
-        if (!state) continue;
-        sent[`${o.id}:${state}`] = new Date().toISOString();
-        n++;
-      }
-      saveSent(sent);
-      log(`baseline created: ${n} existing order state(s) marked as seen — no messages sent on first run.`);
-      return; // finally reschedules
-    }
-
-    log(`orders checked: ${rows.length}`);
-
-    const actions = [];
-    let duplicates = 0, invalidPhone = 0, ignoredStatus = 0;
-
-    for (const o of rows) {
-      const state = mapStatus(o.status);
-      if (!state) { ignoredStatus++; continue; }
-
-      const phone = normalizeMoroccoPhone(o.customerPhone);
-      if (!phone) {
-        invalidPhone++;
-        warn(`invalid phone     | order ${o.id} | ${o.status} | "${o.customerPhone ?? ""}"`);
-        continue;
-      }
-
-      const key = `${o.id}:${state}`;
-      if (sent[key]) { duplicates++; continue; } // already seen/sent → quiet skip
-
-      const name = String(o.customerName || "").trim();
-      const msg  = renderTemplate(templates[state], { name, orderId: o.id, status: state });
-      actions.push({ id: o.id, state, phone, key, msg });
-    }
-
-    stats.pending = actions.length;
-    log(`eligible=${actions.length} duplicates=${duplicates} invalidPhone=${invalidPhone} ignoredStatus=${ignoredStatus}`);
-
-    for (let i = 0; i < actions.length; i++) {
-      const a = actions[i];
-      // Re-check readiness before EVERY send (client can drop mid-cycle).
-      if (!waClient || botState.state !== "ready") {
-        warn("aborting send cycle — WhatsApp is no longer ready.");
-        break;
-      }
-      const chatId = `${a.phone}@c.us`; // prefer c.us for Moroccan numbers
-      try {
-        const msg = await waClient.sendMessage(chatId, a.msg);
-        const messageId = (msg && msg.id && (msg.id._serialized || msg.id.id)) || null;
-        const initialAck = msg && typeof msg.ack === "number" ? msg.ack : 0;
-        // Mark as sent immediately to preserve "send once" (never resend/spam).
-        sent[a.key] = new Date().toISOString();
-        saveSent(sent);
-        touchActivity();
-        // Wait up to 15s for the ack to confirm delivery.
-        const finalAck = await waitForAck(waClient, chatId, messageId, initialAck, 15000);
-        if (finalAck >= 1) {
-          stats.sentTotal++;
-          recordMessage({ orderId: a.id, state: a.state, phone: a.phone, result: "sent", messageId });
-          log(`message sent      | order ${a.id} | ${a.state} | chatId=${chatId} ack=${finalAck}`);
-        } else {
-          stats.failedTotal++;
-          recordMessage({ orderId: a.id, state: a.state, phone: a.phone, result: "failed", error: `ack=${finalAck}`, messageId });
-          warn(`not acknowledged  | order ${a.id} | ${a.state} | chatId=${chatId} ack=${finalAck}`);
-        }
-      } catch (e) {
-        stats.failedTotal++;
-        recordMessage({ orderId: a.id, state: a.state, phone: a.phone, result: "failed", error: e?.message });
-        errl(`failed send       | order ${a.id} | ${a.state} | chatId=${chatId} | ${e?.message ?? e}`);
-      }
-      stats.pending = actions.length - (i + 1);
-      // Safe pacing between messages (20–40s).
-      await sleep(20000 + Math.floor(Math.random() * 20000));
-    }
-    stats.pending = 0;
+    // Two fully separate workflows: real orders, then abandoned carts.
+    // Each keeps its own query, dedupe file, baseline, and templates.
+    await processOrders();
+    await sendAbandonedReminders();
   } catch (e) {
     errl("ERROR during send cycle:", e?.message ?? e);
   } finally {
     isSending = false;
     scheduleCycle();
+  }
+}
+
+// ── Workflow 1: REAL orders ───────────────────────────────────────────────────
+async function processOrders() {
+  // First-run baseline: on the very first run (no sent-state file yet) mark every
+  // existing order+status as already seen and send NOTHING. Stops the backlog
+  // blast to old pending orders. After baseline, only genuinely new orders or
+  // future status changes produce a message.
+  const firstRun = !fs.existsSync(SENT_FILE);
+  const sent = loadSent();
+  const rows = await fetchRecentOrders(dbPool);
+  touchActivity();
+
+  if (firstRun) {
+    let n = 0;
+    for (const o of rows) {
+      const state = mapStatus(o.status);
+      if (!state) continue;
+      sent[`${o.id}:${state}`] = new Date().toISOString();
+      n++;
+    }
+    saveSent(sent);
+    log(`baseline created: ${n} existing order state(s) marked as seen — no messages sent on first run.`);
+    return;
+  }
+
+  log(`orders checked: ${rows.length}`);
+
+  const eligible = [];
+  let duplicates = 0, invalidPhone = 0, ignoredStatus = 0;
+
+  for (const o of rows) {
+    const state = mapStatus(o.status);
+    if (!state) { ignoredStatus++; continue; }
+
+    const phone = normalizeMoroccoPhone(o.customerPhone);
+    if (!phone) {
+      invalidPhone++;
+      warn(`invalid phone     | order ${o.id} | ${o.status} | "${o.customerPhone ?? ""}"`);
+      continue;
+    }
+
+    const key = `${o.id}:${state}`;
+    if (sent[key]) { duplicates++; continue; } // already seen/sent → quiet skip
+
+    eligible.push({ o, state, phone, key });
+  }
+
+  stats.pending = eligible.length;
+  log(`eligible=${eligible.length} duplicates=${duplicates} invalidPhone=${invalidPhone} ignoredStatus=${ignoredStatus}`);
+
+  // One grouped fetch of line items to fill {products} for all eligible orders.
+  const itemsByOrder = await fetchOrderItems(dbPool, eligible.map((e) => e.o.id));
+
+  for (let i = 0; i < eligible.length; i++) {
+    const e = eligible[i];
+    // Re-check readiness before EVERY send (client can drop mid-cycle).
+    if (!waClient || botState.state !== "ready") {
+      warn("aborting send cycle — WhatsApp is no longer ready.");
+      break;
+    }
+    const chatId = `${e.phone}@c.us`; // prefer c.us for Moroccan numbers
+    const body = buildOrderMessage(e.o, e.state, itemsByOrder);
+    try {
+      const msg = await waClient.sendMessage(chatId, body);
+      const messageId = (msg && msg.id && (msg.id._serialized || msg.id.id)) || null;
+      const initialAck = msg && typeof msg.ack === "number" ? msg.ack : 0;
+      // Mark as sent immediately to preserve "send once" (never resend/spam).
+      sent[e.key] = new Date().toISOString();
+      saveSent(sent);
+      touchActivity();
+      // Wait up to 15s for the ack to confirm delivery.
+      const finalAck = await waitForAck(waClient, chatId, messageId, initialAck, 15000);
+      if (finalAck >= 1) {
+        stats.sentTotal++;
+        recordMessage({ orderId: e.o.id, state: e.state, phone: e.phone, result: "sent", messageId });
+        log(`message sent      | order ${e.o.id} | ${e.state} | chatId=${chatId} ack=${finalAck}`);
+      } else {
+        stats.failedTotal++;
+        recordMessage({ orderId: e.o.id, state: e.state, phone: e.phone, result: "failed", error: `ack=${finalAck}`, messageId });
+        warn(`not acknowledged  | order ${e.o.id} | ${e.state} | chatId=${chatId} ack=${finalAck}`);
+      }
+    } catch (err) {
+      stats.failedTotal++;
+      recordMessage({ orderId: e.o.id, state: e.state, phone: e.phone, result: "failed", error: err?.message });
+      errl(`failed send       | order ${e.o.id} | ${e.state} | chatId=${chatId} | ${err?.message ?? err}`);
+    }
+    stats.pending = eligible.length - (i + 1);
+    // Safe pacing between messages (20–40s).
+    await sleep(20000 + Math.floor(Math.random() * 20000));
+  }
+  stats.pending = 0;
+}
+
+// ── Workflow 2: ABANDONED carts (separate query/dedupe/templates) ─────────────
+async function sendAbandonedReminders() {
+  let carts;
+  try {
+    carts = await fetchAbandonedCarts(dbPool);
+  } catch (e) {
+    errl("abandoned query failed:", e?.message ?? e);
+    return;
+  }
+
+  // First-run baseline for abandoned carts too: mark all currently-eligible
+  // carts as reminded and send NOTHING (no backlog blast).
+  const firstRun = !fs.existsSync(ABANDONED_SENT_FILE);
+  const sentAb = loadAbandoned();
+
+  if (firstRun) {
+    let n = 0;
+    for (const c of carts) { sentAb[c.id] = new Date().toISOString(); n++; }
+    saveAbandoned(sentAb);
+    log(`abandoned baseline: ${n} existing cart(s) marked as reminded — no reminders sent on first run.`);
+    return;
+  }
+
+  const pending = carts.filter((c) => !sentAb[c.id]);
+  log(`abandoned eligible=${carts.length} toRemind=${pending.length}`);
+
+  for (const c of pending) {
+    // Re-check readiness before EVERY send (client can drop mid-cycle).
+    if (!waClient || botState.state !== "ready") {
+      warn("aborting abandoned reminders — WhatsApp is no longer ready.");
+      break;
+    }
+    const phone = normalizeMoroccoPhone(c.phone);
+    if (!phone) {
+      // Cannot ever deliver — mark reminded so we don't re-check every cycle.
+      warn(`abandoned invalid phone | cart ${c.id} | "${c.phone ?? ""}"`);
+      sentAb[c.id] = new Date().toISOString();
+      saveAbandoned(sentAb);
+      continue;
+    }
+    const chatId = `${phone}@c.us`;
+    const body = buildAbandonedMessage(c);
+    try {
+      const msg = await waClient.sendMessage(chatId, body);
+      const messageId = (msg && msg.id && (msg.id._serialized || msg.id.id)) || null;
+      const initialAck = msg && typeof msg.ack === "number" ? msg.ack : 0;
+      // Mark reminded immediately — one reminder per cart, ever.
+      sentAb[c.id] = new Date().toISOString();
+      saveAbandoned(sentAb);
+      touchActivity();
+      const finalAck = await waitForAck(waClient, chatId, messageId, initialAck, 15000);
+      if (finalAck >= 1) {
+        stats.sentTotal++;
+        recordMessage({ orderId: c.id, state: "ABANDONED", phone, result: "sent", messageId });
+        log(`abandoned sent    | cart ${c.id} | chatId=${chatId} ack=${finalAck}`);
+      } else {
+        stats.failedTotal++;
+        recordMessage({ orderId: c.id, state: "ABANDONED", phone, result: "failed", error: `ack=${finalAck}`, messageId });
+        warn(`abandoned no ack  | cart ${c.id} | chatId=${chatId} ack=${finalAck}`);
+      }
+    } catch (err) {
+      stats.failedTotal++;
+      recordMessage({ orderId: c.id, state: "ABANDONED", phone, result: "failed", error: err?.message });
+      errl(`abandoned failed  | cart ${c.id} | chatId=${chatId} | ${err?.message ?? err}`);
+    }
+    // Safe pacing between messages (20–40s).
+    await sleep(20000 + Math.floor(Math.random() * 20000));
   }
 }
 

@@ -67,6 +67,7 @@ export default function WhatsAppBotPage() {
   const [loading, setLoading] = useState(true);
 
   const [templates, setTemplates] = useState({ NEW: "", CONFIRMED: "", SHIPPED: "", DELIVERED: "", CANCELLED: "" });
+  const [abandonedTemplate, setAbandonedTemplate] = useState("");
   const [savingTpl, setSavingTpl] = useState(false);
   const [tplMsg, setTplMsg] = useState(null);
 
@@ -103,6 +104,7 @@ export default function WhatsAppBotPage() {
     const d = await fetch("/api/admin/whatsapp-bot/templates", { cache: "no-store" }).then((r) => r.json()).catch(() => null);
     if (d?.templates) {
       setTemplates((prev) => ({ ...prev, ...d.templates }));
+      if (typeof d.abandonedTemplate === "string") setAbandonedTemplate(d.abandonedTemplate);
       tplLoaded.current = true;
     }
   }, []);
@@ -134,7 +136,7 @@ export default function WhatsAppBotPage() {
     try {
       const r = await fetch("/api/admin/whatsapp-bot/templates", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ templates }),
+        body: JSON.stringify({ templates, abandonedTemplate }),
       });
       setTplMsg(r.ok ? { ok: true, text: "Templates saved" } : { ok: false, text: "Save failed" });
     } catch {
@@ -313,13 +315,15 @@ export default function WhatsAppBotPage() {
           </button>
         }
       >
-        <p className="text-xs text-gray-400 mb-3">Variables: <code>{"{name}"}</code>, <code>{"{orderId}"}</code>, <code>{"{status}"}</code></p>
+        <p className="text-xs text-gray-400 mb-3">
+          Variables: <code>{"{name}"}</code>, <code>{"{products}"}</code>, <code>{"{total}"}</code>, <code>{"{shipping}"}</code>, <code>{"{payment}"}</code>, <code>{"{status}"}</code>, <code>{"{orderId}"}</code>
+        </p>
         <div className="space-y-3">
           {TEMPLATE_KEYS.map(({ key, label }) => (
             <div key={key}>
               <label className="block text-xs font-semibold text-gray-600 mb-1">{label}</label>
               <textarea
-                rows={2}
+                rows={6}
                 value={templates[key] ?? ""}
                 onChange={(e) => setTemplates((p) => ({ ...p, [key]: e.target.value }))}
                 dir="auto"
@@ -327,6 +331,24 @@ export default function WhatsAppBotPage() {
               />
             </div>
           ))}
+
+          {/* Abandoned cart — a fully separate reminder (never says "order received"). */}
+          <div className="pt-3 mt-1 border-t border-gray-100">
+            <label className="block text-xs font-semibold text-gray-600 mb-1">
+              Abandoned Cart Reminder
+              <span className="ml-2 font-normal text-gray-400">— separate workflow, sent 30 min after a cart is left</span>
+            </label>
+            <p className="text-xs text-gray-400 mb-1">
+              Variables: <code>{"{name}"}</code>, <code>{"{products}"}</code>, <code>{"{total}"}</code>, <code>{"{shipping}"}</code>, <code>{"{checkoutLink}"}</code>
+            </p>
+            <textarea
+              rows={7}
+              value={abandonedTemplate}
+              onChange={(e) => setAbandonedTemplate(e.target.value)}
+              dir="auto"
+              className="w-full text-sm border border-gray-200 rounded-xl px-3 py-2 bg-gray-50 focus:outline-none focus:border-gray-400"
+            />
+          </div>
         </div>
         {tplMsg && <p className={`text-xs mt-2 ${tplMsg.ok ? "text-green-600" : "text-red-500"}`}>{tplMsg.text}</p>}
       </Card>
