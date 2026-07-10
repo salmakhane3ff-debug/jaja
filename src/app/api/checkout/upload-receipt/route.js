@@ -16,11 +16,10 @@
  */
 
 import { NextResponse } from "next/server";
-import { writeFile, mkdir } from "fs/promises";
-import path   from "path";
 import crypto from "crypto";
 import sharp  from "sharp";
 import { rateLimit } from "@/lib/rateLimit";
+import { saveMedia } from "@/lib/cloudinary";
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -203,15 +202,19 @@ export async function POST(req) {
     }
 
     // ── 11. Save with UUID filename (no original name on disk) ──────────────
-    const uploadsDir = path.join(process.cwd(), "public", "uploads", "receipts");
-    await mkdir(uploadsDir, { recursive: true });
-
     const filename = `${crypto.randomUUID()}.${allowed.ext}`;
-    const filepath  = path.join(uploadsDir, filename);
-    await writeFile(filepath, safeBuffer);
+
+    // Store via the shared media service (local by default; Cloudinary only when
+    // MEDIA_STORAGE=cloudinary). Receipts get their own folder / subdir.
+    const saved = await saveMedia(safeBuffer, {
+      filename,
+      folder:       "shopgold/receipts",
+      resourceType: "image",
+      subdir:       "receipts",
+    });
 
     return NextResponse.json(
-      { url: `/uploads/receipts/${filename}` },
+      { url: saved.url },
       { status: 200 }
     );
 

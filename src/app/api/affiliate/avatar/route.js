@@ -3,12 +3,10 @@
  * Upload affiliate profile picture → save to /public/uploads/ → update DB
  */
 
-import { writeFile, mkdir } from 'fs/promises';
-import { existsSync }       from 'fs';
-import path                 from 'path';
 import { withAffiliateAuth } from '@/lib/middleware/withAffiliateAuth';
 import { updateAffiliateProfile } from '@/lib/services/affiliateSystemService';
 import { optimizeImageBuffer } from '@/lib/imageOptimize';
+import { saveMedia } from '@/lib/cloudinary';
 
 async function postHandler(req, _ctx, decoded) {
   try {
@@ -36,13 +34,16 @@ async function postHandler(req, _ctx, decoded) {
 
     const safeName  = file.name.replace(/[^a-zA-Z0-9._-]/g, '-');
     const fileName  = `avatar-${decoded.affiliateId}-${Date.now()}-${safeName}`;
-    const uploadDir = path.join(process.cwd(), 'public', 'uploads');
-    const filePath  = path.join(uploadDir, fileName);
 
-    if (!existsSync(uploadDir)) await mkdir(uploadDir, { recursive: true });
-    await writeFile(filePath, buffer);
+    // Store via the shared media service (local by default; Cloudinary only when
+    // MEDIA_STORAGE=cloudinary).
+    const saved = await saveMedia(buffer, {
+      filename:     fileName,
+      folder:       'shopgold/avatars',
+      resourceType: 'image',
+    });
 
-    const avatarUrl  = `/uploads/${fileName}`;
+    const avatarUrl  = saved.url;
     const affiliate  = await updateAffiliateProfile(decoded.affiliateId, { avatarUrl });
     return Response.json({ affiliate, avatarUrl });
   } catch (err) {

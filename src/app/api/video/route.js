@@ -10,12 +10,11 @@
  * ─────────────────────────────────────────────────────────────────────────────
  */
 
-import { writeFile } from "fs/promises";
-import path from "path";
 import prisma from "@/lib/prisma";
 import { withAdminAuth } from "@/lib/middleware/withAdminAuth";
 import { validateVideo } from "@/lib/uploadSecurity";
 import { rateLimit } from "@/lib/rateLimit";
+import { saveMedia } from "@/lib/cloudinary";
 
 function mapVideo(row) {
   if (!row) return null;
@@ -57,12 +56,16 @@ export const POST = withAdminAuth(async (req) => {
 
     const safeName  = file.name.replace(/[^a-zA-Z0-9._-]/g, "-");
     const fileName  = `${Date.now()}-${safeName}`;
-    const uploadDir = path.join(process.cwd(), "public", "uploads");
-    const filePath  = path.join(uploadDir, fileName);
 
-    await writeFile(filePath, buffer);
+    // Store via the shared media service (local by default; Cloudinary only when
+    // MEDIA_STORAGE=cloudinary). Videos are never re-encoded locally.
+    const saved = await saveMedia(buffer, {
+      filename:     fileName,
+      folder:       "shopgold/uploads",
+      resourceType: "video",
+    });
 
-    const url = `/uploads/${fileName}`;
+    const url = saved.url;
     const row = await prisma.video.create({ data: { name: file.name, url } });
 
     return Response.json(mapVideo(row), { status: 201 });
