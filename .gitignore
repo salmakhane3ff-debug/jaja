@@ -63,5 +63,6 @@ next-env.d.ts
 .wwebjs_auth/
 .wwebjs_cache/
 
-# cloudinary media migration ledger (runtime; resume/rollback source of truth)
+# media migration ledgers (runtime; resume/rollback source of truth)
 media-migration-ledger.json
+media-migration-r2-ledger.json

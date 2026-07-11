@@ -109,7 +109,7 @@ console.log('reachability retry:');
 
 // ── migrateProduct ───────────────────────────────────────────────────────────
 console.log('migrateProduct:');
-const mockAsset = (calls) => async (url) => { calls.push(url); return { newUrl: `CLD:${url}`, publicId: 'p', resourceType: detectResourceType(url), bytes: 1 }; };
+const mockAsset = (calls) => async (url) => { calls.push(url); return { newUrl: `CLD:${url}`, storage: 'r2', key: 'k', resourceType: detectResourceType(url), bytes: 1 }; };
 
 { // skips cloudinary + external, migrates local, preserves order
   const calls = [];
@@ -136,13 +136,25 @@ const mockAsset = (calls) => async (url) => { calls.push(url); return { newUrl: 
   ok('fail: status failed + ledger failed', perAsset[0].status === 'failed' && ledger.get(LOCAL_IMG)?.status === 'failed');
 }
 
-{ // resume: pre-seeded ledger → no upload call
+{ // resume: pre-seeded R2 ledger → no upload call
   const calls = [];
-  const ledger = createLedger({ assets: { [LOCAL_IMG]: { oldUrl: LOCAL_IMG, newUrl: 'CLD:RESUMED', status: 'migrated' } } });
+  const ledger = createLedger({ assets: { [LOCAL_IMG]: { oldUrl: LOCAL_IMG, newUrl: 'R2:RESUMED', storage: 'r2', status: 'migrated' } } });
   const p = { id: 'p3', images: [LOCAL_IMG] };
   const { changed, newImages } = await migrateProduct(p, { migrateAsset: mockAsset(calls), ledger });
-  ok('resume: reused ledger newUrl', newImages[0] === 'CLD:RESUMED' && changed === true);
+  ok('resume: reused R2 ledger newUrl', newImages[0] === 'R2:RESUMED' && changed === true);
   ok('resume: migrateAsset NOT called', calls.length === 0);
+}
+
+{ // Cloudinary ledger history is IGNORED — no storage:'r2' → re-migrated, not resumed
+  const calls = [];
+  const ledger = createLedger({ assets: {
+    [LOCAL_IMG]: { oldUrl: LOCAL_IMG, newUrl: 'https://res.cloudinary.com/demo/image/upload/v1/x.jpg', status: 'migrated' }, // legacy, no storage
+    [LOCAL_VID]: { oldUrl: LOCAL_VID, newUrl: 'https://res.cloudinary.com/demo/video/upload/v1/y.mp4', storage: 'cloudinary', status: 'migrated' },
+  } });
+  const p = { id: 'p3b', images: [LOCAL_IMG, LOCAL_VID] };
+  const { newImages } = await migrateProduct(p, { migrateAsset: mockAsset(calls), ledger });
+  ok('ignore cloud ledger: both re-migrated (not resumed)', calls.length === 2);
+  ok('ignore cloud ledger: DB gets R2 urls, never cloudinary', newImages[0] === `CLD:${LOCAL_IMG}` && newImages[1] === `CLD:${LOCAL_VID}`);
 }
 
 { // dry-run: no upload, no ledger writes
@@ -195,7 +207,7 @@ console.log('runMigration:');
   const updateProductImages = async (id, images) => { updated.push({ id, images }); };
   const migrateAsset = async (url) => {
     if (url.includes('broken')) throw new Error('boom');
-    return { newUrl: `CLD:${url}`, publicId: 'p', resourceType: detectResourceType(url), bytes: 1 };
+    return { newUrl: `CLD:${url}`, storage: 'r2', key: 'k', resourceType: detectResourceType(url), bytes: 1 };
   };
   const ledger = createLedger();
   const s = await runMigration({ loadProductsBatch, updateProductImages, migrateAsset, ledger, batchSize: 2 });
@@ -234,14 +246,17 @@ console.log('runRollback / rollbackImages:');
   ok('rollbackImages restores old url', changed && images[0] === LOCAL_IMG && images[1] === CLD_VID);
 }
 {
-  const ledger = createLedger({ assets: { [LOCAL_IMG]: { oldUrl: LOCAL_IMG, newUrl: `CLD:${LOCAL_IMG}`, status: 'migrated' } } });
+  const ledger = createLedger({ assets: {
+    [LOCAL_IMG]: { oldUrl: LOCAL_IMG, newUrl: `CLD:${LOCAL_IMG}`, storage: 'r2', status: 'migrated' },
+    '/uploads/old.jpg': { oldUrl: '/uploads/old.jpg', newUrl: 'https://res.cloudinary.com/demo/image/upload/v1/z.jpg', storage: 'cloudinary', status: 'migrated' }, // ignored
+  } });
   const products = [{ id: 'a', images: [`CLD:${LOCAL_IMG}`] }, { id: 'b', images: [CLD_VID] }];
   const loadProductsBatch = async (o, n) => products.slice(o, o + n);
   const updated = [];
   const updateProductImages = async (id, images) => updated.push({ id, images });
   const s = await runRollback({ loadProductsBatch, updateProductImages, ledger, batchSize: 20 });
   ok('rollback: reverted product a only', updated.length === 1 && updated[0].id === 'a' && updated[0].images[0] === LOCAL_IMG);
-  ok('rollback: summary', s.reverseCount === 1 && s.productsReverted === 1 && s.urlsReverted === 1);
+  ok('rollback: Cloudinary ledger entry ignored (reverseCount=1)', s.reverseCount === 1 && s.productsReverted === 1 && s.urlsReverted === 1);
 }
 
 console.log(`\nRESULT: ${pass} passed, ${fail} failed`);

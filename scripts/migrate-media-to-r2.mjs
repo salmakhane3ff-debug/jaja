@@ -3,13 +3,13 @@
  * scripts/migrate-media-to-r2.mjs
  * ─────────────────────────────────────────────────────────────────────────────
  * One-time migration: move local /uploads/... media referenced by Product.images
- * to Cloudinary, using the EXISTING saveMedia() service, and rewrite the DB URLs.
+ * to Cloudflare R2, using the EXISTING saveMedia() service, and rewrite the DB URLs.
  *
  *   - scans Product.images (batched, default 20)
- *   - migrates only local /uploads/... entries; skips Cloudinary URLs
- *   - uploads via saveMedia() with a deterministic public_id (idempotent)
- *   - VERIFIES each asset (upload ok + secure_url reachable) BEFORE any DB write
- *   - updates Product.images with the secure_url (order + entry shape preserved)
+ *   - migrates only local /uploads/... entries; skips existing R2 + Cloudinary URLs
+ *   - uploads via saveMedia() (MEDIA_STORAGE=r2) with a deterministic key (idempotent)
+ *   - VERIFIES each asset (upload ok + public URL reachable) BEFORE any DB write
+ *   - updates Product.images with the R2 public URL (order + entry shape preserved)
  *   - writes a JSON ledger (resume + rollback source of truth)
  *   - never deletes or modifies local files
  *
@@ -18,19 +18,19 @@
  *   --batch=N              batch size (default 20)
  *   --limit=N              stop after N products
  *   --product-id=<uuid>    migrate a single product
- *   --ledger=<path>        ledger file (default media-migration-ledger.json)
- *   --folder=<folder>      Cloudinary folder (default shopgold/products)
- *   --rollback             restore old local URLs from the ledger
+ *   --ledger=<path>        ledger file (default media-migration-r2-ledger.json)
+ *   --folder=<folder>      storage folder → R2 category (default shopgold/products)
+ *   --rollback             restore old local URLs from the R2 ledger
  *
- * Run on the VPS (NOT here — needs DATABASE_URL + Cloudinary creds):
+ * Run on the VPS (NOT here — needs DATABASE_URL + R2 creds):
  *   node --env-file=.env --experimental-detect-module scripts/migrate-media-to-r2.mjs --dry-run
  *   node --env-file=.env --experimental-detect-module scripts/migrate-media-to-r2.mjs --batch=20
  *   node --env-file=.env --experimental-detect-module scripts/migrate-media-to-r2.mjs --rollback
  * ─────────────────────────────────────────────────────────────────────────────
  */
 
-// Force Cloudinary for THIS process only (does not modify .env or the running app).
-process.env.MEDIA_STORAGE = 'cloudinary';
+// Force R2 for THIS process only (does not modify .env or the running app).
+process.env.MEDIA_STORAGE = 'r2';
 
 import fs from 'node:fs';
 import { readFile } from 'node:fs/promises';
@@ -54,7 +54,8 @@ const BATCH      = Math.max(1, parseInt(val('--batch', '20'), 10) || 20);
 const LIMIT      = val('--limit') != null ? parseInt(val('--limit'), 10) : null;
 const PRODUCT_ID = val('--product-id');
 const FOLDER     = val('--folder', 'shopgold/products');
-const LEDGER_PATH = path.resolve(ROOT, val('--ledger', 'media-migration-ledger.json'));
+// Dedicated R2 ledger — NEVER the old Cloudinary ledger (media-migration-ledger.json).
+const LEDGER_PATH = path.resolve(ROOT, val('--ledger', 'media-migration-r2-ledger.json'));
 
 function abort(msg, err) {
   console.error('✗', msg);
@@ -69,16 +70,16 @@ async function importDefaultOr(modPath, pickDefault) {
 }
 
 async function main() {
-  // Load the REAL service + Prisma client.
-  let svc, prisma;
+  // Load the REAL storage facade (saveMedia), the R2 module (config check), Prisma.
+  let svc, prisma, r2;
   try { svc = await importDefaultOr('src/lib/cloudinary.js', false); }
   catch (err) { abort('Could not load src/lib/cloudinary.js', err); }
-  if (!svc.isCloudinaryConfigured()) abort('No Cloudinary credentials found (provide them via --env-file=.env).');
+  try { r2 = await importDefaultOr('src/lib/r2.js', false); }
+  catch (err) { abort('Could not load src/lib/r2.js', err); }
 
-  if (!DRY_RUN) {
-    try { await svc.verifyConnection(); }
-    catch (err) { abort('Cloudinary connection failed — aborting BEFORE any upload.', err); }
-  }
+  // R2 must be fully configured — the migration must NEVER fall back to Cloudinary.
+  const cfg = r2.r2ConfigStatus();
+  if (!cfg.ok) abort(`R2 configuration incomplete — missing: ${cfg.missing.join(', ')} (provide via --env-file=.env). Tip: run scripts/r2-smoketest.mjs first.`);
 
   try { prisma = await importDefaultOr('src/lib/prisma.js', true); }
   catch (err) { abort('Could not load src/lib/prisma.js', err); }
@@ -124,7 +125,7 @@ async function main() {
     root: ROOT,
   });
 
-  console.log('── Cloudinary media migration ──────────────────────');
+  console.log('── R2 media migration ──────────────────────────────');
   console.log(`mode   : ${ROLLBACK ? 'ROLLBACK' : DRY_RUN ? 'DRY-RUN (no writes)' : 'MIGRATE'}`);
   console.log(`batch  : ${BATCH}${LIMIT != null ? ` | limit ${LIMIT}` : ''}${PRODUCT_ID ? ` | product ${PRODUCT_ID}` : ''}`);
   console.log(`folder : ${FOLDER}`);

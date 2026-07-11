@@ -2,9 +2,9 @@
  * scripts/lib/mediaMigration.mjs
  * ─────────────────────────────────────────────────────────────────────────────
  * PURE, dependency-free migration logic for moving local /uploads/... media in
- * Product.images to Cloudinary. All I/O (file read, Cloudinary upload, HTTP
+ * Product.images to remote object storage (R2). All I/O (file read, upload, HTTP
  * reachability, DB read/write, ledger persistence) is INJECTED, so every branch
- * is unit-testable without a database, Cloudinary account, or network.
+ * is unit-testable without a database, storage account, or network.
  *
  * The runner (scripts/migrate-media-to-r2.mjs) provides the real deps.
  * Nothing here reads process env, touches the DB, or writes files.
@@ -47,7 +47,7 @@ export function shortHash(str, len = 10) {
 
 /**
  * Deterministic filename handed to saveMedia(): its basename-without-extension
- * becomes the Cloudinary public_id. It combines a readable flattened base with a
+ * becomes the storage object key (public_id). It combines a readable flattened base with a
  * stable short hash of the COMPLETE old local URL, so:
  *   - the same old URL ALWAYS maps to the same public_id (idempotent), and
  *   - two different paths that share a basename (a/photo.jpg vs b/photo.jpg)
@@ -93,7 +93,7 @@ export function verifyUpload(result, expectedType) {
 const defaultSleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 /**
- * Verify a URL is reachable, tolerating Cloudinary CDN propagation delay: retry
+ * Verify a URL is reachable, tolerating CDN propagation delay: retry
  * up to `attempts` times (default 3) with exponential backoff (baseDelayMs, then
  * 2x each). `sleep` is injectable so tests run instantly. Returns a boolean.
  */
@@ -157,8 +157,8 @@ export function makeAssetMigrator({
 
 /**
  * Migrate one product's images (pure orchestration; migrateAsset + ledger injected).
- * Cloudinary URLs are skipped, local URLs migrated, order preserved. Never throws —
- * per-asset failures are recorded and skipped so the batch continues.
+ * Already-remote (R2/Cloudinary) URLs are skipped; local URLs migrated; order
+ * preserved. Never throws — per-asset failures are recorded and the batch continues.
  *
  * @returns {{changed:boolean, newImages:any[], perAsset:Array}}
  */
@@ -176,9 +176,11 @@ export async function migrateProduct(product, { migrateAsset, ledger, dryRun = f
     if (isCloudinaryUrl(url)) { perAsset.push({ url, status: 'skipped-cloudinary' }); continue; }
     if (!isLocalUploadUrl(url)) { perAsset.push({ url, status: 'skipped-nonlocal' }); continue; }
 
-    // Resume: reuse a previously-migrated result (deterministic, idempotent).
+    // Resume: reuse a previously-migrated R2 result (deterministic, idempotent).
+    // ONLY entries with storage === 'r2' are honored — any Cloudinary migration
+    // history in the ledger is ignored so it can never leak into an R2 migration.
     const known = ledger.get(url);
-    if (known && known.status === 'migrated' && known.newUrl) {
+    if (known && known.status === 'migrated' && known.storage === 'r2' && known.newUrl) {
       const replaced = replaceUrl(original, known.newUrl);
       if (newImages[i] !== replaced) { newImages[i] = replaced; changed = true; }
       perAsset.push({ url, status: 'resumed', newUrl: known.newUrl });
@@ -288,7 +290,8 @@ export function rollbackImages(images, reverseMap) {
 export async function runRollback({ loadProductsBatch, updateProductImages, ledger, dryRun = false, batchSize = 20, limit = null, log = () => {} }) {
   const reverse = new Map();
   for (const [oldUrl, rec] of ledger.entries()) {
-    if (rec && rec.status === 'migrated' && rec.newUrl) reverse.set(rec.newUrl, oldUrl);
+    // Rollback only R2 entries — Cloudinary ledger history is ignored entirely.
+    if (rec && rec.status === 'migrated' && rec.storage === 'r2' && rec.newUrl) reverse.set(rec.newUrl, oldUrl);
   }
   const summary = { reverseCount: reverse.size, productsScanned: 0, productsReverted: 0, urlsReverted: 0, dbUpdateErrors: 0 };
   if (reverse.size === 0) return summary;
