@@ -54,9 +54,10 @@ ok('replaceUrl object keeps shape', (() => { const r = replaceUrl({ url: 'x', _i
 
 // ── verifyUpload ─────────────────────────────────────────────────────────────
 console.log('verifyUpload:');
-ok('accepts good result', verifyUpload({ storage: 'cloudinary', url: CLD_IMG, publicId: 'p', resourceType: 'image', bytes: 5 }, 'image'));
+ok('accepts cloudinary result', verifyUpload({ storage: 'cloudinary', url: CLD_IMG, publicId: 'p', resourceType: 'image', bytes: 5 }, 'image'));
+ok('accepts r2 result', verifyUpload({ storage: 'r2', url: 'https://media.example.com/siteA/products/x.jpg', key: 'siteA/products/x', resourceType: 'image', bytes: 9 }, 'image'));
 ok('rejects local fallback', await threw(async () => verifyUpload({ storage: 'local', url: '/uploads/x.jpg' })));
-ok('rejects non-cloudinary url', await threw(async () => verifyUpload({ storage: 'cloudinary', url: 'https://x.com/y', publicId: 'p', bytes: 5 })));
+ok('rejects non-absolute url', await threw(async () => verifyUpload({ storage: 'r2', url: '/uploads/x.jpg', key: 'k', bytes: 5 })));
 ok('rejects zero bytes', await threw(async () => verifyUpload({ storage: 'cloudinary', url: CLD_IMG, publicId: 'p', resourceType: 'image', bytes: 0 }, 'image')));
 ok('rejects resource_type mismatch', await threw(async () => verifyUpload({ storage: 'cloudinary', url: CLD_IMG, publicId: 'p', resourceType: 'image', bytes: 5 }, 'video')));
 
@@ -81,6 +82,11 @@ console.log('makeAssetMigrator:');
   const vid = makeAssetMigrator({ ...base, saveMedia: goodSave() });
   const rv = await vid(LOCAL_VID);
   ok('video: resource_type video', rv.resourceType === 'video');
+
+  // R2 result surfaces storage + key into the ledger return
+  const r2Save = async () => ({ storage: 'r2', url: 'https://media.example.com/siteA/products/x.jpg', key: 'siteA/products/x', resource_type: 'image', bytes: 3 });
+  const r2r = await makeAssetMigrator({ ...base, saveMedia: r2Save })(LOCAL_IMG);
+  ok('r2: returns storage + key + newUrl', r2r.storage === 'r2' && r2r.key === 'siteA/products/x' && r2r.newUrl.startsWith('https://media.example.com/'));
 }
 
 // ── reachability retry (tolerate CDN propagation delay) ──────────────────────
@@ -156,6 +162,17 @@ const mockAsset = (calls) => async (url) => { calls.push(url); return { newUrl: 
   const { newImages } = await migrateProduct(p, { migrateAsset: mockAsset(calls), ledger });
   ok('dup: uploaded once', calls.length === 1);
   ok('dup: both replaced', newImages[0] === `CLD:${LOCAL_IMG}` && newImages[1] === `CLD:${LOCAL_IMG}`);
+}
+
+{ // R2 + Cloudinary URLs are skipped; only local migrates
+  const calls = [];
+  const ledger = createLedger();
+  const R2_IMG = 'https://media.example.com/siteA/products/x.jpg';
+  const p = { id: 'skp', images: [R2_IMG, CLD_IMG, LOCAL_IMG] };
+  const { newImages, perAsset } = await migrateProduct(p, { migrateAsset: mockAsset(calls), ledger });
+  ok('skip: R2 url → skipped-nonlocal, unchanged', perAsset[0].status === 'skipped-nonlocal' && newImages[0] === R2_IMG);
+  ok('skip: Cloudinary url → skipped-cloudinary', perAsset[1].status === 'skipped-cloudinary');
+  ok('skip: only the local asset migrated', calls.length === 1 && newImages[2] === `CLD:${LOCAL_IMG}`);
 }
 
 // ── runMigration (batching + DB-after-verification + continue-on-error) ──────

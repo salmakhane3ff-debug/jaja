@@ -1,5 +1,23 @@
 import type { NextConfig } from "next";
 
+// R2 public media origin — env-driven so each deployment/site can use its own
+// R2_PUBLIC_URL. Never hard-code a media hostname here. When unset (local dev),
+// nothing R2-specific is added.
+const R2_PUBLIC_URL = (process.env.R2_PUBLIC_URL || "").trim().replace(/\/+$/, "");
+let R2_ORIGIN = "";
+let R2_HOSTNAME = "";
+let R2_PROTOCOL: "http" | "https" = "https";
+try {
+  if (R2_PUBLIC_URL) {
+    const u = new URL(R2_PUBLIC_URL);
+    R2_ORIGIN = u.origin;
+    R2_HOSTNAME = u.hostname;
+    R2_PROTOCOL = u.protocol === "http:" ? "http" : "https";
+  }
+} catch {
+  // malformed R2_PUBLIC_URL → ignore (no R2 host added)
+}
+
 const nextConfig: NextConfig = {
   // ── Permanent HTTP redirects ───────────────────────────────────────────────
   // These fire at the infrastructure level (308 status) before any JavaScript
@@ -84,6 +102,8 @@ const nextConfig: NextConfig = {
       { protocol: "https", hostname: "**.cloudinary.com" },
       { protocol: "https", hostname: "placehold.co" },
       { protocol: "https", hostname: "img.youtube.com" },
+      // R2 public media host (env-driven; only added when R2_PUBLIC_URL is set)
+      ...(R2_HOSTNAME ? [{ protocol: R2_PROTOCOL, hostname: R2_HOSTNAME }] : []),
     ],
     // SVG placeholder support (placehold.co)
     dangerouslyAllowSVG: true,
@@ -118,10 +138,10 @@ const nextConfig: NextConfig = {
               "default-src 'self'",
               "script-src 'self' 'unsafe-inline' 'unsafe-eval' https://static.cloudflareinsights.com https://connect.facebook.net https://www.clarity.ms https://scripts.clarity.ms",
               "style-src 'self' 'unsafe-inline'",
-              "img-src 'self' data: blob: https://res.cloudinary.com https://*.cloudinary.com https://placehold.co https://img.youtube.com https://www.facebook.com",
+              `img-src 'self' data: blob: https://res.cloudinary.com https://*.cloudinary.com https://placehold.co https://img.youtube.com https://www.facebook.com${R2_ORIGIN ? " " + R2_ORIGIN : ""}`,
               "font-src 'self' data:",
               "connect-src 'self' https://res.cloudinary.com https://ipwho.is https://ip-api.com https://cloudflareinsights.com https://connect.facebook.net https://www.facebook.com https://*.clarity.ms",
-              "media-src 'self' blob:",
+              `media-src 'self' blob:${R2_ORIGIN ? " " + R2_ORIGIN : ""}`,
               "frame-src 'none'",
               "object-src 'none'",
               "base-uri 'self'",

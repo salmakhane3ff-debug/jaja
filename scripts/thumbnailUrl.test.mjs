@@ -46,6 +46,15 @@ eq("external cdn unchanged",
    thumbUrl("https://cdn.example.com/img/photo.jpg", "lg"),
    "https://cdn.example.com/img/photo.jpg");
 
+console.log("5) R2 URLs → treated as normal external, unchanged (no sidecars, no transforms)");
+const R2_IMG = "https://media.example.com/siteA/products/1699-photo.jpg";
+const R2_VID = "https://media.example.com/siteA/videos/clip.mp4";
+eq("R2 image unchanged (md)", thumbUrl(R2_IMG, "md"), R2_IMG);
+eq("R2 image unchanged (sm)", thumbUrl(R2_IMG, "sm"), R2_IMG);
+eq("R2 image NEVER gets -sm/-md/-lg.webp", /-(sm|md|lg)\.webp/.test(thumbUrl(R2_IMG, "lg")), false);
+eq("R2 image NOT cloudinary-transformed", /image\/upload\/f_auto/.test(thumbUrl(R2_IMG, "lg")), false);
+eq("R2 video unchanged", thumbUrl(R2_VID, "md"), R2_VID);
+
 console.log("extra) videos / gif / empty");
 eq("local video unchanged", thumbUrl("/uploads/movie.mp4", "md"), "/uploads/movie.mp4");
 eq("local gif unchanged",   thumbUrl("/uploads/anim.gif", "md"), "/uploads/anim.gif");

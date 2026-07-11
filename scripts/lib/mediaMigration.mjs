@@ -6,7 +6,7 @@
  * reachability, DB read/write, ledger persistence) is INJECTED, so every branch
  * is unit-testable without a database, Cloudinary account, or network.
  *
- * The runner (scripts/migrate-media-to-cloudinary.mjs) provides the real deps.
+ * The runner (scripts/migrate-media-to-r2.mjs) provides the real deps.
  * Nothing here reads process env, touches the DB, or writes files.
  * ─────────────────────────────────────────────────────────────────────────────
  */
@@ -73,15 +73,19 @@ export function replaceUrl(original, newUrl) {
   return newUrl;
 }
 
-/** Throw unless a saveMedia() result is a verified Cloudinary asset. */
+const REMOTE_URL_RE = /^https?:\/\/[^/]+\/.+/i;
+
+/** Throw unless a saveMedia() result is a verified REMOTE asset (R2 or Cloudinary). */
 export function verifyUpload(result, expectedType) {
-  if (!result || result.storage !== 'cloudinary')
-    throw new Error(`upload did not go to Cloudinary (storage=${result?.storage})`);
-  if (typeof result.url !== 'string' || !CLOUDINARY_HOST_RE.test(result.url))
-    throw new Error(`secure_url is not a Cloudinary HTTPS URL: ${result.url}`);
-  if (!result.publicId) throw new Error('upload result missing public_id');
-  if (expectedType && result.resourceType !== expectedType)
-    throw new Error(`resource_type mismatch: expected ${expectedType}, got ${result.resourceType}`);
+  if (!result || !['r2', 'cloudinary'].includes(result.storage))
+    throw new Error(`upload did not go to remote storage (storage=${result?.storage})`);
+  if (typeof result.url !== 'string' || !REMOTE_URL_RE.test(result.url))
+    throw new Error(`url is not an absolute http(s) URL: ${result.url}`);
+  const id = result.key || result.publicId || result.public_id;
+  if (!id) throw new Error('upload result missing key/public_id');
+  const rtype = result.resourceType || result.resource_type;
+  if (expectedType && rtype !== expectedType)
+    throw new Error(`resource_type mismatch: expected ${expectedType}, got ${rtype}`);
   if (!(Number(result.bytes) > 0)) throw new Error('upload result bytes not > 0');
   return true;
 }
@@ -126,19 +130,24 @@ export function makeAssetMigrator({
     }
 
     const buffer = await readFile(absPath);
-    const result = await saveMedia(buffer, { filename: migrationFilename(url), folder, resourceType });
+    // deterministic:true → the R2 object key is derived from the deterministic
+    // migration filename (which embeds a hash of the full old URL) with no random
+    // suffix, so re-runs never create duplicates.
+    const result = await saveMedia(buffer, { filename: migrationFilename(url), folder, resourceType, deterministic: true });
 
     verifyUpload(result, resourceType);                 // 1. PRIMARY gate: upload response metadata
 
-    const reached = await verifyReachableWithRetry(result.url, {   // 2. reachability (retry + backoff)
+    const reached = await verifyReachableWithRetry(result.url, {   // 2. public URL reachable (retry + backoff)
       reachable, attempts: reachAttempts, baseDelayMs: reachBaseDelayMs, sleep,
     });
-    if (!reached) throw new Error(`secure_url not reachable after ${reachAttempts} attempts: ${result.url}`);
+    if (!reached) throw new Error(`public url not reachable after ${reachAttempts} attempts: ${result.url}`);
 
     return {
       newUrl: result.url,
-      publicId: result.publicId,
-      resourceType: result.resourceType,
+      storage: result.storage,
+      key: result.key || result.public_id || result.publicId || null,
+      publicId: result.publicId || result.public_id || result.key || null,
+      resourceType: result.resourceType || result.resource_type,
       bytes: result.bytes ?? null,
       width: result.width ?? null,
       height: result.height ?? null,

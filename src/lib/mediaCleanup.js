@@ -1,18 +1,20 @@
 /**
  * src/lib/mediaCleanup.js
  * ─────────────────────────────────────────────────────────────────────────────
- * Best-effort Cloudinary cleanup for Product.images (a string[] of URLs).
+ * Best-effort remote cleanup for Product.images (a string[] of URLs).
  *
- * Built on top of the existing destroyByUrl() (which derives public_id +
- * resource_type from the stored URL). This layer only orchestrates:
+ * Built on top of destroyByUrl(), which dispatches by URL:
+ *   - R2 URLs         → deleted (only within R2_PUBLIC_URL / R2_PREFIX)
+ *   - Cloudinary URLs → deleted (partially-migrated legacy assets)
+ *   - local /uploads/ → skipped (local files are never touched)
+ *   - external URLs   → skipped
+ *
+ * This layer only orchestrates:
  *   - normalises items (accepts strings or {url}/{src} objects)
  *   - de-duplicates URLs so an asset is destroyed at most once
- *   - NEVER throws — a Cloudinary failure must not block or roll back the DB
- *     delete/update that called it
+ *   - NEVER throws — a remote failure must not block or roll back the DB
+ *     delete/update that called it (callers do DB-first, then this cleanup)
  *   - logs each outcome: deleted / skipped / failed
- *
- * Local "/uploads/..." URLs are ignored by destroyByUrl() (returns skipped), so
- * local files are never touched here.
  * ─────────────────────────────────────────────────────────────────────────────
  */
 
@@ -45,7 +47,7 @@ export async function destroyManyByUrls(items, { destroyFn = destroyByUrl, label
         console.log(`[media-cleanup] skipped | ${label} | ${url} | ${res.reason || 'not-cloudinary'}`);
       } else if (res?.ok) {
         summary.deleted++;
-        console.log(`[media-cleanup] deleted | ${label} | ${url} | public_id=${res.publicId ?? '?'} result=${res.result ?? 'ok'}`);
+        console.log(`[media-cleanup] deleted | ${label} | ${url} | storage=${res.storage ?? '?'} key=${res.key ?? res.publicId ?? '?'} result=${res.result ?? 'ok'}`);
       } else {
         summary.failed++;
         console.error(`[media-cleanup] failed  | ${label} | ${url} | ${res?.error ?? res?.result ?? 'unknown'}`);

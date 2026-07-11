@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /**
- * scripts/migrate-media-to-cloudinary.mjs
+ * scripts/migrate-media-to-r2.mjs
  * ─────────────────────────────────────────────────────────────────────────────
  * One-time migration: move local /uploads/... media referenced by Product.images
  * to Cloudinary, using the EXISTING saveMedia() service, and rewrite the DB URLs.
@@ -23,9 +23,9 @@
  *   --rollback             restore old local URLs from the ledger
  *
  * Run on the VPS (NOT here — needs DATABASE_URL + Cloudinary creds):
- *   node --env-file=.env --experimental-detect-module scripts/migrate-media-to-cloudinary.mjs --dry-run
- *   node --env-file=.env --experimental-detect-module scripts/migrate-media-to-cloudinary.mjs --batch=20
- *   node --env-file=.env --experimental-detect-module scripts/migrate-media-to-cloudinary.mjs --rollback
+ *   node --env-file=.env --experimental-detect-module scripts/migrate-media-to-r2.mjs --dry-run
+ *   node --env-file=.env --experimental-detect-module scripts/migrate-media-to-r2.mjs --batch=20
+ *   node --env-file=.env --experimental-detect-module scripts/migrate-media-to-r2.mjs --rollback
  * ─────────────────────────────────────────────────────────────────────────────
  */
 
@@ -58,7 +58,7 @@ const LEDGER_PATH = path.resolve(ROOT, val('--ledger', 'media-migration-ledger.j
 
 function abort(msg, err) {
   console.error('✗', msg);
-  console.error('  Expected run:  node --env-file=.env --experimental-detect-module scripts/migrate-media-to-cloudinary.mjs [flags]');
+  console.error('  Expected run:  node --env-file=.env --experimental-detect-module scripts/migrate-media-to-r2.mjs [flags]');
   if (err) console.error('   ', err?.message ?? err);
   process.exit(1);
 }

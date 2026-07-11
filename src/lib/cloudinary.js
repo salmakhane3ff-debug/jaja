@@ -29,6 +29,7 @@ import { v2 as cloudinary } from "cloudinary";
 import { writeFile, mkdir } from "fs/promises";
 import { existsSync } from "fs";
 import path from "path";
+import { saveMediaR2, destroyByUrlR2, isR2Url, isR2Configured, categoryFor } from "./r2.js";
 
 // ── Config ────────────────────────────────────────────────────────────────────
 
@@ -51,10 +52,12 @@ function ensureConfig() {
   _configured = true;
 }
 
-/** 'cloudinary' only when explicitly enabled; every other value → 'local'. */
+/** 'r2' | 'cloudinary' when explicitly enabled; every other value → 'local'. */
 export function storageMode() {
   const v = String(process.env.MEDIA_STORAGE || "").trim().toLowerCase();
-  return v === "cloudinary" ? "cloudinary" : "local";
+  if (v === "r2") return "r2";
+  if (v === "cloudinary") return "cloudinary";
+  return "local";
 }
 
 /** True when enough credentials exist to talk to Cloudinary. */
@@ -215,19 +218,33 @@ export async function uploadBuffer({ buffer, folder, resourceType = "image", pub
  *                     publicId?:string, resourceType?:string, width?:number,
  *                     height?:number, bytes?:number, format?:string }>}
  */
-export async function saveMedia(buffer, { filename, folder, resourceType = "image", subdir = "" }) {
-  if (storageMode() === "cloudinary") {
+export async function saveMedia(buffer, opts = {}) {
+  const { filename, folder, resourceType = "image", subdir = "", deterministic = false, category } = opts;
+  const mode = storageMode();
+
+  // ── R2 (production backend) ──────────────────────────────────────────────
+  if (mode === "r2") {
+    if (!isR2Configured()) {
+      // Fail safe: never break an upload, and NEVER silently use Cloudinary.
+      // Documented fallback: incomplete R2 config → LOCAL storage (public/uploads).
+      console.error("[storage] MEDIA_STORAGE=r2 but R2 configuration is incomplete — falling back to LOCAL storage (never Cloudinary).");
+      return saveLocal(buffer, filename, subdir);
+    }
+    return saveMediaR2(buffer, {
+      filename,
+      category: category || categoryFor(folder, resourceType),
+      resourceType,
+      deterministic,
+    });
+  }
+
+  // ── Cloudinary (legacy; kept for partially-migrated assets, not for prod) ──
+  if (mode === "cloudinary") {
     if (!isCloudinaryConfigured()) {
-      // Fail safe: never break an upload because the flag was set without creds.
       console.warn("[cloudinary] MEDIA_STORAGE=cloudinary but no credentials found — falling back to local storage.");
       return saveLocal(buffer, filename, subdir);
     }
-    const res = await uploadBuffer({
-      buffer,
-      folder,
-      resourceType,
-      publicId: baseNameNoExt(filename),
-    });
+    const res = await uploadBuffer({ buffer, folder, resourceType, publicId: baseNameNoExt(filename) });
     return {
       storage:      "cloudinary",
       url:          res.secure_url,
@@ -240,6 +257,7 @@ export async function saveMedia(buffer, { filename, folder, resourceType = "imag
     };
   }
 
+  // ── Local (default) ──────────────────────────────────────────────────────
   return saveLocal(buffer, filename, subdir);
 }
 
@@ -252,25 +270,38 @@ async function saveLocal(buffer, filename, subdir = "") {
   return { storage: "local", url, filename, localDir: uploadDir };
 }
 
-// ── Deletion (defined for a later phase — NOT wired into any route yet) ────────
+// ── Deletion (storage-aware dispatcher) ────────────────────────────────────────
 /**
- * Destroy a Cloudinary asset given its stored URL. No-ops safely for legacy
- * /uploads/ paths or any URL we cannot parse with confidence.
+ * Delete a stored asset by its URL. Dispatches by URL:
+ *   - R2 URL (belongs to R2_PUBLIC_URL)   → DeleteObject (only within R2_PREFIX)
+ *   - Cloudinary URL (partial migration)  → Cloudinary destroy
+ *   - local /uploads/ or external URL     → skipped safely (never throws)
+ * Never deletes objects from another bucket/host.
  */
 export async function destroyByUrl(url) {
-  const parsed = publicIdFromUrl(url);
-  if (!parsed) return { ok: false, skipped: true, reason: "not-a-cloudinary-url" };
+  if (typeof url !== "string" || !url) return { ok: false, skipped: true, reason: "empty-url" };
 
-  ensureConfig();
-  try {
-    const res = await cloudinary.uploader.destroy(parsed.publicId, {
-      resource_type: parsed.resourceType,
-      invalidate:    true,
-    });
-    return { ok: res.result === "ok" || res.result === "not found", result: res.result, publicId: parsed.publicId };
-  } catch (err) {
-    return { ok: false, error: err?.message || String(err), publicId: parsed.publicId };
+  // R2 first (only matches when the URL host equals R2_PUBLIC_URL).
+  if (isR2Url(url)) return destroyByUrlR2(url);
+
+  // Cloudinary (existing partially-migrated assets).
+  const parsed = publicIdFromUrl(url);
+  if (parsed) {
+    ensureConfig();
+    try {
+      const res = await cloudinary.uploader.destroy(parsed.publicId, {
+        resource_type: parsed.resourceType,
+        invalidate:    true,
+      });
+      return { ok: res.result === "ok" || res.result === "not found", storage: "cloudinary", result: res.result, publicId: parsed.publicId };
+    } catch (err) {
+      return { ok: false, storage: "cloudinary", error: err?.message || String(err), publicId: parsed.publicId };
+    }
   }
+
+  // Local / external → skip.
+  const reason = url.startsWith("/uploads/") || url.includes("/uploads/") ? "local-url" : "external-url";
+  return { ok: false, skipped: true, reason };
 }
 
 // ── Connection test (read-only; does not change storage) ──────────────────────
