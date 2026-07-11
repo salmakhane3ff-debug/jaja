@@ -149,6 +149,15 @@ function MediaItem({ src, title, isFirst = false, className = "", style, autoPla
         loading={isFirst ? "eager" : "lazy"}
         fetchPriority={isFirst ? "high" : "auto"}
         onContextMenu={(e) => e.preventDefault()}
+        onError={(e) => {
+          // If a transformed/sized URL fails, fall back to the ORIGINAL url
+          // (Cloudinary secure_url or local original) — never a legacy path.
+          const img = e.currentTarget;
+          if (img.dataset.fellBack) return;   // one-shot — avoid loops
+          img.dataset.fellBack = "1";
+          img.srcset = "";                     // drop responsive candidates
+          img.src = url;
+        }}
         className="max-w-full max-h-full object-contain select-none"
         style={{ display: "block" }}
       />
@@ -426,6 +435,14 @@ export default function ProductGallery({ images = [], title = "" }) {
                         loading={i === 0 ? "eager" : "lazy"}
                         fetchPriority={i === 0 ? "high" : "auto"}
                         onContextMenu={(e) => e.preventDefault()}
+                        onError={(e) => {
+                          // Failed transformed/sized URL → fall back to the ORIGINAL.
+                          const img = e.currentTarget;
+                          if (img.dataset.fellBack) return;
+                          img.dataset.fellBack = "1";
+                          img.srcset = "";
+                          img.src = getSrc(item);
+                        }}
                         className="max-w-full max-h-full object-contain select-none"
                       />
                     )}

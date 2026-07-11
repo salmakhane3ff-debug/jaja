@@ -20,10 +20,10 @@
  *   'md'  → 200px  — product cards, collection grids
  *   'lg'  → 400px  — gallery thumbnail strip
  *
- * Falls back to the original URL if:
- *   - The URL is not a local /uploads/ path (e.g. Cloudinary, external)
- *   - The file is a video
- *   - Size is not recognised
+ * Cloudinary images are transformed by inserting f_auto,q_auto,w_*,c_limit after
+ * /image/upload/ (never -sm/-md/-lg sidecars). Local /uploads/ images use the
+ * pre-generated -sm/-md/-lg.webp sidecars. Cloudinary videos, local videos,
+ * GIF/SVG, external and unknown URLs are returned unchanged.
  * ─────────────────────────────────────────────────────────────────────────────
  */
 
@@ -34,8 +34,31 @@ const VIDEO_EXT  = /\.(mp4|webm|mov|avi|mkv|ogv)(\?.*)?$/i;
 const SKIP_EXT   = /\.(gif|svg)(\?.*)?$/i;
 const VALID_SIZE = new Set(['sm', 'md', 'lg']);
 
+// ── Cloudinary ────────────────────────────────────────────────────────────────
+// Our Cloudinary delivery host. Images are transformed by INSERTING a
+// transformation segment after "/image/upload/". We NEVER append -sm/-md/-lg to a
+// Cloudinary URL — those sidecar files exist only for local /uploads/ images, and
+// a Cloudinary URL can itself contain "/uploads/" inside its folder path
+// (shopgold/uploads/...), which must not be mistaken for a local sidecar path.
+// Video URLs (/video/upload/) and any other Cloudinary path are returned as-is.
+const CLOUDINARY_HOST_RE  = /^https?:\/\/res\.cloudinary\.com\//i;
+const IMAGE_UPLOAD_MARKER = '/image/upload/';
+
+// f_auto (best format) + q_auto (auto quality) + c_limit (never upscale, keep
+// aspect — matches the gallery's object-contain layout).
+const CLD_TRANSFORM = {
+  sm: 'f_auto,q_auto,w_300,c_limit',
+  md: 'f_auto,q_auto,w_600,c_limit',
+  lg: 'f_auto,q_auto,w_1200,c_limit',
+};
+
 /**
- * Return the thumbnail URL for a given original image URL and desired size.
+ * Return the display URL for a given original media URL and desired size.
+ *
+ *   - Cloudinary image        → /image/upload/<transform>/…  (f_auto,q_auto,w_*,c_limit)
+ *   - Cloudinary video / other → original (unchanged)
+ *   - Local /uploads/ image    → pre-generated "-sm/-md/-lg.webp" sidecar
+ *   - Video / GIF / SVG / external / unknown → original (unchanged)
  *
  * @param {string | { url: string } | null | undefined} src
  * @param {'sm'|'md'|'lg'} size
@@ -45,20 +68,32 @@ export function thumbUrl(src, size = 'md') {
   // Normalise input — accept both string and {url:...} object
   const url = (typeof src === 'string' ? src : src?.url || src?.src) || '';
 
-  // Fallback conditions
-  if (!url)                    return '';
-  if (!VALID_SIZE.has(size))   return url;
-  if (VIDEO_EXT.test(url))     return url;   // videos — no thumbnail
-  if (SKIP_EXT.test(url))      return url;   // GIF/SVG — keep original (animated / vector)
-  if (!url.startsWith('/uploads/') && !url.includes('/uploads/')) return url;
+  if (!url)                  return '';
+  if (!VALID_SIZE.has(size)) return url;
 
-  // Strip query string before manipulating
-  const [base] = url.split('?');
+  // ── Cloudinary URLs ────────────────────────────────────────────────────────
+  // Checked FIRST — before the /uploads/ test below — because a Cloudinary URL
+  // may contain "/uploads/" in its folder path.
+  if (CLOUDINARY_HOST_RE.test(url)) {
+    const idx = url.indexOf(IMAGE_UPLOAD_MARKER);
+    if (idx === -1) return url;                          // e.g. /video/upload/ → unchanged
+    const insertAt = idx + IMAGE_UPLOAD_MARKER.length;
+    return url.slice(0, insertAt) + CLD_TRANSFORM[size] + '/' + url.slice(insertAt);
+  }
 
-  // Strip extension: "/uploads/1234-photo.jpg" → "/uploads/1234-photo"
-  const noExt = base.replace(/\.[^.]+$/, '');
+  // ── Videos / GIF / SVG (local or external) → keep original ─────────────────
+  if (VIDEO_EXT.test(url)) return url;
+  if (SKIP_EXT.test(url))  return url;
 
-  return `${noExt}-${size}.webp`;
+  // ── Local /uploads/ sidecars (existing behavior) ───────────────────────────
+  if (url.startsWith('/uploads/') || url.includes('/uploads/')) {
+    const [base] = url.split('?');                       // strip query string
+    const noExt  = base.replace(/\.[^.]+$/, '');         // strip extension
+    return `${noExt}-${size}.webp`;
+  }
+
+  // ── Anything else (external, data:, unknown) → unchanged ───────────────────
+  return url;
 }
 
 /**
