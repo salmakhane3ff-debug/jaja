@@ -9,6 +9,7 @@
 import prisma               from '../prisma.js';
 import { mapProduct }       from '../utils/mappers.js';
 import { getStoreSettings } from './settingsService.js';
+import { destroyManyByUrls, diffRemovedUrls } from '../mediaCleanup.js';
 
 // ── Known Prisma product columns ──────────────────────────────────────────────
 // This explicit whitelist prevents Prisma from throwing "Unknown argument"
@@ -211,8 +212,32 @@ export async function createProduct(body) {
  */
 export async function updateProduct(id, body) {
   const data = sanitiseInput(body);
+
+  // If the images array is being replaced, capture which URLs were removed so
+  // their Cloudinary assets can be cleaned up AFTER the DB update succeeds.
+  // (Only runs when `images` is actually part of this update — partial updates
+  // like an isActive toggle are untouched.)
+  let removed = [];
+  if (Array.isArray(data.images)) {
+    try {
+      const existing = await prisma.product.findUnique({ where: { id }, select: { images: true } });
+      removed = diffRemovedUrls(existing?.images, data.images);
+    } catch { /* non-fatal — cleanup is best-effort */ }
+  }
+
   try {
     const product = await prisma.product.update({ where: { id }, data });
+
+    // DB row now holds the new images[] (removed items already gone). Clean up
+    // the removed Cloudinary assets — best-effort, never throws, never blocks.
+    if (removed.length) {
+      try {
+        await destroyManyByUrls(removed, { label: `product:${id}` });
+      } catch (err) {
+        console.error('[media-cleanup] unexpected error during product update:', err?.message ?? err);
+      }
+    }
+
     const storeSettings = await getStoreSettings();
     return mapProduct(product, storeSettings);
   } catch (err) {
@@ -223,11 +248,28 @@ export async function updateProduct(id, body) {
 
 /** Delete a product by its Prisma UUID. Returns true on success, false if not found. */
 export async function deleteProduct(id) {
+  // Read the images first so we can clean up their Cloudinary assets after the
+  // DB row is gone. Reading is non-fatal — if it fails we still delete the row.
+  let images = [];
+  try {
+    const existing = await prisma.product.findUnique({ where: { id }, select: { images: true } });
+    images = Array.isArray(existing?.images) ? existing.images : [];
+  } catch { /* non-fatal */ }
+
   try {
     await prisma.product.delete({ where: { id } });
-    return true;
   } catch (err) {
     if (err.code === 'P2025') return false;
     throw err;
   }
+
+  // DB is consistent (row deleted). Now best-effort Cloudinary cleanup — a
+  // Cloudinary failure is logged but NEVER changes the delete result or throws.
+  try {
+    await destroyManyByUrls(images, { label: `product:${id}` });
+  } catch (err) {
+    console.error('[media-cleanup] unexpected error during product delete:', err?.message ?? err);
+  }
+
+  return true;
 }
