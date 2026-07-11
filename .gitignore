@@ -62,3 +62,6 @@ next-env.d.ts
 .whatsapp-abandoned-sent.json
 .wwebjs_auth/
 .wwebjs_cache/
+
+# cloudinary media migration ledger (runtime; resume/rollback source of truth)
+media-migration-ledger.json
