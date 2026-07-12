@@ -6,7 +6,7 @@
 
 import {
   evaluateLandingRedirect, validateRedirectUrl, normalizeAllowedPaths,
-  isAlwaysAllowed, isPathAllowed, normalizePath,
+  isAlwaysAllowed, isPathAllowed, normalizePath, derivePublicOrigin,
 } from "../src/lib/landingMode.js";
 
 let pass = 0, fail = 0;
@@ -104,6 +104,26 @@ ok("normalizePath collapses + trims", normalizePath("/a//b/") === "/a/b");
 ok("normalizeAllowedPaths dedups + filters", JSON.stringify(normalizeAllowedPaths("/a, /a, bad, /b/")) === JSON.stringify(["/a", "/b"]));
 ok("isAlwaysAllowed static ext", isAlwaysAllowed("/logo.png") && isAlwaysAllowed("/robots.txt"));
 ok("isPathAllowed nested", isPathAllowed("/checkout/success/x", ["/checkout/success"]));
+
+console.log("16) derivePublicOrigin (proxy/CDN forwarded headers)");
+const H = (obj) => ({ get: (n) => (n.toLowerCase() in obj ? obj[n.toLowerCase()] : null) });
+const FALLBACK = "http://localhost:3000";
+ok("x-forwarded-proto/host → public https origin",
+   derivePublicOrigin(H({ "x-forwarded-proto": "https", "x-forwarded-host": "proprogiftvip.com" }), FALLBACK, "http:") === "https://proprogiftvip.com");
+ok("comma-separated headers use the first value",
+   derivePublicOrigin(H({ "x-forwarded-proto": "https, http", "x-forwarded-host": "proprogiftvip.com, evil.com" }), FALLBACK, "http:") === "https://proprogiftvip.com");
+ok("missing forwarded → uses Host header",
+   derivePublicOrigin(H({ host: "shop.example.com" }), "https://localhost:3000", "https:") === "https://shop.example.com");
+ok("missing all → falls back to nextUrl.origin",
+   derivePublicOrigin(H({}), FALLBACK, "http:") === FALLBACK);
+ok("invalid host (CR/LF) → falls back",
+   derivePublicOrigin(H({ "x-forwarded-host": "evil.com\r\nSet-Cookie: x=1" }), FALLBACK, "http:") === FALLBACK);
+ok("host with path → falls back (no open redirect via host)",
+   derivePublicOrigin(H({ "x-forwarded-host": "evil.com/attacker" }), FALLBACK, "http:") === FALLBACK);
+ok("host:port preserved",
+   derivePublicOrigin(H({ "x-forwarded-host": "example.com:8443", "x-forwarded-proto": "https" }), FALLBACK, "http:") === "https://example.com:8443");
+ok("bad proto → falls back to nextUrl protocol",
+   derivePublicOrigin(H({ "x-forwarded-proto": "javascript", "x-forwarded-host": "example.com" }), FALLBACK, "https:") === "https://example.com");
 
 console.log(`\nRESULT: ${pass} passed, ${fail} failed`);
 process.exit(fail ? 1 : 0);

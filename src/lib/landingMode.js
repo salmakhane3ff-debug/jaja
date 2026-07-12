@@ -43,6 +43,50 @@ export function normalizePath(p) {
   return s || "/";
 }
 
+// ── Public origin derivation (proxy / CDN aware, multi-site safe) ─────────────
+
+/** First value of a possibly comma-separated header, trimmed. */
+function firstHeaderValue(v) {
+  if (v == null) return "";
+  return String(v).split(",")[0].trim();
+}
+
+/** Validate a Host/x-forwarded-host value: hostname[:port] or [ipv6][:port]. */
+function isValidHost(host) {
+  if (!host || host.length > 255) return false;
+  if (/[/\\@\s]/.test(host)) return false;   // no path / userinfo / whitespace (blocks CR/LF too)
+  if (hasControlChar(host)) return false;
+  return /^[a-zA-Z0-9._-]+(:\d{1,5})?$/.test(host)      // hostname[:port]
+      || /^\[[0-9a-fA-F:]+\](:\d{1,5})?$/.test(host);   // [ipv6][:port]
+}
+
+/**
+ * Build the trusted PUBLIC origin from proxy/CDN forwarded headers so server-side
+ * fetches and redirects use the real external domain. No domain is hard-coded, so
+ * the same code serves multiple sites. Uses the FIRST value of comma-separated
+ * headers, validates the host (rejects CR/LF, empty, malformed), and falls back
+ * safely to `fallbackOrigin`.
+ *
+ * @param {{get:(name:string)=>(string|null)}} headers   request.headers
+ * @param {string} fallbackOrigin      request.nextUrl.origin
+ * @param {string} [fallbackProtocol]  request.nextUrl.protocol (e.g. "https:")
+ * @returns {string} e.g. "https://example.com"
+ */
+export function derivePublicOrigin(headers, fallbackOrigin, fallbackProtocol) {
+  const get = (name) => (typeof headers?.get === "function" ? headers.get(name) : "");
+
+  let proto = firstHeaderValue(get("x-forwarded-proto"));
+  if (!/^https?$/i.test(proto)) {
+    proto = String(fallbackProtocol || "").replace(/:$/, "");
+    if (!/^https?$/i.test(proto)) proto = "https";
+  }
+
+  const host = firstHeaderValue(get("x-forwarded-host")) || firstHeaderValue(get("host"));
+  if (!isValidHost(host)) return fallbackOrigin;
+
+  return `${proto.toLowerCase()}://${host}`;
+}
+
 /**
  * Validate/parse the admin-configured redirect target.
  * Accepts an internal path ("/landing/x") or a complete HTTPS URL.

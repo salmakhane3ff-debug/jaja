@@ -16,7 +16,7 @@
 
 import { NextResponse } from 'next/server';
 import { jwtVerify }    from 'jose';
-import { evaluateLandingRedirect } from './lib/landingMode.js';
+import { evaluateLandingRedirect, derivePublicOrigin } from './lib/landingMode.js';
 
 if (!process.env.JWT_SECRET) {
   throw new Error('[middleware] JWT_SECRET environment variable is required but not set.');
@@ -25,21 +25,23 @@ const JWT_SECRET = new TextEncoder().encode(process.env.JWT_SECRET);
 
 // ── Cached landing config (module scope; per Edge isolate) ────────────────────
 const CFG_TTL_MS = 15_000;
-let _cfgCache = { value: null, expires: 0 };
+// Keyed by public origin so one process can safely serve multiple sites.
+const _cfgCache = new Map();
 
 async function getLandingConfig(origin) {
   const now = Date.now();
-  if (_cfgCache.value && now < _cfgCache.expires) return _cfgCache.value;
+  const cached = _cfgCache.get(origin);
+  if (cached && now < cached.expires) return cached.value;
   try {
     const res = await fetch(`${origin}/api/landing-mode`, { headers: { 'x-mw-landing': '1' } });
     if (!res.ok) throw new Error(`status ${res.status}`);
     const value = await res.json();
-    _cfgCache = { value, expires: now + CFG_TTL_MS };
+    _cfgCache.set(origin, { value, expires: now + CFG_TTL_MS });
     return value;
   } catch (err) {
     // Fail open: cache a short "no config" so we don't hammer the endpoint.
     console.error('[middleware] landing config fetch failed (fail-open):', err?.message ?? err);
-    _cfgCache = { value: null, expires: now + 5_000 };
+    _cfgCache.set(origin, { value: null, expires: now + 5_000 });
     return null;
   }
 }
@@ -80,13 +82,17 @@ export default async function middleware(request) {
 
   // ── 2. Landing Page Only Mode (public routes) ──────────────────────────────
   try {
-    const config = await getLandingConfig(origin);
-    const decision = evaluateLandingRedirect({ pathname, search, origin, config });
+    // Behind Nginx/Cloudflare, request.nextUrl.origin is not reachable for the
+    // internal config fetch. Build the trusted PUBLIC origin from forwarded
+    // headers (multi-site safe — no domain hard-coded), falling back to nextUrl.
+    const publicOrigin = derivePublicOrigin(request.headers, origin, request.nextUrl.protocol);
+    const config = await getLandingConfig(publicOrigin);
+    const decision = evaluateLandingRedirect({ pathname, search, origin: publicOrigin, config });
     if (decision.failOpen) {
       console.error('[middleware] landing mode fail-open:', decision.reason);
     }
     if (decision.action === 'redirect') {
-      return NextResponse.redirect(new URL(decision.destination, origin), decision.status || 307);
+      return NextResponse.redirect(new URL(decision.destination, publicOrigin), decision.status || 307);
     }
   } catch (err) {
     // Never take the site down because of the landing feature.
