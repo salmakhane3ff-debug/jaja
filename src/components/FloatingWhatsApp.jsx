@@ -42,6 +42,10 @@ export default function FloatingWhatsApp() {
     ? Number(ui.floatingWhatsappBottom)
     : 24;
 
+  // Mobile: sit ABOVE the sticky add-to-cart bar (bottom-28 ≈ 112px clears its
+  // badge-strip + thumbnail-row height). md+: use the admin-configured offset via
+  // the --fw-bottom CSS var (default 24px ≈ bottom-6). Right side, size, color,
+  // animation and z-index (z-[60]) are unchanged.
   return (
     <a
       href={href}
@@ -49,8 +53,8 @@ export default function FloatingWhatsApp() {
       rel="noopener noreferrer"
       aria-label="Contact us on WhatsApp"
       onClick={() => trackClarity("cta_whatsapp_float", ui.floatingWhatsappPosition || "right")}
-      style={{ bottom: `${bottom}px`, [isLeft ? "left" : "right"]: "20px" }}
-      className="fixed z-[60] flex h-14 w-14 items-center justify-center rounded-full bg-[#25D366] text-white shadow-lg shadow-green-500/30 transition-transform duration-200 hover:scale-110 active:scale-95"
+      style={{ "--fw-bottom": `${bottom}px`, [isLeft ? "left" : "right"]: "20px" }}
+      className="fixed z-[60] bottom-28 md:[bottom:var(--fw-bottom)] flex h-14 w-14 items-center justify-center rounded-full bg-[#25D366] text-white shadow-lg shadow-green-500/30 transition-transform duration-200 hover:scale-110 active:scale-95"
     >
       {/* Inline WhatsApp glyph — no extra dependency */}
       <svg viewBox="0 0 32 32" width="30" height="30" fill="currentColor" aria-hidden="true">
