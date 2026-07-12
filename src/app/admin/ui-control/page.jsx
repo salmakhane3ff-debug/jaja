@@ -39,6 +39,9 @@ const DEFAULTS = {
   floatingWhatsappMessage:  "",
   floatingWhatsappPosition: "right",
   floatingWhatsappBottom:   24,
+  landingOnlyMode:       false,
+  landingRedirectUrl:    "",
+  landingAllowedPaths:   "",
 };
 
 // ── Control Groups ────────────────────────────────────────────────────────────
@@ -115,6 +118,17 @@ const GROUPS = [
         desc:    "Side of the screen for the button.",
       },
       { key: "floatingWhatsappBottom",  label: "Bottom Spacing (px)",      type: "number", desc: "Distance from the bottom of the screen, in pixels." },
+    ],
+  },
+  {
+    id:    "landing",
+    label: "Landing Page Only Mode",
+    icon:  Zap,
+    color: "amber",
+    controls: [
+      { key: "landingOnlyMode",     label: "Landing Page Only Mode",   type: "toggle", desc: "When ON, all public storefront pages (home, products, blog, collections…) temporarily redirect (307) to the landing page below. Admin, API, checkout-allowed paths, and static assets stay reachable." },
+      { key: "landingRedirectUrl",  label: "Landing Page Redirect URL", type: "text",  desc: "Internal path (e.g. /landing/my-offer) or a complete https:// URL. Invalid/unsafe values are ignored and the site stays open." },
+      { key: "landingAllowedPaths", label: "Allowed Public Paths",      type: "text",  desc: "Comma-separated extra paths to keep public while the mode is on (e.g. /checkout,/checkout/success,/privacy,/terms). The landing page itself is always allowed." },
     ],
   },
 ];

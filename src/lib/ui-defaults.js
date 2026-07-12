@@ -23,4 +23,8 @@ export const UI_DEFAULTS = {
   floatingWhatsappMessage:  "",
   floatingWhatsappPosition: "right",
   floatingWhatsappBottom:   24,
+  // ── Landing Page Only Mode ────────────────────────────────────────────────
+  landingOnlyMode:       false,   // when true, public storefront → configured landing page
+  landingRedirectUrl:    "",      // "/landing/my-offer" or "https://…"
+  landingAllowedPaths:   "",      // comma-separated extra public paths (e.g. "/checkout/success,/privacy")
 };
