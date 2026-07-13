@@ -68,6 +68,7 @@ export default function WhatsAppBotPage() {
 
   const [templates, setTemplates] = useState({ NEW: "", CONFIRMED: "", SHIPPED: "", DELIVERED: "", CANCELLED: "" });
   const [abandonedTemplate, setAbandonedTemplate] = useState("");
+  const [landingNewOrder, setLandingNewOrder] = useState("");
   const [savingTpl, setSavingTpl] = useState(false);
   const [tplMsg, setTplMsg] = useState(null);
 
@@ -105,6 +106,7 @@ export default function WhatsAppBotPage() {
     if (d?.templates) {
       setTemplates((prev) => ({ ...prev, ...d.templates }));
       if (typeof d.abandonedTemplate === "string") setAbandonedTemplate(d.abandonedTemplate);
+      if (typeof d.landingPageNewOrder === "string") setLandingNewOrder(d.landingPageNewOrder);
       tplLoaded.current = true;
     }
   }, []);
@@ -136,7 +138,7 @@ export default function WhatsAppBotPage() {
     try {
       const r = await fetch("/api/admin/whatsapp-bot/templates", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ templates, abandonedTemplate }),
+        body: JSON.stringify({ templates, abandonedTemplate, landingPageNewOrder: landingNewOrder }),
       });
       setTplMsg(r.ok ? { ok: true, text: "Templates saved" } : { ok: false, text: "Save failed" });
     } catch {
@@ -346,6 +348,25 @@ export default function WhatsAppBotPage() {
               value={abandonedTemplate}
               onChange={(e) => setAbandonedTemplate(e.target.value)}
               dir="auto"
+              className="w-full text-sm border border-gray-200 rounded-xl px-3 py-2 bg-gray-50 focus:outline-none focus:border-gray-400"
+            />
+          </div>
+
+          {/* 🌐 Landing Page — used ONLY for a new order created via a Landing Page. */}
+          <div className="pt-3 mt-1 border-t border-gray-100">
+            <label className="block text-xs font-semibold text-gray-600 mb-1">
+              🌐 Landing Page — New Order
+              <span className="ml-2 font-normal text-gray-400">— used only for a new order created from a Landing Page</span>
+            </label>
+            <p className="text-xs text-gray-400 mb-1">
+              Variables: <code>{"{name}"}</code>, <code>{"{phone}"}</code>, <code>{"{product}"}</code>, <code>{"{quantity}"}</code>, <code>{"{price}"}</code>, <code>{"{orderId}"}</code>, <code>{"{city}"}</code>, <code>{"{address}"}</code>, <code>{"{landingPage}"}</code>
+            </p>
+            <textarea
+              rows={9}
+              value={landingNewOrder}
+              onChange={(e) => setLandingNewOrder(e.target.value)}
+              dir="auto"
+              placeholder="Leave empty to use the built-in default landing template."
               className="w-full text-sm border border-gray-200 rounded-xl px-3 py-2 bg-gray-50 focus:outline-none focus:border-gray-400"
             />
           </div>

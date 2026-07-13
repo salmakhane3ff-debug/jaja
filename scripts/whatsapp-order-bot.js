@@ -147,7 +147,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 // "draft_" sessionId) so paniers never receive order notifications.
 async function fetchRecentOrders(pool) {
   const res = await pool.query(
-    `SELECT id, "customerName", "customerPhone", status, "updatedAt",
+    `SELECT id, "customerName", "customerPhone", status, "updatedAt", "utmSource",
             "paymentMethod", "paymentStatus", "paymentTotal", "paymentDetails", "shippingAddress"
        FROM orders
       WHERE "updatedAt" >= NOW() - INTERVAL '${LOOKBACK_DAYS} days'
@@ -159,7 +159,7 @@ async function fetchRecentOrders(pool) {
 }
 
 // Read-only: order line items for the given order ids, grouped by orderId.
-// Returns { [orderId]: ["Title x2", ...] } built from productSnapshot.title.
+// Returns { [orderId]: [{ title, quantity }, ...] } from productSnapshot.title.
 async function fetchOrderItems(pool, orderIds) {
   const ids = (orderIds || []).filter(Boolean);
   if (!ids.length) return {};
@@ -174,9 +174,22 @@ async function fetchOrderItems(pool, orderIds) {
     const snap = r.productSnapshot && typeof r.productSnapshot === "object" ? r.productSnapshot : {};
     const title = String(snap.title || snap.name || "Produit").trim();
     const qty = Number(r.quantity) || 1;
-    (byOrder[r.orderId] = byOrder[r.orderId] || []).push(`${title} x${qty}`);
+    (byOrder[r.orderId] = byOrder[r.orderId] || []).push({ title, quantity: qty });
   }
   return byOrder;
+}
+
+// Read-only: the set of Landing Page slugs. Landing orders are identified by
+// orders.utmSource matching one of these (the offer form persists
+// utm_source = landingPage.slug). Never touches order-creation code.
+async function fetchLandingSlugs(pool) {
+  try {
+    const res = await pool.query(`SELECT slug FROM landing_pages WHERE slug IS NOT NULL AND slug <> ''`);
+    return new Set(res.rows.map((r) => String(r.slug).trim()).filter(Boolean));
+  } catch (e) {
+    warn("Could not load landing slugs; treating all orders as store:", e.message);
+    return new Set();
+  }
 }
 
 // ── Abandoned carts (fully separate from real orders) ─────────────────────────
@@ -269,8 +282,25 @@ La7dna belli khlliti panier dyalk w makmltich commande.
 
 Wash mazal mahtam nkmlouha lik? Wla nlghiwha?`;
 
+// Landing Page → New Order: used ONLY for a newly created order whose origin is
+// a Landing Page (order.utmSource matches an existing landing_pages.slug). Store
+// orders keep using DEFAULT_TEMPLATES.NEW unchanged. Extra vars available here:
+//   {product} {quantity} {price} {phone} {city} {address} {landingPage} {landingPageSlug}
+const DEFAULT_LANDING_NEW_ORDER_TEMPLATE = `مرحبا {name} 👋
+
+توصلنا بالطلب ديالك من صفحة العرض:
+
+المنتج: {product}
+الكمية: {quantity}
+الثمن: {price}
+رقم الطلب: {orderId}
+
+غادي نتواصلو معاك باش نأكدوا الطلب.`;
+
 let templates = { ...DEFAULT_TEMPLATES };
 let abandonedTemplate = DEFAULT_ABANDONED_TEMPLATE;
+let landingNewOrderTemplate = DEFAULT_LANDING_NEW_ORDER_TEMPLATE;
+let landingSlugs = new Set(); // populated each cycle from landing_pages.slug
 
 async function loadTemplates(pool) {
   try {
@@ -287,6 +317,9 @@ async function loadTemplates(pool) {
     abandonedTemplate = (typeof data.abandonedTemplate === "string" && data.abandonedTemplate.trim())
       ? data.abandonedTemplate
       : DEFAULT_ABANDONED_TEMPLATE;
+    landingNewOrderTemplate = (typeof data.landingPageNewOrder === "string" && data.landingPageNewOrder.trim())
+      ? data.landingPageNewOrder
+      : DEFAULT_LANDING_NEW_ORDER_TEMPLATE;
   } catch (e) {
     warn("Could not load templates from settings; using defaults:", e.message);
   }
@@ -294,29 +327,91 @@ async function loadTemplates(pool) {
 
 function renderTemplate(tpl, vars) {
   const v = vars || {};
+  // Single interpolation engine (shared by Store + Abandoned + Landing templates).
+  // Every value is coerced to a string; missing values resolve to "" (never
+  // "[object Object]"). New keys are additive — existing templates are unaffected.
+  const s = (x) => (x == null || typeof x === "object" ? "" : String(x));
   return String(tpl || "")
-    .split("{name}").join(v.name || "")
-    .split("{products}").join(v.products || "")
-    .split("{total}").join(v.total || "")
-    .split("{shipping}").join(v.shipping || "")
-    .split("{payment}").join(v.payment || "")
-    .split("{status}").join(v.status || "")
-    .split("{checkoutLink}").join(v.checkoutLink || "")
-    .split("{orderId}").join(v.orderId || "");
+    .split("{name}").join(s(v.name))
+    .split("{phone}").join(s(v.phone))
+    .split("{products}").join(s(v.products))
+    .split("{product}").join(s(v.product))
+    .split("{quantity}").join(s(v.quantity))
+    .split("{total}").join(s(v.total))
+    .split("{price}").join(s(v.price))
+    .split("{shipping}").join(s(v.shipping))
+    .split("{payment}").join(s(v.payment))
+    .split("{city}").join(s(v.city))
+    .split("{address}").join(s(v.address))
+    .split("{landingPage}").join(s(v.landingPage))
+    .split("{landingPageSlug}").join(s(v.landingPageSlug))
+    .split("{status}").join(s(v.status))
+    .split("{checkoutLink}").join(s(v.checkoutLink))
+    .split("{orderId}").join(s(v.orderId));
 }
 
-// Build a real-order message: rich details from the order row + line items.
-function buildOrderMessage(o, state, itemsByOrder) {
+// ── Landing detection + variable resolution + template routing (all pure) ─────
+// Kept as explicit-arg functions so they're unit-testable without DB/WhatsApp.
+
+// A Landing Page order = its persisted utmSource matches a known landing slug.
+function isLandingOrder(order, slugs) {
+  const u = order && order.utmSource ? String(order.utmSource).trim() : "";
+  return u !== "" && slugs instanceof Set && slugs.has(u);
+}
+
+// Resolve template variables from the real order + line-item shapes.
+function buildOrderVars(order, itemsByOrder, siteUrl) {
+  const o = order || {};
   const pd = o.paymentDetails && typeof o.paymentDetails === "object" ? o.paymentDetails : {};
+  const sa = o.shippingAddress && typeof o.shippingAddress === "object" ? o.shippingAddress : {};
+  const addr = sa.address && typeof sa.address === "object" ? sa.address : sa;
+
   const items = (itemsByOrder && itemsByOrder[o.id]) || [];
-  const products = items.length ? items.join(", ") : "—";
-  const total = fmtMoney(o.paymentTotal != null ? o.paymentTotal : pd.total) || "—";
+  const products = items.length
+    ? items.map((i) => `${String((i && i.title) || "Produit").trim()} x${Number(i && i.quantity) || 1}`).join(", ")
+    : "—";
+  const product  = items.length ? String((items[0] && items[0].title) || "Produit").trim() : "—";
+  const quantity = items.length ? String(items.reduce((n, i) => n + (Number(i && i.quantity) || 0), 0) || items.length) : "";
+
+  const total    = fmtMoney(o.paymentTotal != null ? o.paymentTotal : pd.total) || "—";
   const shipping = String(pd.shippingCompany || o.paymentMethod || "—").trim() || "—";
-  const payment = String(o.paymentStatus || pd.paymentMethod || o.paymentMethod || "—").trim() || "—";
-  const name = String(o.customerName || "").trim();
-  return renderTemplate(templates[state], {
-    name, products, total, shipping, payment,
-    status: state, orderId: o.id, checkoutLink: `${SITE_URL}/cart`,
+  const payment  = String(o.paymentStatus || pd.paymentMethod || o.paymentMethod || "—").trim() || "—";
+  const slug     = String(o.utmSource || "").trim();
+
+  return {
+    name:  String(o.customerName || "").trim(),
+    phone: String(o.customerPhone || "").trim(),
+    products, product, quantity,
+    total, price: total,                        // {price} == order total
+    shipping, payment,
+    city:    String((addr && addr.city) || sa.city || "").trim(),
+    address: String((addr && (addr.address1 || addr.address)) || "").trim(),
+    landingPage: slug, landingPageSlug: slug,
+    status: "", orderId: o.id || "",
+    checkoutLink: `${siteUrl}/cart`,
+  };
+}
+
+// Pick the template string. Landing routing applies ONLY to NEW orders;
+// Confirmed/Shipped/Delivered/Cancelled are unchanged for every order.
+function pickTemplate({ state, order, storeTemplates, landingTemplate, slugs }) {
+  if (state === "NEW" && isLandingOrder(order, slugs) && landingTemplate) return landingTemplate;
+  return (storeTemplates || {})[state];
+}
+
+// Full pure resolver: order + state + items + config → final message string.
+function resolveOrderMessage({ order, state, itemsByOrder, storeTemplates, landingTemplate, slugs, siteUrl }) {
+  const vars = buildOrderVars(order, itemsByOrder, siteUrl);
+  vars.status = state;
+  return renderTemplate(pickTemplate({ state, order, storeTemplates, landingTemplate, slugs }), vars);
+}
+
+// Live wrapper (uses module state) — unchanged signature/call site.
+function buildOrderMessage(o, state, itemsByOrder) {
+  return resolveOrderMessage({
+    order: o, state, itemsByOrder,
+    storeTemplates: templates, landingTemplate: landingNewOrderTemplate,
+    slugs: landingSlugs, siteUrl: SITE_URL,
   });
 }
 
@@ -755,6 +850,7 @@ async function runCycle() {
   isSending = true;
   try {
     await loadTemplates(dbPool);
+    landingSlugs = await fetchLandingSlugs(dbPool); // for Landing-order → Landing template routing
     // Two fully separate workflows: real orders, then abandoned carts.
     // Each keeps its own query, dedupe file, baseline, and templates.
     await processOrders();
@@ -938,4 +1034,9 @@ if (require.main === module) {
   });
 }
 
-module.exports = { mapStatus, normalizeMoroccoPhone, MESSAGES };
+module.exports = {
+  mapStatus, normalizeMoroccoPhone, MESSAGES,
+  // Pure helpers (Landing-order routing + variable resolution) for unit tests.
+  renderTemplate, isLandingOrder, buildOrderVars, pickTemplate, resolveOrderMessage,
+  DEFAULT_TEMPLATES, DEFAULT_LANDING_NEW_ORDER_TEMPLATE, DEFAULT_ABANDONED_TEMPLATE,
+};

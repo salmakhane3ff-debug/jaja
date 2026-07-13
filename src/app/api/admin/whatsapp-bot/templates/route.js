@@ -13,7 +13,8 @@ export const GET = withAdminAuth(async () => {
   const templates = {};
   for (const k of KEYS) templates[k] = typeof t[k] === "string" ? t[k] : "";
   const abandonedTemplate = typeof (data && data.abandonedTemplate) === "string" ? data.abandonedTemplate : "";
-  return Response.json({ templates, abandonedTemplate });
+  const landingPageNewOrder = typeof (data && data.landingPageNewOrder) === "string" ? data.landingPageNewOrder : "";
+  return Response.json({ templates, abandonedTemplate, landingPageNewOrder });
 });
 
 // POST { templates, abandonedTemplate } → persist to the Setting store
@@ -30,6 +31,10 @@ export const POST = withAdminAuth(async (req) => {
 
   // Merge with any other keys already in the row (defensive).
   const existing = await getSettings(SETTING_TYPE);
-  const saved = await upsertSettings(SETTING_TYPE, { ...existing, templates, abandonedTemplate });
-  return Response.json({ ok: true, templates: saved.templates, abandonedTemplate: saved.abandonedTemplate });
+  // Never overwrite a saved Landing template when the field is absent from the payload.
+  const landingPageNewOrder = typeof (body && body.landingPageNewOrder) === "string"
+    ? body.landingPageNewOrder
+    : (typeof existing.landingPageNewOrder === "string" ? existing.landingPageNewOrder : "");
+  const saved = await upsertSettings(SETTING_TYPE, { ...existing, templates, abandonedTemplate, landingPageNewOrder });
+  return Response.json({ ok: true, templates: saved.templates, abandonedTemplate: saved.abandonedTemplate, landingPageNewOrder: saved.landingPageNewOrder });
 });
