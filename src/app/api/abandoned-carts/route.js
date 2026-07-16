@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 import { withAdminAuth } from "@/lib/middleware/withAdminAuth";
+import { buildDraftOrderFields, claimRecoveryDraft } from "@/lib/abandonedRecovery";
 
 // ── Phone normalizer ──────────────────────────────────────────────────────────
 // Strips non-digits, then normalizes Moroccan prefix so +212XXXXXXXXX,
@@ -251,36 +252,27 @@ async function _PUT(req) {
     });
     if (!cart) return NextResponse.json({ error: "Cart not found" }, { status: 404 });
 
-    // Already has one — return it
+    // Already has one — return it (idempotent fast path).
     if (cart.orderId) return NextResponse.json({ orderId: cart.orderId });
 
-    // Create draft order
-    const safeItems = Array.isArray(cart.items) ? cart.items : [];
-    const draft = await prisma.order.create({
-      data: {
-        customerName:    cart.fullName || cart.phone,
-        customerPhone:   cart.phone,
-        customerEmail:   cart.email   || null,
-        shippingAddress: { city: cart.city || "" },
-        status:          "pending",
-        paymentStatus:   "pending",
-        paymentDetails:  {
-          isDraft:       true,          // ← hides from admin orders list
-          paymentMethod: "bank_transfer",
-          total:         cart.cartTotal || 0,
-          cartTotal:     cart.cartTotal || 0,
-          draftItems:    safeItems,
-        },
-        sessionId: `draft_${cart.phone}_${Date.now()}`,
-      },
+    // Race-safe generation. Create the draft (SAME shape the bot uses) and CLAIM
+    // the cart in ONE transaction; the claim is a conditional compare-and-set
+    // (updateMany … where orderId IS NULL). Two concurrent PUTs can therefore
+    // never persist two drafts: the loser's claim matches 0 rows, its draft is
+    // rolled back, and it reuses the winner's orderId. Mirrors the bot's guard.
+    const orderId = await claimRecoveryDraft({
+      run:         (work) => prisma.$transaction(work),
+      createDraft: async (tx) => (await tx.order.create({ data: buildDraftOrderFields(cart) })).id,
+      claim:       async (tx, oid) =>
+        (await tx.abandonedCart.updateMany({
+          where: { id: cartId, orderId: null },
+          data:  { orderId: oid },
+        })).count === 1,
+      readExisting: async () =>
+        (await prisma.abandonedCart.findUnique({ where: { id: cartId }, select: { orderId: true } }))?.orderId || null,
     });
 
-    await prisma.abandonedCart.update({
-      where: { id: cartId },
-      data:  { orderId: draft.id },
-    });
-
-    return NextResponse.json({ orderId: draft.id });
+    return NextResponse.json({ orderId });
   } catch (err) {
     console.error("PUT /api/abandoned-carts error:", err);
     return NextResponse.json({ error: "Server error" }, { status: 500 });

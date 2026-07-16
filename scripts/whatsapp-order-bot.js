@@ -2,9 +2,14 @@
 /**
  * scripts/whatsapp-order-bot.js
  * ─────────────────────────────────────────────────────────────────────────────
- * WhatsApp order-status notifier. Read-only against the store database
- * (`DATABASE_URL` from .env); it NEVER writes to the `orders` table and never
- * touches checkout/order logic.
+ * WhatsApp order-status notifier. Read-only against the store `orders` table
+ * (`DATABASE_URL` from .env); it never touches checkout/order-status logic.
+ *
+ * ONE exception: abandoned-cart reminders. To send the exact same recovery link
+ * the admin "Générer" button produces, the bot may create a single draft order
+ * (paymentDetails.isDraft) for an abandoned cart that has none yet and persist
+ * its id on that cart's `orderId` — using the shared shape in
+ * src/lib/abandonedRecovery.js. It never writes real customer orders.
  *
  * Two modes:
  *   --dry-run   Plan only. No WhatsApp, no sends, no state written. Prints which
@@ -28,7 +33,11 @@ try { require("dotenv").config(); } catch { /* env provided externally */ }
 
 const fs = require("fs");
 const path = require("path");
+const crypto = require("crypto");
 const { Pool } = require("pg");
+// Shared source of truth for the recovery link + draft-order shape, reused by
+// the admin "Générer" endpoint (src/app/api/abandoned-carts/route.js).
+const { recoveryLink, buildDraftOrderFields } = require("../src/lib/abandonedRecovery");
 
 const args    = process.argv.slice(2);
 const DRY_RUN = args.includes("--dry-run");
@@ -196,7 +205,7 @@ async function fetchLandingSlugs(pool) {
 // Read-only: paniers not recovered, idle for >= ABANDONED_DELAY_MIN, within window.
 async function fetchAbandonedCarts(pool) {
   const res = await pool.query(
-    `SELECT id, phone, "fullName", city, items, "cartTotal", "updatedAt"
+    `SELECT id, phone, "fullName", email, city, items, "cartTotal", "orderId", "updatedAt"
        FROM abandoned_carts
       WHERE recovered = false
         AND "updatedAt" <= NOW() - INTERVAL '${ABANDONED_DELAY_MIN} minutes'
@@ -213,6 +222,66 @@ function loadAbandoned() {
 }
 function saveAbandoned(x) {
   fs.writeFileSync(ABANDONED_SENT_FILE, JSON.stringify(x, null, 2));
+}
+
+// Resolve the EXACT recovery link shown in Admin → Paniers Abandonnés for THIS
+// cart, and return it. Mirrors the admin "Générer" logic (PUT /api/abandoned-carts):
+//   • cart already has an orderId  → derive the link, never regenerate.
+//   • no orderId yet               → create ONE draft order (shared shape) and
+//                                    persist it on THIS cart row, then link.
+// Idempotent under concurrency: a race-safe `UPDATE … WHERE "orderId" IS NULL`
+// guarantees a single link per cart; a losing writer rolls back its own draft
+// and reuses the winner's orderId (never two links for one cart, never another
+// cart's link). Mutates `cart.orderId` so the caller can render {orderId} too.
+// THROWS on failure so the caller leaves the cart unsent and retryable.
+async function ensureRecoveryLink(pool, cart) {
+  // 1) Already generated (checkout POST, admin "Générer", or a prior bot cycle).
+  if (cart.orderId) return recoveryLink(SITE_URL, cart.orderId);
+
+  // 2) Re-read: another cycle/admin may have set it since we fetched the batch.
+  const fresh = await pool.query(`SELECT "orderId" FROM abandoned_carts WHERE id = $1`, [cart.id]);
+  const existingId = fresh.rows[0] && fresh.rows[0].orderId;
+  if (existingId) { cart.orderId = existingId; return recoveryLink(SITE_URL, existingId); }
+
+  // 3) Generate ONE draft order with the SAME shape as the admin endpoint.
+  const f     = buildDraftOrderFields(cart);
+  const newId = crypto.randomUUID();
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    await client.query(
+      `INSERT INTO orders
+         (id, "sessionId", status, "customerName", "customerEmail", "customerPhone",
+          "shippingAddress", "paymentStatus", "paymentDetails", "createdAt", "updatedAt")
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW(), NOW())`,
+      [newId, f.sessionId, f.status, f.customerName, f.customerEmail, f.customerPhone,
+       JSON.stringify(f.shippingAddress), f.paymentStatus, JSON.stringify(f.paymentDetails)]
+    );
+    // Claim the link only if THIS cart still has none.
+    const upd = await client.query(
+      `UPDATE abandoned_carts SET "orderId" = $1, "updatedAt" = NOW()
+        WHERE id = $2 AND "orderId" IS NULL
+        RETURNING "orderId"`,
+      [newId, cart.id]
+    );
+    if (upd.rowCount === 0) {
+      // Someone set orderId between our re-read and the update — discard our draft.
+      await client.query("ROLLBACK");
+      const again  = await pool.query(`SELECT "orderId" FROM abandoned_carts WHERE id = $1`, [cart.id]);
+      const winner = again.rows[0] && again.rows[0].orderId;
+      if (!winner) throw new Error("orderId vanished after concurrent update");
+      cart.orderId = winner;
+      return recoveryLink(SITE_URL, winner);
+    }
+    await client.query("COMMIT");
+    cart.orderId = newId;
+    return recoveryLink(SITE_URL, newId);
+  } catch (e) {
+    try { await client.query("ROLLBACK"); } catch { /* connection already broken */ }
+    throw e;
+  } finally {
+    client.release();
+  }
 }
 
 const fmtMoney = (v) => {
@@ -417,7 +486,10 @@ function buildOrderMessage(o, state, itemsByOrder) {
 
 // Build an abandoned-cart reminder: never claims an order was received.
 // Shipping falls back to the cart city when no company is known.
-function buildAbandonedMessage(cart) {
+// `checkoutLink` MUST be the exact per-cart recovery link from ensureRecoveryLink
+// (the same URL the admin "Lien" column shows). Only {checkoutLink} changed;
+// {name}{products}{total}{shipping} are untouched.
+function buildAbandonedMessage(cart, checkoutLink) {
   const items = Array.isArray(cart.items) ? cart.items : [];
   const products = items.length
     ? items.map((i) => `${String((i && (i.title || i.name)) || "Produit").trim()} x${Number(i && i.quantity) || 1}`).join(", ")
@@ -428,7 +500,7 @@ function buildAbandonedMessage(cart) {
   return renderTemplate(abandonedTemplate, {
     name, products, total, shipping,
     payment: "", status: "", orderId: "",
-    checkoutLink: `${SITE_URL}/cart`,
+    checkoutLink: checkoutLink || "",
   });
 }
 
@@ -995,8 +1067,25 @@ async function sendAbandonedReminders() {
       saveAbandoned(sentAb);
       continue;
     }
+    // Resolve the EXACT recovery link (generate+persist once if the cart has
+    // none). On failure: do NOT send a broken/empty reminder, do NOT mark it
+    // reminded — leave it retryable for the next cycle.
+    let checkoutLink;
+    try {
+      checkoutLink = await ensureRecoveryLink(dbPool, c);
+    } catch (e) {
+      stats.failedTotal++;
+      errl(`abandoned link-gen failed | cart ${c.id} | ${e?.message ?? e} | left unsent + retryable`);
+      continue;
+    }
+    if (!checkoutLink) {
+      stats.failedTotal++;
+      errl(`abandoned link-gen empty  | cart ${c.id} | no orderId resolved | left unsent + retryable`);
+      continue;
+    }
+
     const chatId = `${phone}@c.us`;
-    const body = buildAbandonedMessage(c);
+    const body = buildAbandonedMessage(c, checkoutLink);
     try {
       const msg = await waClient.sendMessage(chatId, body);
       const messageId = (msg && msg.id && (msg.id._serialized || msg.id.id)) || null;
@@ -1039,4 +1128,6 @@ module.exports = {
   // Pure helpers (Landing-order routing + variable resolution) for unit tests.
   renderTemplate, isLandingOrder, buildOrderVars, pickTemplate, resolveOrderMessage,
   DEFAULT_TEMPLATES, DEFAULT_LANDING_NEW_ORDER_TEMPLATE, DEFAULT_ABANDONED_TEMPLATE,
+  // Abandoned-cart recovery-link helpers.
+  buildAbandonedMessage, recoveryLink, buildDraftOrderFields,
 };
