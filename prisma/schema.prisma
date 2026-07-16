@@ -75,6 +75,11 @@ model Product {
   @@index([isActive])
   @@index([status])
   @@index([landingPageId])
+  // Products feed (keyset pagination): every feed query is
+  //   WHERE status = 'Active' ORDER BY "createdAt" DESC, id DESC
+  // so this composite serves the filter AND the sort in one index scan.
+  // Ascending is fine — Postgres scans a btree backwards for the DESC order.
+  @@index([status, createdAt, id])
   @@map("products")
 }
 

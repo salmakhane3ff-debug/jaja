@@ -10,6 +10,7 @@ import prisma               from '../prisma.js';
 import { mapProduct }       from '../utils/mappers.js';
 import { getStoreSettings } from './settingsService.js';
 import { destroyManyByUrls, diffRemovedUrls } from '../mediaCleanup.js';
+import { encodeCursor, decodeCursor, clampLimit, normalizeFilters } from '../productFeed.js';
 
 // ── Known Prisma product columns ──────────────────────────────────────────────
 // This explicit whitelist prevents Prisma from throwing "Unknown argument"
@@ -145,6 +146,121 @@ export async function getAllProducts(statusFilter) {
   ]);
 
   return products.map((p) => mapProduct(p, storeSettings));
+}
+
+// ── Products feed: keyset (cursor) pagination ─────────────────────────────────
+// Backs the All-Products infinite scroll. getAllProducts() above is untouched —
+// /api/products and its ~12 consumers keep their existing unbounded contract.
+//
+// Raw SQL rather than the Prisma query builder, for three reasons that all apply:
+//   1. The collection match must stay CASE-INSENSITIVE over a JSONB array, which
+//      Prisma's `where` cannot express (array_contains is case-sensitive).
+//   2. Row-value comparison ("createdAt", id) < ($t, $i) is a TRUE keyset: unlike
+//      Prisma's `cursor`, it does not break when the cursor row is deleted.
+//   3. One statement serves filtered and unfiltered reads — no second code path.
+//
+// The statement is STATIC — every user value is a bound parameter ($1..$5), so
+// there is no SQL injection surface. NULL-guards switch the optional filters off.
+//
+// `description` is searched but never selected: the search bug fix costs nothing
+// in payload (it is ~2 KB/product and product cards never render it).
+const FEED_COLUMNS = `
+    id, title, "shortDescription",
+    "regularPrice", "salePrice",
+    images, collections,
+    sku, "stockStatus", "stockQuantity",
+    "productLabel", tags, brand,
+    rating, "ratingsCount", "reviewsCount",
+    "isActive", status,
+    "redirectMode", "redirectUrl",
+    "limitedTimeDeal",
+    "allowCOD", "allowPrepaid",
+    "conversionEnabled", "conversionSold", "conversionStock",
+    bundles, "createdAt"`;
+
+// The collection test mirrors the old JS filter exactly:
+//   p.collections.some((c) => c.toLowerCase() === collection.toLowerCase())
+// including its Array.isArray() guard. That guard matters: jsonb_array_elements_text
+// RAISES on a non-array value, which would fail the whole page instead of skipping
+// one bad row. CASE (not AND) is what actually guarantees the type check runs first —
+// Postgres does not promise AND short-circuits around a sub-select.
+const FEED_WHERE = `
+   WHERE status = 'Active'
+     AND ($1::text IS NULL OR CASE
+           WHEN jsonb_typeof("collections") = 'array' THEN EXISTS (
+             SELECT 1 FROM jsonb_array_elements_text("collections") AS t(c)
+              WHERE lower(t.c) = lower($1::text))
+           ELSE false
+         END)
+     AND ($2::text IS NULL
+          OR title              ILIKE $2::text
+          OR "shortDescription" ILIKE $2::text
+          OR description        ILIKE $2::text)`;
+
+const FEED_SQL = `
+  SELECT ${FEED_COLUMNS}
+    FROM products
+  ${FEED_WHERE}
+     AND ($3::timestamp(3) IS NULL
+          OR ("createdAt", id) < ($3::timestamp(3), $4::text))
+   ORDER BY "createdAt" DESC, id DESC
+   LIMIT $5::int`;
+
+const FEED_COUNT_SQL = `SELECT count(*)::int AS total FROM products ${FEED_WHERE}`;
+
+// Escape LIKE wildcards so a literal % or _ typed into search stays literal —
+// matching the substring semantics the old client-side .includes() filter had.
+function likeParam(q) {
+  if (!q) return null;
+  return `%${q.replace(/([\\%_])/g, '\\$1')}%`;
+}
+
+/**
+ * One page of the Active product feed, newest first.
+ *
+ * @param {object}  opts
+ * @param {string?} opts.cursor     opaque cursor from the previous page (null → first page)
+ * @param {number?} opts.limit      page size (default 16, capped at 48)
+ * @param {string?} opts.collection case-insensitive collection ("category") filter
+ * @param {string?} opts.q          search over title / shortDescription / description
+ * @returns {Promise<{items: object[], nextCursor: string|null, hasMore: boolean, total: number|null}>}
+ *
+ * `total` is returned ONLY for the first page of a filter set (cursor === null);
+ * subsequent pages return null so scrolling never pays for a COUNT.
+ */
+export async function getProductsPage({ cursor = null, limit, collection = null, q = null } = {}) {
+  const size    = clampLimit(limit);
+  const filters = normalizeFilters({ collection, q });
+  const key     = decodeCursor(cursor); // tampered/stale cursor → first page, never an error
+
+  const collectionParam = filters.collection;
+  const searchParam     = likeParam(filters.q);
+
+  const [rows, storeSettings, totalRows] = await Promise.all([
+    // take size + 1: the extra row tells us hasMore without a second query.
+    prisma.$queryRawUnsafe(
+      FEED_SQL,
+      collectionParam,
+      searchParam,
+      key ? new Date(key.createdAt) : null,
+      key ? key.id : null,
+      size + 1,
+    ),
+    getStoreSettings(),
+    key
+      ? Promise.resolve(null)
+      : prisma.$queryRawUnsafe(FEED_COUNT_SQL, collectionParam, searchParam),
+  ]);
+
+  const hasMore = rows.length > size;
+  const page    = hasMore ? rows.slice(0, size) : rows;
+
+  return {
+    items:      page.map((p) => mapProduct(p, storeSettings)),
+    nextCursor: hasMore && page.length ? encodeCursor(page[page.length - 1]) : null,
+    hasMore,
+    total:      totalRows ? (totalRows[0]?.total ?? null) : null,
+  };
 }
 
 /**

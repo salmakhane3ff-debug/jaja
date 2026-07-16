@@ -1,8 +1,9 @@
-import { fetchAllProducts } from "@/lib/data/products";
+import { fetchProductsPage } from "@/lib/data/products";
 import { getActiveCollections } from "@/lib/services/collectionService";
 import { getStoreSettings } from "@/lib/getStoreSettings";
 import ProductsClient from "./ProductsClient";
 import { SITE_ORIGIN } from "@/lib/siteUrl";
+import { PAGE_SIZE } from "@/lib/productFeed";
 
 const PROD_ORIGIN = SITE_ORIGIN;
 
@@ -11,16 +12,6 @@ function readCollection(sp) {
   const c = sp?.collection;
   if (Array.isArray(c)) return c[0] || null;
   return typeof c === "string" && c.trim() ? c : null;
-}
-
-// Server-side collection filter — same matching the client used to do.
-function filterByCollection(products, collection) {
-  if (!collection) return products;
-  return products.filter(
-    (p) =>
-      Array.isArray(p.collections) &&
-      p.collections.some((c) => c.toLowerCase() === collection.toLowerCase())
-  );
 }
 
 export async function generateMetadata({ searchParams }) {
@@ -57,8 +48,10 @@ export default async function Page({ searchParams }) {
   const sp         = await searchParams;
   const collection = readCollection(sp);
 
-  const allProducts = await fetchAllProducts();
-  const products    = filterByCollection(allProducts, collection);
+  // First page only — server-rendered, so crawlers and the first paint both get
+  // real product HTML. The collection filter now runs in SQL (case-insensitively)
+  // instead of loading the whole catalogue and filtering it in JS.
+  const firstPage = await fetchProductsPage({ collection, limit: PAGE_SIZE });
 
   let collectionBanner = null;
   if (collection) {
@@ -75,7 +68,10 @@ export default async function Page({ searchParams }) {
 
   return (
     <ProductsClient
-      initialProducts={products}
+      initialProducts={firstPage.items}
+      initialCursor={firstPage.nextCursor}
+      initialHasMore={firstPage.hasMore}
+      initialTotal={firstPage.total}
       selectedCollection={collection}
       collectionBanner={collectionBanner}
     />

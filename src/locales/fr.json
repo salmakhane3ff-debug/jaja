@@ -312,6 +312,8 @@
   "page_no_products_collection": "Aucun produit dans cette collection.",
   "page_no_products_search": "Aucun résultat",
   "page_no_products_search_desc": "Aucun produit ne correspond à \"{query}\". Essayez un autre terme.",
+  "page_load_failed": "Échec du chargement des produits.",
+  "page_retry": "Réessayer",
   "page_limited_time_deal": "Offre limitée",
   "page_adding": "Ajout en cours...",
   "page_add_to_cart": "Ajouter au panier",

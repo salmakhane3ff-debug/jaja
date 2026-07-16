@@ -304,6 +304,8 @@
   "page_no_products_collection": "لا توجد منتجات في هذه المجموعة.",
   "page_no_products_search": "لا توجد نتائج",
   "page_no_products_search_desc": "لا يوجد منتج يطابق \"{query}\". جرّب كلمة أخرى.",
+  "page_load_failed": "فشل تحميل المنتجات.",
+  "page_retry": "إعادة المحاولة",
   "page_limited_time_deal": "عرض لفترة محدودة",
   "page_adding": "جاري الإضافة...",
   "page_add_to_cart": "أضف إلى السلة",

@@ -1,0 +1,16 @@
+-- Products feed: keyset (cursor) pagination index.
+--
+-- Every /api/products/feed query has the shape:
+--   WHERE status = 'Active' [AND collection/search filters]
+--     AND ("createdAt", id) < ($cursorCreatedAt, $cursorId)
+--   ORDER BY "createdAt" DESC, id DESC
+--   LIMIT n + 1
+--
+-- Leading `status` serves the equality filter; ("createdAt", id) then serves both
+-- the keyset row-comparison and the ORDER BY, so the planner can satisfy the whole
+-- query with a single backward index scan instead of a seq scan + sort.
+-- Ascending column order is intentional: a btree is scannable in both directions,
+-- and every feed sort key points the same way (DESC, DESC).
+--
+-- Additive only: no data is read, written, moved or dropped.
+CREATE INDEX "products_status_createdAt_id_idx" ON "products"("status", "createdAt", "id");
