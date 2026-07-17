@@ -12,9 +12,11 @@
  * This layer only orchestrates:
  *   - normalises items (accepts strings or {url}/{src} objects)
  *   - de-duplicates URLs so an asset is destroyed at most once
+ *   - asks the optional `isReferenced` guard whether an asset is still in use,
+ *     and RETAINS it if so (media URLs are shared — see mediaReferences.js)
  *   - NEVER throws — a remote failure must not block or roll back the DB
  *     delete/update that called it (callers do DB-first, then this cleanup)
- *   - logs each outcome: deleted / skipped / failed
+ *   - logs each outcome: deleted / retained / skipped / failed
  * ─────────────────────────────────────────────────────────────────────────────
  */
 
@@ -31,15 +33,38 @@ function toUrl(item) {
  * @param {Array<string|{url?:string,src?:string}>} items
  * @param {object} [opts]
  * @param {(url:string)=>Promise<any>} [opts.destroyFn]  defaults to destroyByUrl (injectable for tests)
+ * @param {(url:string)=>Promise<boolean>} [opts.isReferenced]  guard: true → KEEP the asset.
+ *        Omit it and nothing is retained (the pre-guard behaviour). Callers that
+ *        delete product media pass isMediaUrlReferenced — media URLs are shared
+ *        (the Duplicate button copies them verbatim), so destroying one product's
+ *        image can blank a survivor's. A throw from this guard is treated as
+ *        "referenced": we never delete what we cannot prove is unused.
  * @param {string} [opts.label]  short context label for logs
- * @returns {Promise<{deleted:number, skipped:number, failed:number, total:number}>}
+ * @returns {Promise<{deleted:number, retained:number, skipped:number, failed:number, total:number}>}
  */
-export async function destroyManyByUrls(items, { destroyFn = destroyByUrl, label = 'media' } = {}) {
+export async function destroyManyByUrls(items, { destroyFn = destroyByUrl, isReferenced = null, label = 'media' } = {}) {
   // Normalise + de-duplicate (requirement: skip duplicate URLs safely).
+  // De-duplication happens BEFORE the guard, so a repeated URL is checked once.
   const urls = Array.from(new Set((items || []).map(toUrl).filter(Boolean)));
-  const summary = { deleted: 0, skipped: 0, failed: 0, total: urls.length };
+  const summary = { deleted: 0, retained: 0, skipped: 0, failed: 0, total: urls.length };
 
   for (const url of urls) {
+    if (isReferenced) {
+      let stillUsed;
+      try {
+        stillUsed = await isReferenced(url);
+      } catch (err) {
+        // Fail-safe: an unusable answer must never authorise a deletion.
+        stillUsed = true;
+        console.error(`[media-cleanup] guard failed | ${label} | ${url} | ${err?.message ?? err}`);
+      }
+      if (stillUsed) {
+        summary.retained++;
+        console.log(`[media-cleanup] retained | ${label} | ${url} | still referenced elsewhere`);
+        continue;
+      }
+    }
+
     try {
       const res = await destroyFn(url);
       if (res?.skipped) {

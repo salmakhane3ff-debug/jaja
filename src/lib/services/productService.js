@@ -10,6 +10,7 @@ import prisma               from '../prisma.js';
 import { mapProduct }       from '../utils/mappers.js';
 import { getStoreSettings } from './settingsService.js';
 import { destroyManyByUrls, diffRemovedUrls } from '../mediaCleanup.js';
+import { isMediaUrlReferenced } from '../mediaReferences.js';
 import { encodeCursor, decodeCursor, clampLimit, normalizeFilters } from '../productFeed.js';
 
 // ── Known Prisma product columns ──────────────────────────────────────────────
@@ -346,9 +347,12 @@ export async function updateProduct(id, body) {
 
     // DB row now holds the new images[] (removed items already gone). Clean up
     // the removed Cloudinary assets — best-effort, never throws, never blocks.
+    // Only assets nothing else references are destroyed. Note the row is already
+    // updated, so a URL dropped from `images` but still used in THIS product's
+    // `sections` is correctly retained by the guard.
     if (removed.length) {
       try {
-        await destroyManyByUrls(removed, { label: `product:${id}` });
+        await destroyManyByUrls(removed, { label: `product:${id}`, isReferenced: isMediaUrlReferenced });
       } catch (err) {
         console.error('[media-cleanup] unexpected error during product update:', err?.message ?? err);
       }
@@ -379,10 +383,15 @@ export async function deleteProduct(id) {
     throw err;
   }
 
-  // DB is consistent (row deleted). Now best-effort Cloudinary cleanup — a
-  // Cloudinary failure is logged but NEVER changes the delete result or throws.
+  // DB is consistent (row deleted). Now best-effort remote cleanup — a storage
+  // failure is logged but NEVER changes the delete result or throws.
+  //
+  // The guard is what stops this destroying a SHARED asset: the Duplicate button
+  // copies image URLs verbatim, and order snapshots embed them, so an image this
+  // product listed may still be another product's (or an invoice's) only copy.
+  // Anything still referenced — or any URL we cannot check — is retained.
   try {
-    await destroyManyByUrls(images, { label: `product:${id}` });
+    await destroyManyByUrls(images, { label: `product:${id}`, isReferenced: isMediaUrlReferenced });
   } catch (err) {
     console.error('[media-cleanup] unexpected error during product delete:', err?.message ?? err);
   }
