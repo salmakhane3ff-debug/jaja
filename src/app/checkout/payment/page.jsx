@@ -266,7 +266,12 @@ export default function PaymentPage() {
     // ── Fetch product payment rules ──────────────────────────────────────────
     const productIds = [...new Set(items.map(i => i.productId).filter(Boolean))];
     if (productIds.length > 0) {
-      fetch("/api/products?status=all")
+      // WHY ?ids= and not ?status=all: this only ever needs the cart's products,
+      // and `?ids=` applies no status filter — so an Inactive product still in a
+      // customer's cart resolves exactly as before. `?status=all` is an admin-only
+      // read (it exposes the unpublished catalogue), and it also meant this page
+      // downloaded the ENTIRE catalogue to read two booleans per cart item.
+      fetch(`/api/products?ids=${productIds.join(",")}`)
         .then(r => r.json())
         .then(allProducts => {
           const cartProds = Array.isArray(allProducts)

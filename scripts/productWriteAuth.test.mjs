@@ -134,8 +134,11 @@ console.log("6) route exports (source-level regression guard):");
 {
   const src = readFileSync(new URL("../src/app/api/products/route.js", import.meta.url), "utf8");
   ok("withAdminAuth is imported", /import\s*\{\s*withAdminAuth\s*\}\s*from/.test(src));
-  ok("GET stays unwrapped/public", /export\s+const\s+GET\s*=\s*getProductsHandler\s*;/.test(src));
-  ok("GET is NOT wrapped", !/export\s+const\s+GET\s*=\s*withAdminAuth/.test(src));
+  // GET is scoped per request (public read vs ?status=all) rather than wrapped
+  // wholesale — the public/privileged split itself is covered by
+  // scripts/productReadScope.test.mjs.
+  ok("GET is scoped, not wrapped wholesale", !/export\s+const\s+GET\s*=\s*withAdminAuth/.test(src));
+  ok("GET still serves the public read via getProductsHandler", /return\s+getProductsHandler\(/.test(src));
   for (const [method, handler] of [
     ["POST",   "createProductHandler"],
     ["PUT",    "updateProductHandler"],
