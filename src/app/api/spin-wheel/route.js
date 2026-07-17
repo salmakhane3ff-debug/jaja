@@ -22,4 +22,21 @@ export const GET = withAdminAuth(getSpinWheelHandler);
 
 // Public — spin widget calls these without auth
 export const POST  = createSpinEventHandler;
+/**
+ * ⚠️ TEMPORARY PUBLIC SECURITY EXCEPTION — tracked in scripts/routeAuth.test.mjs
+ *
+ * Why it is currently public:
+ *   The spin-wheel widget marks a prize as copied/ordered from the visitor's
+ *   browser. The visitor is anonymous — there is no customer session to attach.
+ *
+ * Known risk:
+ *   Anonymous state mutation with NO identity check. Any caller can flip the
+ *   copied/ordered flag on any spin event id it can guess or observe, corrupting
+ *   spin analytics and prize-redemption state.
+ *
+ * Required follow-up fix:
+ *   Bind the mutation to the spin's own secret — require the sessionId/clickId
+ *   issued when the spin was created, and reject a PATCH that cannot present the
+ *   value for that event.
+ */
 export const PATCH = updateSpinEventHandler;

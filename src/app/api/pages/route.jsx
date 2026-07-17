@@ -1,5 +1,18 @@
+/**
+ * /api/pages
+ * ─────────────────────────────────────────────────────────────────────────────
+ * GET    → all pages   [public]
+ * POST   → create page [admin]
+ * PUT    → update page [admin]
+ * DELETE → delete page [admin]
+ *
+ * AUTH: the Edge middleware matcher excludes /api, so these exports are the only
+ * gate. GET stays public — /pages and /pages/[slug] read it anonymously.
+ * ─────────────────────────────────────────────────────────────────────────────
+ */
 import { getAllPosts, createPost } from '@/lib/services/postService';
 import { getStoreSettings } from '@/lib/services/settingsService';
+import { withAdminAuth } from '@/lib/middleware/withAdminAuth';
 
 // GET: Fetch all CMS pages
 export async function GET() {
@@ -14,7 +27,7 @@ export async function GET() {
 }
 
 // POST: Create a new CMS page
-export async function POST(req) {
+async function _POST(req) {
   try {
     const body = await req.json();
     const page = await createPost(body, 'Page');
@@ -26,7 +39,7 @@ export async function POST(req) {
 }
 
 // PUT: Update a CMS page by _id
-export async function PUT(req) {
+async function _PUT(req) {
   try {
     const body = await req.json();
     const { _id, ...rest } = body;
@@ -50,7 +63,7 @@ export async function PUT(req) {
 }
 
 // DELETE: Delete a CMS page by _id
-export async function DELETE(req) {
+async function _DELETE(req) {
   try {
     const body = await req.json();
     const { _id } = body;
@@ -72,3 +85,9 @@ export async function DELETE(req) {
     return Response.json({ error: 'Failed to delete page' }, { status: 500 });
   }
 }
+
+export const POST = withAdminAuth(_POST);
+
+export const PUT = withAdminAuth(_PUT);
+
+export const DELETE = withAdminAuth(_DELETE);

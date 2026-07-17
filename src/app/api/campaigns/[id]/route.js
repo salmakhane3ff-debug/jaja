@@ -8,8 +8,9 @@
  */
 
 import prisma from "@/lib/prisma";
+import { withAdminAuth } from '@/lib/middleware/withAdminAuth';
 
-export async function GET(request, { params }) {
+async function _GET(request, { params }) {
   try {
     const { id } = await params;
     const campaign = await prisma.trackingCampaign.findUnique({ where: { id } });
@@ -21,7 +22,7 @@ export async function GET(request, { params }) {
   }
 }
 
-export async function PUT(request, { params }) {
+async function _PUT(request, { params }) {
   try {
     const { id }  = await params;
     const body    = await request.json();
@@ -44,7 +45,7 @@ export async function PUT(request, { params }) {
   }
 }
 
-export async function DELETE(request, { params }) {
+async function _DELETE(request, { params }) {
   try {
     const { id } = await params;
     await prisma.trackingCampaign.delete({ where: { id } });
@@ -54,3 +55,9 @@ export async function DELETE(request, { params }) {
     return Response.json({ error: "internal" }, { status: 500 });
   }
 }
+
+export const GET = withAdminAuth(_GET);
+
+export const PUT = withAdminAuth(_PUT);
+
+export const DELETE = withAdminAuth(_DELETE);

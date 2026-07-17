@@ -7,6 +7,7 @@
  */
 
 import prisma from "@/lib/prisma";
+import { withAdminAuth } from '@/lib/middleware/withAdminAuth';
 
 function slugify(text) {
   return text
@@ -21,7 +22,7 @@ function slugify(text) {
 
 function round2(n) { return Math.round((n || 0) * 100) / 100; }
 
-export async function GET(request) {
+async function _GET(request) {
   try {
     const { searchParams } = new URL(request.url);
     const days = parseInt(searchParams.get("days") || "30", 10);
@@ -87,7 +88,7 @@ export async function GET(request) {
   }
 }
 
-export async function POST(request) {
+async function _POST(request) {
   try {
     const body = await request.json();
     const { name, landingUrl, source, costModel, defaultCost, notes } = body;
@@ -125,3 +126,7 @@ export async function POST(request) {
     return Response.json({ error: "internal" }, { status: 500 });
   }
 }
+
+export const GET = withAdminAuth(_GET);
+
+export const POST = withAdminAuth(_POST);

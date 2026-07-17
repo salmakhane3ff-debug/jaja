@@ -5,13 +5,18 @@
  * Accepts { collection, id } in the request body and deletes the matching
  * ContentItem row from PostgreSQL.
  *
- * DELETE { collection, id } → delete item by id
+ * DELETE { collection, id } → delete item by id   [admin]
+ *
+ * AUTH: the Edge middleware matcher excludes /api, so this export is the only
+ * gate. Admin-only — the sole caller is the admin promo-text page, and an
+ * unauthenticated caller could delete any ContentItem by id.
  * ─────────────────────────────────────────────────────────────────────────────
  */
 
 import { deleteItem } from '@/lib/services/contentService';
+import { withAdminAuth } from '@/lib/middleware/withAdminAuth';
 
-export async function DELETE(req) {
+async function _DELETE(req) {
   try {
     const body = await req.json();
     // promo-text sends `id` (no underscore); support both `id` and `_id`
@@ -35,3 +40,4 @@ export async function DELETE(req) {
     return Response.json({ error: 'Failed to delete item' }, { status: 500 });
   }
 }
+export const DELETE = withAdminAuth(_DELETE);

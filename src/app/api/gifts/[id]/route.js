@@ -1,6 +1,19 @@
-import prisma from "@/lib/prisma";
+/**
+ * /api/gifts/[id]
+ * ─────────────────────────────────────────────────────────────────────────────
+ * PUT    → update a gift  [admin]
+ * DELETE → delete a gift  [admin]
+ *
+ * AUTH: the Edge middleware matcher excludes /api, so these exports are the only
+ * gate. The parent /api/gifts was already admin-wrapped while this child was
+ * not — auth was added to the parent and forgotten on the child.
+ * ─────────────────────────────────────────────────────────────────────────────
+ */
 
-export async function PUT(req, { params }) {
+import prisma from "@/lib/prisma";
+import { withAdminAuth } from "@/lib/middleware/withAdminAuth";
+
+async function _PUT(req, { params }) {
   try {
     const body = await req.json();
     const gift = await prisma.gift.update({
@@ -18,8 +31,9 @@ export async function PUT(req, { params }) {
     return Response.json({ error: "Failed to update gift" }, { status: 500 });
   }
 }
+export const PUT = withAdminAuth(_PUT);
 
-export async function DELETE(_, { params }) {
+async function _DELETE(_, { params }) {
   try {
     await prisma.gift.delete({ where: { id: params.id } });
     return Response.json({ ok: true });
@@ -28,3 +42,4 @@ export async function DELETE(_, { params }) {
     return Response.json({ error: "Failed to delete gift" }, { status: 500 });
   }
 }
+export const DELETE = withAdminAuth(_DELETE);

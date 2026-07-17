@@ -1,5 +1,18 @@
+/**
+ * /api/blog
+ * ─────────────────────────────────────────────────────────────────────────────
+ * GET    → all blog posts   [public]
+ * POST   → create post      [admin]
+ * PUT    → update post      [admin]
+ * DELETE → delete post      [admin]
+ *
+ * AUTH: the Edge middleware matcher excludes /api, so these exports are the only
+ * gate. GET stays public — /blog and /blog/[slug] read it anonymously.
+ * ─────────────────────────────────────────────────────────────────────────────
+ */
 import { getAllPosts, createPost } from '@/lib/services/postService';
 import { getStoreSettings } from '@/lib/services/settingsService';
+import { withAdminAuth } from '@/lib/middleware/withAdminAuth';
 
 // GET: Fetch all blog posts
 export async function GET() {
@@ -14,7 +27,7 @@ export async function GET() {
 }
 
 // POST: Create a new blog post
-export async function POST(req) {
+async function _POST(req) {
   try {
     const body = await req.json();
     const post = await createPost(body, 'Blog');
@@ -26,7 +39,7 @@ export async function POST(req) {
 }
 
 // PUT: Update a blog post by _id
-export async function PUT(req) {
+async function _PUT(req) {
   try {
     const body = await req.json();
     const { _id, ...rest } = body;
@@ -50,7 +63,7 @@ export async function PUT(req) {
 }
 
 // DELETE: Delete a blog post by _id
-export async function DELETE(req) {
+async function _DELETE(req) {
   try {
     const body = await req.json();
     const { _id } = body;
@@ -72,3 +85,9 @@ export async function DELETE(req) {
     return Response.json({ error: 'Failed to delete blog post' }, { status: 500 });
   }
 }
+
+export const POST = withAdminAuth(_POST);
+
+export const PUT = withAdminAuth(_PUT);
+
+export const DELETE = withAdminAuth(_DELETE);

@@ -4,6 +4,25 @@
  * Body: { username?, affiliateId?, orderId, clientName, clientPhone, productTitle, total }
  *
  * Accepts EITHER username OR affiliateId (or both — affiliateId takes priority).
+ *
+ * ⚠️ TEMPORARY PUBLIC SECURITY EXCEPTION — tracked in scripts/routeAuth.test.mjs
+ *
+ * Why it is currently public:
+ *   Checkout fires this from the customer's browser immediately after an order is
+ *   created. The customer holds no admin session and no affiliate session, so the
+ *   call cannot present either credential today.
+ *
+ * Known risk:
+ *   Unauthenticated FINANCIAL write. Anyone can POST an arbitrary
+ *   { affiliateId | username, orderId, total } and forge affiliate commissions or
+ *   attribute someone else's order to their own account. Rate limiting bounds the
+ *   volume; it does not make the write authentic.
+ *
+ * Required follow-up fix:
+ *   Stop trusting the browser. Attribute the commission server-side inside
+ *   createOrder() from the order's own persisted affiliateId/utmSource — the same
+ *   model checkout already uses for prices (client values ignored, DB is the
+ *   authority) — then delete this endpoint.
  */
 
 import { recordAffiliateOrder } from '@/lib/services/affiliateSystemService';

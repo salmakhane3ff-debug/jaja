@@ -19,4 +19,20 @@ import { withAdminAuth } from '@/lib/middleware/withAdminAuth';
 export const GET = withAdminAuth(getInvoiceHandler);
 
 // Public POST — checkout fires this without an auth token
+/**
+ * ⚠️ TEMPORARY PUBLIC SECURITY EXCEPTION — tracked in scripts/routeAuth.test.mjs
+ *
+ * Why it is currently public:
+ *   Checkout creates the invoice from the customer's browser right after the
+ *   order is placed; the customer has no admin session to present.
+ *
+ * Known risk:
+ *   Unauthenticated invoice creation. Anyone can POST arbitrary invoice payloads —
+ *   junk/spam rows, unbounded resource growth, and fabricated invoice records that
+ *   the admin invoice list will display as real. There is no rate limit here.
+ *
+ * Required follow-up fix:
+ *   Generate the invoice server-side inside createOrder() (which already resolves
+ *   every financial value from the database), and drop this public write.
+ */
 export const POST = createInvoiceHandler;

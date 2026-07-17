@@ -9,8 +9,9 @@
  */
 
 import { updateItem, deleteItem } from '@/lib/services/contentService';
+import { withAdminAuth } from '@/lib/middleware/withAdminAuth';
 
-export async function PUT(req, context) {
+async function _PUT(req, context) {
   try {
     const { id } = await context.params;
     const body = await req.json();
@@ -30,7 +31,7 @@ export async function PUT(req, context) {
   }
 }
 
-export async function DELETE(req, context) {
+async function _DELETE(req, context) {
   try {
     const { id } = await context.params;
 
@@ -44,3 +45,7 @@ export async function DELETE(req, context) {
     return Response.json({ error: 'Failed to delete item' }, { status: 500 });
   }
 }
+
+export const PUT = withAdminAuth(_PUT);
+
+export const DELETE = withAdminAuth(_DELETE);
