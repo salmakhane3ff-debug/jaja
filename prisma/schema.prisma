@@ -171,6 +171,29 @@ model Setting {
   @@map("settings")
 }
 
+// ── Duplicate Listings Detector ───────────────────────────────────────────────
+// One row per duplicate group the admin chose to ignore.
+//
+// groupKey    — canonical sorted member-id set. @unique, so an upsert can never
+//               create a second Ignore record for the same group.
+// fingerprint — the members' updatedAt values. The group stays hidden only while
+//               the stored fingerprint still matches; editing ANY member changes
+//               it and the group returns for review.
+// productIds  — the member ids, kept for display/debugging. Intentionally NOT a
+//               relation: product deletes are hard, and a Json array carries no
+//               FK, so stale rows are harmless (a group whose members are gone
+//               simply never re-forms).
+model DuplicateIgnore {
+  id          String   @id @default(uuid())
+  groupKey    String   @unique
+  fingerprint String
+  productIds  Json     @default("[]")
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@map("duplicate_ignores")
+}
+
 model AbandonedCart {
   id            String   @id @default(uuid())
   phone         String
