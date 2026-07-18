@@ -34,5 +34,10 @@ export const GET = withAdminAuth(getInvoiceHandler);
  * Required follow-up fix:
  *   Generate the invoice server-side inside createOrder() (which already resolves
  *   every financial value from the database), and drop this public write.
+ *
+ * Hardening applied (Batch #2, endpoint unchanged):
+ *   createInvoiceHandler is now rate-limited and requires orderId to reference a
+ *   REAL order, so invoices can no longer be spammed for fabricated/non-existent
+ *   orders. Money figures are untouched (kept byte-identical to the caller).
  */
 export const POST = createInvoiceHandler;

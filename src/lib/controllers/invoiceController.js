@@ -15,6 +15,8 @@ import {
   getAllInvoices,
 } from '../services/invoiceService.js';
 import { badRequest, notFound, serverError } from '../utils/apiResponse.js';
+import { rateLimit } from '../rateLimit.js';
+import prisma from '../prisma.js';
 
 // ── GET /api/invoice ──────────────────────────────────────────────────────────
 
@@ -47,10 +49,24 @@ export async function getInvoiceHandler(req) {
 
 export async function createInvoiceHandler(req) {
   try {
+    // Hardening (public endpoint, unchanged request/response): cap volume, and
+    // require the invoice to reference a REAL order. This blocks spam/fabricated
+    // invoices for orders that do not exist, without touching the money figures
+    // (the order's own displayed totals stay exactly as the caller sends them).
+    const limited = rateLimit(req, 'invoice-create', { max: 10, windowMs: 60_000 });
+    if (limited) return limited;
+
     const body = await req.json();
 
     if (!body.invoiceNumber?.trim()) return badRequest('invoiceNumber is required');
     if (!body.customerName?.trim())  return badRequest('customerName is required');
+
+    // Every real caller (the 3 checkout pages) posts the id of an order it just
+    // created, so a valid orderId is always present in the legit flow.
+    const orderId = (body.orderId || '').toString().trim();
+    if (!orderId) return badRequest('orderId is required');
+    const orderExists = await prisma.order.count({ where: { id: orderId } });
+    if (orderExists === 0) return notFound('Order not found for this invoice');
 
     const invoice = await createInvoice(body);
     return Response.json(invoice, { status: 201 });

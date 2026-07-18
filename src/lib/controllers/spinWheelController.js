@@ -16,6 +16,7 @@ import {
   getSpinStats,
 } from '../services/spinWheelService.js';
 import { badRequest, serverError } from '../utils/apiResponse.js';
+import { rateLimit } from '../rateLimit.js';
 
 // ── GET /api/spin-wheel ───────────────────────────────────────────────────────
 
@@ -57,6 +58,16 @@ export async function createSpinEventHandler(req) {
 
 export async function updateSpinEventHandler(req) {
   try {
+    // Hardening within the frozen contract: rate-limit anonymous flag flips.
+    // Both branches already require a server-known identifier (promoCode is
+    // server-generated; sessionId scopes to an existing spin). Stronger
+    // per-spin ownership proof would need a new token in the POST response and a
+    // frontend change — out of scope for this batch — so a limiter is the
+    // available internal mitigation for the analytics-only `copied`/`ordered`
+    // flags. (Tracked in scripts/routeAuth.test.mjs.)
+    const limited = rateLimit(req, 'spin-update', { max: 30, windowMs: 60_000 });
+    if (limited) return limited;
+
     const body = await req.json();
 
     // Branch 1 — mark promo code as ordered (called from checkout success)

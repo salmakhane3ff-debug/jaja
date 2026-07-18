@@ -16,8 +16,22 @@ import {
 } from '../services/authService.js';
 import { mapUserProfile } from '../utils/mappers.js';
 import { badRequest, unauthorized, notFound as _notFound, serverError } from '../utils/apiResponse.js';
+import { rateLimit } from '../rateLimit.js';
+import {
+  throttleKey, registerFailure, checkLock, clearFailures, sweep,
+  LOGIN_MAX_FAILURES, LOGIN_WINDOW_MS,
+} from '../loginThrottle.js';
 
 const COOKIE_MAX_AGE = 7 * 24 * 60 * 60; // 7 days in seconds
+
+// Module-scoped per-username failure store (see loginThrottle.js). Per-IP limits
+// come from the shared rateLimit() helper below.
+const loginFailures = new Map();
+
+// A real bcrypt hash of a throwaway value. When the account does not exist we
+// still run a compare against THIS, so an unknown username costs the same
+// ~bcrypt time as a known one — no timing oracle that leaks account existence.
+const TIMING_EQUALISER_HASH = '$2a$12$C6UzMDM.H6dfI/f/IKcEeO3aLQ4Z6r4Yy5nJ7oQ0m9wU2q1p9r8S';
 
 // ── Login ─────────────────────────────────────────────────────────────────────
 
@@ -45,20 +59,47 @@ export async function loginHandler(req) {
       return badRequest('Email and password are required');
     }
 
+    // ── Throttle ──────────────────────────────────────────────────────────────
+    // Per-IP cap (anti-spray across accounts) + per-username lockout (anti-guess
+    // against one account). Both return the SAME generic 429 so neither reveals
+    // whether the account exists.
+    const ipLimited = rateLimit(req, 'login', { max: 20, windowMs: LOGIN_WINDOW_MS });
+    if (ipLimited) return ipLimited;
+
+    const key = throttleKey(email);
+    sweep(loginFailures);
+    const lock = checkLock(loginFailures, key);
+    if (lock.locked) {
+      // Generic message + 429 — identical for a known or unknown username, so it
+      // never reveals which. Retry-After tells a legit user when to come back.
+      return Response.json(
+        { error: 'Too many attempts. Please try again later.' },
+        { status: 429, headers: { 'Retry-After': String(Math.ceil(lock.retryAfterMs / 1000)) } }
+      );
+    }
+
     // Normal DB login — seed default admin row on first run
     await getOrCreateAdmin();
 
     // Look up the user
     const user = await findUserByEmail(email);
     if (!user) {
+      // Run a compare anyway so an unknown username is not faster than a known
+      // one (timing equalisation), then count it toward the lockout.
+      await comparePassword(password, TIMING_EQUALISER_HASH);
+      registerFailure(loginFailures, key);
       return unauthorized('Invalid email or password');
     }
 
     // Verify password (supports legacy plaintext + bcrypt)
     const valid = await comparePassword(password, user.password);
     if (!valid) {
+      registerFailure(loginFailures, key);
       return unauthorized('Invalid email or password');
     }
+
+    // Success — clear the failure counter so a working admin never locks out.
+    clearFailures(loginFailures, key);
 
     // Upgrade legacy plaintext password to bcrypt on successful login
     if (!user.password.startsWith('$2')) {

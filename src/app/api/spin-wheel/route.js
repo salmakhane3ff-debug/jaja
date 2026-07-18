@@ -38,5 +38,10 @@ export const POST  = createSpinEventHandler;
  *   Bind the mutation to the spin's own secret — require the sessionId/clickId
  *   issued when the spin was created, and reject a PATCH that cannot present the
  *   value for that event.
+ *
+ * Hardening applied (Batch #2, endpoint unchanged):
+ *   updateSpinEventHandler is now rate-limited. Stronger per-spin ownership proof
+ *   needs a server-issued token in the POST response plus a frontend change, so
+ *   it remains the follow-up fix; the flags mutated here are analytics-only.
  */
 export const PATCH = updateSpinEventHandler;
