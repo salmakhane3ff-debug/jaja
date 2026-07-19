@@ -42,11 +42,18 @@ const TIMING_EQUALISER_HASH = '$2a$12$C6UzMDM.H6dfI/f/IKcEeO3aLQ4Z6r4Yy5nJ7oQ0m9
  * Authenticates the user, sets an HttpOnly `auth_token` JWT cookie, and
  * returns the user profile (no password field).
  */
-function setAuthCookie(response, token) {
-  const isProduction = process.env.NODE_ENV === 'production';
+function setAuthCookie(response, token, req) {
+  // `Secure` must reflect the ACTUAL transport, not NODE_ENV: a Secure cookie
+  // delivered over plain HTTP is silently dropped by the browser, which breaks
+  // login when the app is reached over http:// (e.g. a raw IP:port). Trust the
+  // proxy's x-forwarded-proto first (Cloudflare/Nginx set it), then fall back to
+  // the request URL's own protocol.
+  const isHttps =
+    req?.headers?.get?.('x-forwarded-proto') === 'https' ||
+    (() => { try { return new URL(req.url).protocol === 'https:'; } catch { return false; } })();
   response.headers.set(
     'Set-Cookie',
-    `auth_token=${token}; HttpOnly; Path=/; Max-Age=${COOKIE_MAX_AGE}; SameSite=Strict${isProduction ? '; Secure' : ''}`
+    `auth_token=${token}; HttpOnly; Path=/; Max-Age=${COOKIE_MAX_AGE}; SameSite=Strict${isHttps ? '; Secure' : ''}`
   );
 }
 
@@ -126,7 +133,7 @@ export async function loginHandler(req) {
       },
     });
 
-    setAuthCookie(response, token);
+    setAuthCookie(response, token, req);
     return response;
   } catch (err) {
     console.error('Login error:', err);
