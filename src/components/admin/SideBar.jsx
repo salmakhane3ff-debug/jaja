@@ -49,6 +49,7 @@ import {
   TrendingUp,
   Gift,
   LoaderCircle,
+  Film,
 } from "lucide-react";
 
 const SideBar = ({ onItemClick }) => {
@@ -85,6 +86,8 @@ const SideBar = ({ onItemClick }) => {
     { href: "/admin/gifts", icon: <Gift size={16} />, label: "Gift System" },
     { href: "/admin/affiliate-orders", icon: <ShoppingCart size={16} />, label: "Affiliate Orders" },
     { href: "/admin/affiliate-payouts",    icon: <CreditCard size={16} />,        label: "Affiliate Payouts" },
+    { href: "/admin/ugc-videos",           icon: <Film size={16} />,              label: "UGC Videos" },
+    { href: "/admin/ugc-settings",         icon: <Settings size={16} />,          label: "UGC Settings" },
     { href: "/admin/shipping-companies",   icon: <Truck size={16} />,             label: "Shipping Companies" },
     { href: "/admin/bank-settings",        icon: <Building2 size={16} />,         label: "Bank Settings" },
     { href: "/admin/landing-pages",        icon: <MousePointerClick size={16} />, label: "Landing Pages" },

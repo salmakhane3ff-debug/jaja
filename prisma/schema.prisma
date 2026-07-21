@@ -26,51 +26,54 @@ model User {
 }
 
 model Product {
-  id               String            @id @default(uuid())
-  title            String
-  description      String?
-  shortDescription String?
-  regularPrice     Float?
-  salePrice        Float?
-  costPerItem      Float?
-  images           Json              @default("[]")
-  variants         Json              @default("[]")
-  sku              String?
-  barcode          String?
-  stockQuantity    Int?
-  stockStatus      String            @default("In Stock")
-  brand            String?
-  supplier         String?
-  tags             String?
-  productLabel     String?
-  collections      Json              @default("[]")
-  isActive         Boolean           @default(true)
-  status           String            @default("Active")
-  rating           Float             @default(0)
-  ratingsCount     Int               @default(0)
-  reviewsCount     Int               @default(0)
-  feedbackCount    Int               @default(0)
-  limitedTimeDeal  Json?
-  landingPageId    String?
-  createdAt        DateTime          @default(now())
-  updatedAt        DateTime          @updatedAt
-  allowCOD         Boolean           @default(true)
-  allowPrepaid     Boolean           @default(true)
-  redirectMode      String            @default("default")
+  id                String               @id @default(uuid())
+  title             String
+  description       String?
+  shortDescription  String?
+  regularPrice      Float?
+  salePrice         Float?
+  costPerItem       Float?
+  images            Json                 @default("[]")
+  variants          Json                 @default("[]")
+  sku               String?
+  barcode           String?
+  stockQuantity     Int?
+  stockStatus       String               @default("In Stock")
+  brand             String?
+  supplier          String?
+  tags              String?
+  productLabel      String?
+  collections       Json                 @default("[]")
+  isActive          Boolean              @default(true)
+  status            String               @default("Active")
+  rating            Float                @default(0)
+  ratingsCount      Int                  @default(0)
+  reviewsCount      Int                  @default(0)
+  feedbackCount     Int                  @default(0)
+  limitedTimeDeal   Json?
+  landingPageId     String?
+  createdAt         DateTime             @default(now())
+  updatedAt         DateTime             @updatedAt
+  allowCOD          Boolean              @default(true)
+  allowPrepaid      Boolean              @default(true)
+  redirectMode      String               @default("default")
   redirectUrl       String?
-  sections          Json              @default("[]")
+  sections          Json                 @default("[]")
   // ── Per-product conversion / scarcity ─────────────────────────────────────
-  conversionEnabled Boolean           @default(false)
+  conversionEnabled Boolean              @default(false)
   conversionSold    Int?
   conversionStock   Int?
   // ── Bundle & Save offers (optional, JSON array of bundle objects) ──────────
-  bundles           Json              @default("[]")
-  feedbacks        Feedback[]
-  orderItems       OrderItem[]
-  analytics        ProductAnalytics?
-  landingPage      LandingPage?      @relation(fields: [landingPageId], references: [id])
-  reviews          Review[]
-  scheduledReviews ScheduledReview[]
+  bundles           Json                 @default("[]")
+  feedbacks         Feedback[]
+  orderItems        OrderItem[]
+  analytics         ProductAnalytics?
+  landingPage       LandingPage?         @relation(fields: [landingPageId], references: [id])
+  reviews           Review[]
+  scheduledReviews  ScheduledReview[]
+  // UGC module (additive back-relation — no DB column). onDelete: Restrict on the
+  // child side preserves UGC records if a product is ever removed.
+  ugcSubmissions    UgcVideoSubmission[]
 
   @@index([isActive])
   @@index([status])
@@ -159,7 +162,7 @@ model OrderItem {
   product         Product? @relation(fields: [productId], references: [id])
 
   @@index([orderId])
-  @@index([productId])  // PERF: speeds up "orders containing product X" queries
+  @@index([productId]) // PERF: speeds up "orders containing product X" queries
   @@map("order_items")
 }
 
@@ -200,12 +203,12 @@ model AbandonedCart {
   fullName      String?
   email         String?
   city          String?
-  items         Json     // snapshot of cart items
+  items         Json // snapshot of cart items
   cartTotal     Float    @default(0)
   itemCount     Int      @default(0)
-  pageAbandoned String?  // "address" | "payment" | "confirm"
+  pageAbandoned String? // "address" | "payment" | "confirm"
   recovered     Boolean  @default(false)
-  orderId       String?  // set when the customer completes checkout → used for success page link
+  orderId       String? // set when the customer completes checkout → used for success page link
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 
@@ -264,21 +267,24 @@ model Affiliate {
   parentId             String?
   password             String                  @default("")
   rib                  String?
-  referralStatus       String                  @default("pending")   // "pending" | "active"
+  referralStatus       String                  @default("pending") // "pending" | "active"
   deliveredOrdersCount Int                     @default(0)
-  generatedRevenue     Float                   @default(0)           // sum of delivered order totals
+  generatedRevenue     Float                   @default(0) // sum of delivered order totals
   teamBonusClaimed     Boolean                 @default(false)
-  bonusBalance         Float                   @default(0)           // credited on bonus claim
-  goalOrders           Int?                                          // Objectif commandes (per-affiliate; null → default 5)
-  goalValidReferrals   Int?                                          // Objectif parrainages valides (per-affiliate; null → computed)
-  clicks          AffiliateClick[]
-  notifications   AffiliateNotification[]
-  affiliateOrders AffiliateOrder[]
-  payouts         AffiliatePayout[]
-  parent          Affiliate?              @relation("AffiliateTeam", fields: [parentId], references: [id])
-  children        Affiliate[]             @relation("AffiliateTeam")
-  user            User?                   @relation(fields: [userId], references: [id])
-  orders          Order[]
+  bonusBalance         Float                   @default(0) // credited on bonus claim
+  goalOrders           Int? // Objectif commandes (per-affiliate; null → default 5)
+  goalValidReferrals   Int? // Objectif parrainages valides (per-affiliate; null → computed)
+  clicks               AffiliateClick[]
+  notifications        AffiliateNotification[]
+  affiliateOrders      AffiliateOrder[]
+  payouts              AffiliatePayout[]
+  parent               Affiliate?              @relation("AffiliateTeam", fields: [parentId], references: [id])
+  children             Affiliate[]             @relation("AffiliateTeam")
+  user                 User?                   @relation(fields: [userId], references: [id])
+  orders               Order[]
+  // UGC module (additive back-relation — no DB column). onDelete: Restrict on the
+  // child side preserves UGC submissions/earnings if an affiliate is ever removed.
+  ugcSubmissions       UgcVideoSubmission[]
 
   @@index([username])
   @@index([isActive])
@@ -329,6 +335,11 @@ model AffiliateNotification {
   affiliateId String
   message     String
   read        Boolean   @default(false)
+  /// Deterministic dedup key for event-driven notifications:
+  /// `ugc:{submissionId}:{historyId}:{eventType}:affiliate`.
+  /// NULL for notifications from other (non-event-keyed) sources — Postgres allows
+  /// many NULLs under a UNIQUE index, so existing rows are unaffected.
+  eventKey    String?   @unique
   createdAt   DateTime  @default(now())
   affiliate   Affiliate @relation(fields: [affiliateId], references: [id])
 
@@ -519,8 +530,8 @@ model SpinEvent {
 model SpinWheelConfig {
   id           String             @id @default(uuid())
   isEnabled    Boolean            @default(false)
-  deviceTarget String             @default("both")    // desktop | mobile | both
-  pageTarget   String             @default("all")     // homepage | product | cart | checkout | all
+  deviceTarget String             @default("both") // desktop | mobile | both
+  pageTarget   String             @default("all") // homepage | product | cart | checkout | all
   triggerType  String             @default("seconds") // seconds | exit_intent | add_to_cart | scroll
   triggerValue Int                @default(10)
   title        String             @default("Spin & Win!")
@@ -539,7 +550,7 @@ model SpinWheelSegment {
   label        String
   color        String          @default("#FF6B6B")
   image        String?
-  rewardType   String          @default("none")  // coupon | product | free_shipping | none
+  rewardType   String          @default("none") // coupon | product | free_shipping | none
   probability  Float           @default(10)
   couponCode   String?
   productId    String?
@@ -554,7 +565,7 @@ model SpinWheelSegment {
 model SpinWheelEvent {
   id         String   @id @default(uuid())
   sessionId  String
-  eventType  String   // spin_view | spin_click | spin_win | reward_unlock | coupon_used | spin_conversion
+  eventType  String // spin_view | spin_click | spin_win | reward_unlock | coupon_used | spin_conversion
   segmentId  String?
   rewardType String?
   couponCode String?
@@ -799,7 +810,7 @@ model LandingVisit {
 
 model UIControlSetting {
   key       String   @id
-  value     String   // JSON-encoded: "true" | "false" | '"#111827"'
+  value     String // JSON-encoded: "true" | "false" | '"#111827"'
   updatedAt DateTime @updatedAt
 
   @@map("ui_control_settings")
@@ -808,7 +819,7 @@ model UIControlSetting {
 model WatermarkSetting {
   id           String   @id @default(uuid())
   isEnabled    Boolean  @default(false)
-  type         String   @default("text")          // text | logo
+  type         String   @default("text") // text | logo
   // Text
   text         String   @default("© My Store")
   fontFamily   String   @default("sans-serif")
@@ -817,11 +828,11 @@ model WatermarkSetting {
   textRotation Int      @default(-30)
   // Logo
   logoUrl      String?
-  logoSize     Int      @default(20)              // % of image width
-  logoMargin   Int      @default(20)              // px
+  logoSize     Int      @default(20) // % of image width
+  logoMargin   Int      @default(20) // px
   // Common
   opacity      Float    @default(0.5)
-  placement    String   @default("bottom-right")  // top-left|top-right|center|bottom-left|bottom-right|repeat-5|repeat-6|grid
+  placement    String   @default("bottom-right") // top-left|top-right|center|bottom-left|bottom-right|repeat-5|repeat-6|grid
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
@@ -850,7 +861,7 @@ model FunnelEvent {
   id        String   @id @default(uuid())
   clickId   String?
   sessionId String?
-  eventType String   // landing_view | product_click | add_to_cart | checkout_start | payment_selected | conversion
+  eventType String // landing_view | product_click | add_to_cart | checkout_start | payment_selected | conversion
   productId String?
   orderId   String?
   metadata  Json?
@@ -934,9 +945,9 @@ model HomepageBanner {
   title     String
   images    Json     @default("[]")
   links     Json     @default("[]")
-  position  String   @default("top")      // top | between_collections | bottom
+  position  String   @default("top") // top | between_collections | bottom
   order     Int      @default(0)
-  type      String   @default("single")   // single | slider
+  type      String   @default("single") // single | slider
   isActive  Boolean  @default(true)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -992,9 +1003,9 @@ model DemoEarningsHistory {
   demoAffiliate   DemoAffiliate @relation(fields: [demoAffiliateId], references: [id])
 
   date       DateTime
-  orders     Int   @default(0)
-  revenue    Float @default(0)
-  commission Float @default(0)
+  orders     Int      @default(0)
+  revenue    Float    @default(0)
+  commission Float    @default(0)
 
   @@index([demoAffiliateId, date])
   @@map("demo_earnings_history")
@@ -1013,9 +1024,164 @@ model DemoCompetition {
 model DemoSettings {
   id              String    @id @default("settings")
   isEnabled       Boolean   @default(true)
-  simulationSpeed String    @default("medium")  // "slow" | "medium" | "fast"
+  simulationSpeed String    @default("medium") // "slow" | "medium" | "fast"
   lastSimAt       DateTime?
   autoGenerated   Boolean   @default(false)
 
   @@map("demo_settings")
+}
+
+// ── UGC module ────────────────────────────────────────────────────────────────
+// Native extension of the Affiliate System. Fully additive: new tables only, no
+// change to any existing table's columns or data. UGC accounting (UgcEarning) and
+// audit history (UgcVideoHistory) are append-only ledgers — every FK uses
+// onDelete: Restrict so these records can NEVER disappear because an affiliate,
+// product, or submission was removed. The application exposes no deletion flow for
+// submissions, history, or earnings.
+//
+// DELETION MODEL (assumption behind the RESTRICT foreign keys):
+//   Products and Affiliates that are referenced by UGC records are expected to be
+//   ARCHIVED (soft-deleted / isActive=false), NOT physically deleted. A hard
+//   delete of such a row is intentionally blocked by these RESTRICT FKs (Postgres
+//   raises a foreign-key violation) so that UGC earnings and audit history are
+//   never orphaned or lost. Preserving records is preferred over cascading them
+//   away. Callers that need to "remove" a UGC-referenced product/affiliate must
+//   archive it rather than delete it.
+//
+// MONETARY PRECISION:
+//   All UGC money is Decimal(18,2) (NUMERIC). Every UGC calculation — including
+//   the balance term added to the affiliate balance — stays in Prisma.Decimal
+//   from the database aggregate through to the final serialization boundary. No
+//   Decimal -> Number -> Decimal round-trips.
+
+enum UgcStatus {
+  PENDING
+  APPROVED
+  RUNNING
+  PAUSED
+  REJECTED
+}
+
+// One affiliate + one product = exactly one submission (enforced by @@unique).
+// A rejected submission is REPLACED in place (video swapped, status → PENDING),
+// never re-created — full history is kept in UgcVideoHistory.
+model UgcVideoSubmission {
+  id                   String    @id @default(uuid())
+  affiliateId          String
+  productId            String
+  videoUrl             String
+  storageKey           String?
+  description          String?
+  status               UgcStatus @default(PENDING)
+  advertisingConsent   Boolean   @default(false)
+  advertisingConsentAt DateTime?
+  submittedAt          DateTime  @default(now())
+  approvedAt           DateTime?
+  rejectedAt           DateTime?
+  pausedAt             DateTime?
+  resumedAt            DateTime?
+  rejectionReason      String?
+  internalAdminNotes   String? // ADMIN-ONLY — never serialized to affiliate responses
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
+
+  affiliate Affiliate         @relation(fields: [affiliateId], references: [id], onDelete: Restrict)
+  product   Product           @relation(fields: [productId], references: [id], onDelete: Restrict)
+  histories UgcVideoHistory[]
+  earnings  UgcEarning[]
+
+  @@unique([affiliateId, productId])
+  @@index([affiliateId])
+  @@index([productId])
+  @@index([status])
+  @@index([createdAt])
+  @@map("ugc_video_submissions")
+}
+
+// Append-only audit trail of every video swap and status transition.
+// No cascade delete: history survives even if a submission were ever removed.
+model UgcVideoHistory {
+  id          String     @id @default(uuid())
+  ugcVideoId  String
+  oldVideoUrl String?
+  newVideoUrl String?
+  oldStatus   UgcStatus?
+  newStatus   UgcStatus?
+  action      String // SUBMIT | REPLACE | APPROVE | REJECT | PAUSE | RESUME
+  actorId     String?
+  actorType   String // AFFILIATE | ADMIN | SYSTEM
+  reason      String?
+  createdAt   DateTime   @default(now())
+
+  submission UgcVideoSubmission @relation(fields: [ugcVideoId], references: [id], onDelete: Restrict)
+
+  @@index([ugcVideoId])
+  @@index([createdAt])
+  @@map("ugc_video_history")
+}
+
+// Immutable UGC earnings ledger. Monetary fields use Decimal(18,2) (NUMERIC) —
+// all UGC money math is Decimal-safe server-side. commissionPerSale is snapshotted
+// at generation time so a later settings change never alters historical earnings.
+// idempotencyKey = "ugcVideoId:generationPeriod" (unique) is the final duplicate
+// guard behind the engine's advisory lock.
+model UgcEarning {
+  id                String   @id @default(uuid())
+  affiliateId       String
+  ugcVideoId        String
+  productId         String
+  generatedSales    Int
+  commissionPerSale Decimal  @db.Decimal(18, 2)
+  amount            Decimal  @db.Decimal(18, 2)
+  generationDate    DateTime // day bucket — aggregate-ready
+  generationPeriod  String // uniquely identifies the configured earning interval
+  idempotencyKey    String   @unique
+  status            String   @default("available")
+  createdAt         DateTime @default(now())
+
+  submission UgcVideoSubmission @relation(fields: [ugcVideoId], references: [id], onDelete: Restrict)
+
+  @@index([affiliateId])
+  @@index([ugcVideoId])
+  @@index([generationPeriod])
+  @@index([generationDate])
+  @@index([createdAt])
+  @@map("ugc_earnings")
+}
+
+/// Append-only audit trail of UGC settings changes.
+/// `changes` is a JSON array of { key, from, to }. `earningsAffecting` flags a
+/// change to a key that influences money generation (commission, generation
+/// bounds, engine flag, …) so those edits can be reviewed independently.
+/// Written best-effort: a failure here must NEVER block saving settings.
+model UgcSettingsHistory {
+  id                String   @id @default(uuid())
+  actorId           String?
+  actorType         String   @default("ADMIN")
+  changes           Json
+  earningsAffecting Boolean  @default(false)
+  createdAt         DateTime @default(now())
+
+  @@index([createdAt])
+  @@index([earningsAffecting])
+  @@map("ugc_settings_history")
+}
+
+/// Admin-facing notifications (currently: a new UGC submission awaiting review).
+/// Deliberately generic so other admin events can reuse it. No FK to the UGC
+/// submission: notifications must survive independently of the entity lifecycle.
+model AdminNotification {
+  id        String   @id @default(uuid())
+  type      String
+  message   String
+  entityId  String?
+  read      Boolean  @default(false)
+  /// Deterministic dedup key: `ugc:{submissionId}:{historyId}:{eventType}:admin`.
+  eventKey  String?  @unique
+  createdAt DateTime @default(now())
+
+  @@index([read])
+  @@index([type])
+  @@index([createdAt])
+  @@map("admin_notifications")
 }

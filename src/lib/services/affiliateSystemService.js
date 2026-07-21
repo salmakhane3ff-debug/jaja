@@ -8,6 +8,54 @@
 
 import prisma                            from '../prisma.js';
 import { hashPassword, comparePassword, signToken } from './authService.js';
+import {
+  registerBalanceProvider, computeRegisteredBalance, BALANCE_PRIORITY,
+} from '../balance/providerRegistry.js';
+import { serializeAmount } from '../balance/composeBalance.js';
+// ── TEMPORARY WIRING (refinement #1) ──────────────────────────────────────────
+// Provider registration currently happens as a side effect of importing the
+// services that own each balance component: importing ugcEarningsService here
+// registers the 'ugc_earning' provider, and this module registers the referral
+// providers below. This keeps the composed balance complete regardless of entry
+// point, but the wiring is implicit.
+// TODO: replace this with a dedicated balance bootstrap module
+//   (e.g. src/lib/balance/bootstrap.js) that explicitly imports every component
+//   service and owns ALL provider registration in one place — so no service
+//   imports another purely to trigger a registration side effect.
+import '../services/ugcEarningsService.js';
+
+// ── Balance component functions (business rules live here) ────────────────────
+// Which statuses count toward the balance is decided in THESE named functions;
+// the providers below are thin adapters that only expose the final component.
+// Values/signs are identical to the legacy formula (earned + bonus − paid);
+// balanceEquivalence.test.mjs proves no-UGC affiliates keep the exact value.
+
+/** Σ delivered referral commissions (read-only). */
+export async function getReferralCommissionComponent(affiliateId, db = prisma) {
+  const r = await db.affiliateOrder.aggregate({
+    where: { affiliateId, status: 'delivered' }, _sum: { commissionAmount: true },
+  });
+  return r._sum.commissionAmount ?? 0;
+}
+
+/** Affiliate team-bonus balance (read-only). */
+export async function getReferralBonusComponent(affiliateId, db = prisma) {
+  const a = await db.affiliate.findUnique({ where: { id: affiliateId }, select: { bonusBalance: true } });
+  return a?.bonusBalance ?? 0;
+}
+
+/** Σ paid payouts as a NEGATIVE deduction component (read-only). */
+export async function getPayoutDeductionComponent(affiliateId, db = prisma) {
+  const p = await db.affiliatePayout.aggregate({
+    where: { affiliateId, status: 'paid' }, _sum: { amount: true },
+  });
+  return -(p._sum.amount ?? 0);
+}
+
+// Thin adapters — pure wiring, no logic (see providerRegistry read-only contract).
+registerBalanceProvider({ source: 'referral_commission', priority: BALANCE_PRIORITY.REFERRAL_COMMISSION, compute: getReferralCommissionComponent });
+registerBalanceProvider({ source: 'referral_bonus',      priority: BALANCE_PRIORITY.REFERRAL_BONUS,      compute: getReferralBonusComponent });
+registerBalanceProvider({ source: 'payout_deduction',    priority: BALANCE_PRIORITY.PAYOUT_DEDUCTION,    compute: getPayoutDeductionComponent });
 
 // ── Mapper ────────────────────────────────────────────────────────────────────
 
@@ -337,23 +385,17 @@ export async function updateAffiliateOrderStatus(affiliateOrderId, status) {
  * @param {string} affiliateId
  * @param {object} [db=prisma]  — pass a Prisma transaction client for atomic reads
  */
+/**
+ * Available balance = sum of all registered balance providers (referral
+ * commission + bonus − payouts + UGC earnings + any future source), composed
+ * exactly in Decimal and serialized to a Number at this boundary.
+ *
+ * Providers are read-only, so passing a transaction handle (`db`) keeps the read
+ * inside the caller's transaction (e.g. requestPayout's Serializable tx) exactly
+ * as before. Return type is unchanged (Number), so every caller is unaffected.
+ */
 export async function getAffiliateBalance(affiliateId, db = prisma) {
-  const [earned, paid, aff] = await Promise.all([
-    db.affiliateOrder.aggregate({
-      where: { affiliateId, status: 'delivered' },
-      _sum:  { commissionAmount: true },
-    }),
-    db.affiliatePayout.aggregate({
-      where: { affiliateId, status: 'paid' },
-      _sum:  { amount: true },
-    }),
-    db.affiliate.findUnique({ where: { id: affiliateId }, select: { bonusBalance: true } }),
-  ]);
-
-  const totalEarned  = earned._sum.commissionAmount ?? 0;
-  const totalPaid    = paid._sum.amount             ?? 0;
-  const bonusBalance = aff?.bonusBalance            ?? 0;
-  return parseFloat((totalEarned + bonusBalance - totalPaid).toFixed(2));
+  return serializeAmount(await computeRegisteredBalance(affiliateId, db));
 }
 
 export async function getAffiliatePayouts(affiliateId) {
