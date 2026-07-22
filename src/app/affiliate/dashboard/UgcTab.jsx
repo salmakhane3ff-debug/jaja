@@ -3,32 +3,34 @@
 /**
  * src/app/affiliate/dashboard/UgcTab.jsx
  * ─────────────────────────────────────────────────────────────────────────────
- * Affiliate UGC (video) dashboard tab — increment 1 of the UGC UI, with UX
- * refinements:
- *   1. Step wizard for submission:  Produit → Vidéo → Aperçu → Envoi.
- *   2. Video preview before submit: filename, size, client-measured duration,
- *      and a captured thumbnail (poster) — all extracted in-browser.
- *   3. Earnings estimate rendered as an EXPLICIT, clearly-labelled estimate
- *      (never phrased as guaranteed income).
- *   4. A status TIMELINE (Soumise → Approuvée → Diffusion) instead of just a badge.
- *   5. Replace asks for confirmation first (it sends the video back through review).
- *   6. Optimistic UI on create/pause/resume/replace, then a background list refresh
- *      (no full dashboard reload).
+ * Affiliate UGC tab — premium mobile-first, VIDEO-FIRST layout.
  *
- * Self-contained: the giant dashboard file only imports this + one render line.
- * Identity is the session token; affiliateId is NEVER sent in the body.
- * Instructions/estimate are plain text (server bounds/sanitizes them).
+ * ⚠️ PRESENTATION ONLY. No API, route, service, permission, schema or business
+ * logic change. Every handler, endpoint and payload below behaves exactly as
+ * before; only layout, spacing, typography, colour and hierarchy changed.
+ *
+ * HIERARCHY (deliberate): Header → Global stats → VIDEO CARDS → floating "+".
+ * Helper content ("Comment ça marche", instructions, estimate) is collapsed at
+ * the very bottom so the video list is unmistakably the primary content.
+ *
+ * ── NO EMPTY ANALYTICS ───────────────────────────────────────────────────────
+ * GET /api/affiliate/ugc → stats = { todayEarnings, totalEarnings, todaySales,
+ * totalSales } (affiliate-wide); submissions carry NO earnings data.
+ * Anything the API cannot supply is simply NOT RENDERED — no placeholder text,
+ * no mock numbers, no client-side estimates. Currently omitted for that reason:
+ *   ✗ 7-day earnings   ✗ per-video orders/earnings   ✗ performance trend %
+ * All four stat cards below are real API values.
  * ─────────────────────────────────────────────────────────────────────────────
  */
 
 import { useState, useEffect, useCallback, useRef, Fragment } from "react";
 import {
   Video, Upload, Loader2, CheckCircle, AlertCircle, Play, Pause,
-  Clock, XCircle, Eye, DollarSign, TrendingUp, Info, Film,
-  AlertTriangle, ChevronLeft, ChevronRight,
+  DollarSign, TrendingUp, Info, Film, Wallet, Sparkles,
+  AlertTriangle, ChevronLeft, ChevronRight, X, ExternalLink, ShoppingBag, Plus,
 } from "lucide-react";
 
-// ── Local helpers (kept in sync with the dashboard's look) ──────────────────────
+// ── Helpers (unchanged) ────────────────────────────────────────────────────────
 function authHeaders() {
   const t = (typeof localStorage !== "undefined" && localStorage.getItem("affiliateToken")) || "";
   return { Authorization: `Bearer ${t}` };
@@ -37,13 +39,7 @@ const jsonHeaders = () => ({ "Content-Type": "application/json", ...authHeaders(
 
 function fmtMAD(n) {
   if (n == null || isNaN(Number(n))) return "—";
-  return `${Number(n).toFixed(2)} MAD`;
-}
-function fmtDate(iso) {
-  if (!iso) return "—";
-  return new Date(iso).toLocaleDateString("fr-FR", {
-    day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit",
-  });
+  return Number(n).toLocaleString("fr-FR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 function fmtBytes(b) {
   if (!b) return "—";
@@ -51,17 +47,12 @@ function fmtBytes(b) {
   return mb >= 1 ? `${mb.toFixed(1)} Mo` : `${(b / 1024).toFixed(0)} Ko`;
 }
 function fmtDuration(sec) {
-  if (sec == null || !isFinite(sec)) return "—";
+  if (sec == null || !isFinite(sec)) return null;
   const s = Math.round(sec);
-  if (s < 60) return `${s}s`;
-  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
+  return `${String(Math.floor(s / 60)).padStart(2, "0")}:${String(s % 60).padStart(2, "0")}`;
 }
 
-/**
- * Extract preview metadata from a local video File entirely in the browser:
- * duration, dimensions, and a JPEG thumbnail captured from an early frame.
- * Returns a promise; never rejects (falls back to nulls). Caller owns url.revoke.
- */
+/** In-browser preview metadata for the upload wizard (unchanged). */
 function extractVideoPreview(file) {
   return new Promise((resolve) => {
     const url = URL.createObjectURL(file);
@@ -87,91 +78,102 @@ function extractVideoPreview(file) {
   });
 }
 
+// ── Single status badge (the ONLY status indicator on a card) ──────────────────
 const STATUS = {
-  PENDING:  { label: "En attente de validation", cls: "bg-yellow-100 text-yellow-700", Icon: Clock },
-  APPROVED: { label: "Approuvée",                cls: "bg-blue-100 text-blue-700",     Icon: CheckCircle },
-  RUNNING:  { label: "En diffusion",             cls: "bg-green-100 text-green-700",   Icon: Play },
-  PAUSED:   { label: "En pause",                 cls: "bg-gray-200 text-gray-600",     Icon: Pause },
-  REJECTED: { label: "Rejetée",                  cls: "bg-red-100 text-red-700",       Icon: XCircle },
+  PENDING:  { label: "En attente",   dot: "bg-amber-500",   cls: "bg-amber-50 text-amber-700 ring-1 ring-amber-100" },
+  APPROVED: { label: "Approuvée",    dot: "bg-violet-500",  cls: "bg-violet-50 text-violet-700 ring-1 ring-violet-100" },
+  RUNNING:  { label: "En diffusion", dot: "bg-emerald-500", cls: "bg-emerald-50 text-emerald-700 ring-1 ring-emerald-100" },
+  PAUSED:   { label: "En pause",     dot: "bg-orange-400",  cls: "bg-orange-50 text-orange-700 ring-1 ring-orange-100" },
+  REJECTED: { label: "Rejetée",      dot: "bg-rose-500",    cls: "bg-rose-50 text-rose-700 ring-1 ring-rose-100" },
 };
-
-// ── Status timeline ─────────────────────────────────────────────────────────────
-const LIFECYCLE = [
-  { key: "PENDING",  label: "Soumise" },
-  { key: "APPROVED", label: "Approuvée" },
-  { key: "RUNNING",  label: "Diffusion" },
-];
-function StatusTimeline({ status }) {
-  const rejected = status === "REJECTED";
-  const paused   = status === "PAUSED";
-  const idxByStatus = { PENDING: 0, APPROVED: 1, RUNNING: 2, PAUSED: 2 };
-  const currentIndex = rejected ? 0 : (idxByStatus[status] ?? 0);
-
-  const nodeState = (i) => {
-    if (rejected) return i === 0 ? { cls: "bg-red-100 text-red-600 ring-1 ring-red-300", Icon: XCircle } : { cls: "bg-gray-100 text-gray-300", Icon: null };
-    if (i < currentIndex) return { cls: "bg-green-500 text-white", Icon: CheckCircle };
-    if (i === currentIndex) {
-      if (paused) return { cls: "bg-amber-100 text-amber-600 ring-1 ring-amber-300", Icon: Pause };
-      if (status === "RUNNING") return { cls: "bg-green-500 text-white", Icon: Play };
-      return { cls: "bg-gray-900 text-white", Icon: Clock };
-    }
-    return { cls: "bg-gray-100 text-gray-300", Icon: null };
-  };
-
+function StatusBadge({ status }) {
+  const cfg = STATUS[status] || { label: status, dot: "bg-gray-400", cls: "bg-gray-50 text-gray-600 ring-1 ring-gray-100" };
   return (
-    <div className="flex items-start w-full max-w-xs">
-      {LIFECYCLE.map((node, i) => {
-        const st = nodeState(i);
-        const connGreen = !rejected && i <= currentIndex;
-        return (
-          <div key={node.key} className="flex-1 flex flex-col items-center relative">
-            {i > 0 && (
-              <div className={`absolute top-3 left-[-50%] right-1/2 h-0.5 ${connGreen ? "bg-green-400" : "bg-gray-200"}`} />
-            )}
-            <div className={`relative z-10 w-6 h-6 rounded-full flex items-center justify-center ${st.cls}`}>
-              {st.Icon ? <st.Icon className="w-3.5 h-3.5" /> : <span className="text-[10px] font-bold">{i + 1}</span>}
-            </div>
-            <span className={`text-[10px] mt-1 text-center ${(i === currentIndex && !rejected) ? "text-gray-700 font-semibold" : "text-gray-400"}`}>
-              {rejected && i === 0 ? "Rejetée" : (paused && i === 2 ? "En pause" : node.label)}
-            </span>
-          </div>
-        );
-      })}
+    <span className={`inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full text-[12px] font-semibold ${cfg.cls}`}>
+      <span className={`w-2 h-2 rounded-full ${cfg.dot}`} />
+      {cfg.label}
+    </span>
+  );
+}
+
+// ── Vertical video preview — playable, never downloadable ──────────────────────
+function VideoThumb({ videoUrl, onPlay }) {
+  const [duration, setDuration] = useState(null);
+  return (
+    <button
+      type="button"
+      onClick={onPlay}
+      className="relative w-[124px] sm:w-[150px] shrink-0 aspect-[9/16] rounded-[22px] overflow-hidden bg-gray-900 group focus:outline-none focus:ring-2 focus:ring-violet-500 focus:ring-offset-2"
+      aria-label="Lire la vidéo"
+    >
+      {videoUrl ? (
+        // First frame as poster; `preload="metadata"` also gives the real duration.
+        <video
+          src={videoUrl}
+          preload="metadata"
+          muted
+          playsInline
+          tabIndex={-1}
+          onLoadedMetadata={(e) => setDuration(e.currentTarget.duration)}
+          className="absolute inset-0 w-full h-full object-cover pointer-events-none"
+        />
+      ) : (
+        <div className="absolute inset-0 flex items-center justify-center"><Film className="w-6 h-6 text-gray-600" /></div>
+      )}
+      <span className="absolute inset-0 bg-black/25 group-hover:bg-black/35 transition-colors" />
+      <span className="absolute inset-0 flex items-center justify-center">
+        <span className="w-14 h-14 rounded-full bg-black/45 backdrop-blur-sm flex items-center justify-center ring-1 ring-white/25 group-active:scale-95 transition-transform">
+          <Play className="w-6 h-6 text-white fill-white translate-x-[1px]" />
+        </span>
+      </span>
+      {fmtDuration(duration) && (
+        <span className="absolute bottom-2 left-2 px-2 py-0.5 rounded-lg bg-black/70 text-white text-[11px] font-semibold tabular-nums">
+          {fmtDuration(duration)}
+        </span>
+      )}
+    </button>
+  );
+}
+
+// ── Modal player (no download, no navigation to the raw file) ──────────────────
+function VideoModal({ url, onClose }) {
+  useEffect(() => {
+    const onKey = (e) => e.key === "Escape" && onClose();
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+  if (!url) return null;
+  return (
+    <div className="fixed inset-0 z-[70] bg-black/85 backdrop-blur-sm flex items-center justify-center p-4" onClick={onClose}>
+      <div className="relative w-full max-w-sm" onClick={(e) => e.stopPropagation()}>
+        <button onClick={onClose}
+          className="absolute -top-12 right-0 w-10 h-10 rounded-full bg-white/15 hover:bg-white/25 text-white flex items-center justify-center">
+          <X className="w-5 h-5" />
+        </button>
+        <video src={url} controls autoPlay playsInline controlsList="nodownload"
+          className="w-full max-h-[80vh] rounded-[28px] bg-black object-contain" />
+      </div>
     </div>
   );
 }
 
-function Section({ title, icon: Icon, children }) {
+// ── Compact stat tile (all values are real API data) ───────────────────────────
+function StatCard({ icon: Icon, tint, label, value, unit }) {
   return (
-    <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden">
-      <div className="px-5 py-3.5 border-b border-gray-50 bg-gray-50/60 flex items-center gap-2">
-        {Icon && <Icon className="w-4 h-4 text-gray-500" />}
-        <h2 className="text-sm font-bold text-gray-700">{title}</h2>
+    <div className="bg-white rounded-[24px] p-4 shadow-[0_2px_14px_rgba(16,24,40,0.05)] ring-1 ring-gray-100">
+      <div className={`w-10 h-10 rounded-2xl flex items-center justify-center ${tint}`}>
+        <Icon className="w-[19px] h-[19px]" />
       </div>
-      <div className="p-5">{children}</div>
-    </div>
-  );
-}
-
-function MiniStat({ icon: Icon, label, value, color = "gray" }) {
-  const colors = {
-    gray: "bg-gray-100 text-gray-700", green: "bg-green-50 text-green-600",
-    blue: "bg-blue-50 text-blue-600", amber: "bg-amber-50 text-amber-600",
-  };
-  return (
-    <div className="bg-white rounded-2xl border border-gray-100 p-4 space-y-2.5">
-      <div className={`w-9 h-9 rounded-xl flex items-center justify-center ${colors[color]}`}>
-        <Icon className="w-[18px] h-[18px]" />
-      </div>
-      <div>
-        <p className="text-xl font-bold text-gray-900 leading-none">{value}</p>
-        <p className="text-xs text-gray-500 mt-1">{label}</p>
-      </div>
+      <p className="text-[12.5px] text-gray-500 mt-3 font-medium leading-tight">{label}</p>
+      <p className="mt-1 text-[21px] font-extrabold text-gray-900 leading-none tabular-nums">
+        {value}{unit && <span className="text-[11px] font-bold text-gray-400 ml-1">{unit}</span>}
+      </p>
     </div>
   );
 }
 
 const WIZARD = ["Produit", "Vidéo", "Aperçu", "Envoi"];
+const inputCls = "w-full px-4 py-3.5 text-sm border border-gray-200 rounded-2xl bg-gray-50 focus:outline-none focus:border-violet-400 focus:ring-2 focus:ring-violet-100 transition";
 
 // ── Main tab ────────────────────────────────────────────────────────────────────
 export default function UgcTab() {
@@ -183,26 +185,30 @@ export default function UgcTab() {
   const [stats, setStats]             = useState(null);
   const [products, setProducts]       = useState([]);
 
-  // Wizard
-  const [step, setStep]           = useState(1);           // 1 Produit · 2 Vidéo · 3 Aperçu
+  // Wizard (unchanged logic)
+  const [step, setStep]           = useState(1);
   const [form, setForm]           = useState({ productId: "", description: "", consent: false });
   const [file, setFile]           = useState(null);
-  const [videoMeta, setVideoMeta] = useState(null);        // { url, duration, width, height, thumbnail, loading? }
+  const [videoMeta, setVideoMeta] = useState(null);
   const [submitting, setSubmitting] = useState(false);
-  const [submitMsg, setSubmitMsg] = useState(null);        // { type, text }
+  const [submitMsg, setSubmitMsg] = useState(null);
 
-  // Row actions
+  // Row actions (unchanged logic)
   const [rowBusy, setRowBusy]     = useState(null);
   const replaceInputRef = useRef(null);
-  const [replaceTarget, setReplaceTarget]   = useState(null);
+  const [replaceTarget, setReplaceTarget]       = useState(null);
   const [confirmReplaceId, setConfirmReplaceId] = useState(null);
 
-  // Revoke the object URL on unmount (latest one tracked via ref).
+  // Presentation-only state
+  const [playingUrl, setPlayingUrl] = useState(null);
+  const [wizardOpen, setWizardOpen] = useState(false);
+  const [helpOpen, setHelpOpen]     = useState(false);
+
   const urlRef = useRef(null);
   useEffect(() => { urlRef.current = videoMeta?.url || null; }, [videoMeta]);
   useEffect(() => () => { if (urlRef.current) URL.revokeObjectURL(urlRef.current); }, []);
 
-  // ── Initial load (settings + list + products) ────────────────────────────────
+  // ── Initial load (unchanged endpoints) ───────────────────────────────────────
   const load = useCallback(async () => {
     setError(null);
     try {
@@ -226,7 +232,6 @@ export default function UgcTab() {
   }, []);
   useEffect(() => { load(); }, [load]);
 
-  // ── Background refresh: only the list + stats (refinement #6) ─────────────────
   const refreshList = useCallback(async () => {
     try {
       const res = await fetch("/api/affiliate/ugc", { headers: authHeaders() });
@@ -235,19 +240,18 @@ export default function UgcTab() {
         setSubmissions(Array.isArray(d.submissions) ? d.submissions : []);
         setStats(d.stats || null);
       }
-    } catch { /* keep optimistic state; next action/refresh reconciles */ }
+    } catch { /* keep optimistic state */ }
   }, []);
 
   const patchLocal = (id, patch) => setSubmissions((prev) => prev.map((s) => (s.id === id ? { ...s, ...patch } : s)));
 
-  // Derived
   const productMap = {};
   for (const p of products) productMap[p.id] = { title: p.title, image: Array.isArray(p.images) ? p.images[0] : null };
   const submittedIds = new Set(submissions.map((s) => s.productId));
   const availableProducts = products.filter((p) => !submittedIds.has(p.id));
   const maxBytes = settings?.maxUploadBytes || 0;
 
-  // ── File selection → extract preview ─────────────────────────────────────────
+  // ── File selection (unchanged) ───────────────────────────────────────────────
   const onFileSelected = (f) => {
     setSubmitMsg(null);
     if (videoMeta?.url) URL.revokeObjectURL(videoMeta.url);
@@ -258,12 +262,12 @@ export default function UgcTab() {
       extractVideoPreview(f).then(setVideoMeta);
     }
   };
-
   const resetForm = () => {
     if (videoMeta?.url) URL.revokeObjectURL(videoMeta.url);
     setForm({ productId: "", description: "", consent: false });
     setFile(null); setVideoMeta(null); setStep(1);
   };
+  const openWizard = () => { setSubmitMsg(null); setWizardOpen(true); };
 
   const fileTypeOk = file?.type?.startsWith("video/");
   const sizeOk     = !maxBytes || !file || file.size <= maxBytes;
@@ -273,7 +277,7 @@ export default function UgcTab() {
     : durationSec >= settings.minVideoSeconds && durationSec <= settings.maxVideoSeconds;
   const canProceedStep2 = !!file && fileTypeOk && sizeOk;
 
-  // ── Create (optimistic) ──────────────────────────────────────────────────────
+  // ── Create (unchanged: same endpoint, payload, optimistic update) ────────────
   const handleCreate = async () => {
     setSubmitMsg(null);
     if (!form.productId) { setStep(1); return setSubmitMsg({ type: "error", text: "Choisissez un produit." }); }
@@ -294,10 +298,11 @@ export default function UgcTab() {
       if (!res.ok) {
         setSubmitMsg({ type: "error", text: body.error || "Échec de l'envoi de la vidéo." });
       } else {
-        if (body.submission) setSubmissions((prev) => [body.submission, ...prev]); // optimistic prepend
+        if (body.submission) setSubmissions((prev) => [body.submission, ...prev]);
         setSubmitMsg({ type: "success", text: "Vidéo envoyée ! Elle sera examinée par notre équipe." });
         resetForm();
-        refreshList(); // background reconcile
+        setWizardOpen(false);
+        refreshList();
       }
     } catch {
       setSubmitMsg({ type: "error", text: "Erreur réseau. Réessayez." });
@@ -306,15 +311,15 @@ export default function UgcTab() {
     }
   };
 
-  // ── Pause / resume (optimistic) ──────────────────────────────────────────────
+  // ── Pause / resume (unchanged) ───────────────────────────────────────────────
   const handlePauseResume = async (id, action) => {
     const target = action === "pause" ? "PAUSED" : "RUNNING";
     const snapshot = submissions;
     setRowBusy(id);
-    patchLocal(id, { status: target }); // optimistic
+    patchLocal(id, { status: target });
     try {
       const res = await fetch(`/api/affiliate/ugc/${id}`, { method: "PATCH", headers: jsonHeaders(), body: JSON.stringify({ action }) });
-      if (!res.ok) setSubmissions(snapshot); // revert
+      if (!res.ok) setSubmissions(snapshot);
     } catch {
       setSubmissions(snapshot);
     } finally {
@@ -323,7 +328,7 @@ export default function UgcTab() {
     }
   };
 
-  // ── Replace (confirm → pick → upload, optimistic) ────────────────────────────
+  // ── Replace (unchanged) ──────────────────────────────────────────────────────
   const triggerReplace = (id) => { setReplaceTarget(id); replaceInputRef.current?.click(); };
   const handleReplaceFile = async (e) => {
     const f = e.target.files?.[0];
@@ -339,7 +344,7 @@ export default function UgcTab() {
       fd.append("video", f);
       const res = await fetch(`/api/affiliate/ugc/${id}`, { method: "PATCH", headers: authHeaders(), body: fd });
       const body = await res.json().catch(() => ({}));
-      if (res.ok && body.submission) patchLocal(id, body.submission); // optimistic exact update
+      if (res.ok && body.submission) patchLocal(id, body.submission);
       else if (res.ok) patchLocal(id, { status: "PENDING" });
     } finally {
       setRowBusy(null);
@@ -349,22 +354,22 @@ export default function UgcTab() {
 
   // ── Render ──────────────────────────────────────────────────────────────────
   if (loading) {
-    return <div className="flex justify-center py-16"><Loader2 className="w-7 h-7 animate-spin text-gray-400" /></div>;
+    return <div className="flex justify-center py-24"><Loader2 className="w-7 h-7 animate-spin text-violet-500" /></div>;
   }
   if (error) {
     return (
-      <div className="bg-white rounded-2xl border border-gray-100 p-8 text-center space-y-3">
-        <AlertCircle className="w-9 h-9 text-red-400 mx-auto" />
+      <div className="bg-white rounded-[28px] ring-1 ring-gray-100 p-8 text-center space-y-3 shadow-sm">
+        <AlertCircle className="w-9 h-9 text-rose-400 mx-auto" />
         <p className="text-gray-700 text-sm">{error}</p>
-        <button onClick={load} className="px-6 py-2 bg-gray-900 text-white rounded-xl text-sm font-semibold">Réessayer</button>
+        <button onClick={load} className="px-6 py-3 bg-violet-600 text-white rounded-2xl text-sm font-semibold">Réessayer</button>
       </div>
     );
   }
   if (!settings?.enabled) {
     return (
-      <div className="bg-white rounded-2xl border border-gray-100 p-8 text-center space-y-2">
-        <Film className="w-9 h-9 text-gray-300 mx-auto" />
-        <p className="text-gray-700 text-sm font-semibold">Le programme vidéo n'est pas encore disponible.</p>
+      <div className="bg-white rounded-[28px] ring-1 ring-gray-100 p-10 text-center space-y-2 shadow-sm">
+        <div className="w-14 h-14 rounded-2xl bg-violet-50 flex items-center justify-center mx-auto"><Film className="w-6 h-6 text-violet-400" /></div>
+        <p className="text-gray-800 text-sm font-bold pt-1">Le programme vidéo n'est pas encore disponible.</p>
         <p className="text-gray-400 text-xs">Revenez bientôt pour gagner des commissions avec vos vidéos.</p>
       </div>
     );
@@ -372,297 +377,362 @@ export default function UgcTab() {
 
   const est = settings.estimate;
   const activeNode = submitting ? 4 : step;
+  const hasVideos = submissions.length > 0;
 
   return (
-    <div className="space-y-5">
+    <div className={`space-y-5 ${hasVideos ? "pb-24" : "pb-4"}`}>
       <input ref={replaceInputRef} type="file" accept="video/*" className="hidden" onChange={handleReplaceFile} />
+      <VideoModal url={playingUrl} onClose={() => setPlayingUrl(null)} />
 
-      {/* ── Confirm-replace dialog (refinement #5) ── */}
+      {/* ── 1. Header ── */}
+      <div className="px-0.5">
+        <h1 className="text-[27px] font-extrabold text-gray-900 tracking-tight leading-tight">Mes vidéos</h1>
+        <p className="text-[13.5px] text-gray-500 mt-1">Suivez la performance de vos vidéos</p>
+      </div>
+
+      {/* ── 2. Global statistics — every value is real API data ── */}
+      <div className="grid grid-cols-2 gap-3">
+        <StatCard icon={Wallet}      tint="bg-violet-50 text-violet-600"   label="Gains aujourd'hui"      value={fmtMAD(stats?.todayEarnings)} unit="MAD" />
+        <StatCard icon={ShoppingBag} tint="bg-sky-50 text-sky-600"         label="Commandes aujourd'hui"  value={stats?.todaySales ?? 0} />
+        <StatCard icon={DollarSign}  tint="bg-amber-50 text-amber-600"     label="Gains (total)"          value={fmtMAD(stats?.totalEarnings)} unit="MAD" />
+        <StatCard icon={TrendingUp}  tint="bg-emerald-50 text-emerald-600" label="Ventes (total)"         value={stats?.totalSales ?? 0} />
+      </div>
+
+      {/* ── Submit feedback ── */}
+      {submitMsg && (
+        <div className={`flex items-start gap-2.5 rounded-2xl px-4 py-3.5 text-sm font-medium ring-1 ${
+          submitMsg.type === "success" ? "bg-emerald-50 text-emerald-700 ring-emerald-100"
+                                       : "bg-rose-50 text-rose-700 ring-rose-100"}`}>
+          {submitMsg.type === "success" ? <CheckCircle className="w-4 h-4 shrink-0 mt-0.5" /> : <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />}
+          <span className="flex-1">{submitMsg.text}</span>
+          <button onClick={() => setSubmitMsg(null)}><X className="w-4 h-4 opacity-60" /></button>
+        </div>
+      )}
+
+      {/* ── 3. Video cards — the hero of the page ── */}
+      {!hasVideos ? (
+        // Zero videos → one beautiful onboarding card.
+        <button onClick={openWizard}
+          className="w-full text-left bg-white rounded-[28px] ring-1 ring-gray-100 shadow-[0_4px_24px_rgba(16,24,40,0.06)] p-7 active:scale-[0.99] transition">
+          <div className="w-16 h-16 rounded-[22px] bg-gradient-to-br from-violet-500 to-violet-700 flex items-center justify-center shadow-lg shadow-violet-200">
+            <Sparkles className="w-7 h-7 text-white" />
+          </div>
+          <h2 className="text-[19px] font-extrabold text-gray-900 mt-5 leading-snug">
+            Publiez votre première vidéo
+          </h2>
+          <p className="text-[13.5px] text-gray-500 mt-2 leading-relaxed">
+            Associez un produit, envoyez votre vidéo, et gagnez{" "}
+            <strong className="text-gray-700">{fmtMAD(settings.commissionPerSale)} MAD</strong> par vente générée
+            une fois qu'elle est en diffusion.
+          </p>
+          <span className="mt-5 inline-flex items-center gap-2 px-5 py-3 rounded-2xl bg-violet-600 text-white text-sm font-bold">
+            <Plus className="w-4 h-4" /> Ajouter une vidéo
+          </span>
+        </button>
+      ) : (
+        <div className="space-y-3.5">
+          {submissions.map((s) => {
+            const prod = productMap[s.productId];
+            const busy = rowBusy === s.id;
+            const canReplace = s.status === "REJECTED" || s.status === "PENDING";
+            const title = s.description?.trim() || prod?.title || "Ma vidéo";
+            return (
+              <div key={s.id} className="bg-white rounded-[28px] ring-1 ring-gray-100 shadow-[0_2px_16px_rgba(16,24,40,0.05)] p-4">
+                <div className="flex gap-4">
+                  <VideoThumb videoUrl={s.videoUrl} onPlay={() => s.videoUrl && setPlayingUrl(s.videoUrl)} />
+
+                  <div className="min-w-0 flex-1 flex flex-col">
+                    <h3 className="text-[16px] font-bold text-gray-900 leading-snug line-clamp-2">{title}</h3>
+
+                    <div className="mt-2"><StatusBadge status={s.status} /></div>
+
+                    {/* Product */}
+                    <a href={`/products/${s.productId}`} target="_blank" rel="noopener noreferrer"
+                      className="mt-auto pt-3 flex items-center gap-2.5 rounded-2xl bg-gray-50 ring-1 ring-gray-100 p-2.5 hover:bg-gray-100/70 transition">
+                      {prod?.image
+                        ? <img src={prod.image} alt="" className="w-10 h-10 rounded-xl object-cover shrink-0" />
+                        : <div className="w-10 h-10 rounded-xl bg-white ring-1 ring-gray-100 flex items-center justify-center shrink-0"><ShoppingBag className="w-4 h-4 text-gray-300" /></div>}
+                      <span className="text-[12.5px] font-semibold text-gray-700 truncate flex-1">{prod?.title || "Produit"}</span>
+                      <ExternalLink className="w-4 h-4 text-violet-500 shrink-0" />
+                    </a>
+                  </div>
+                </div>
+
+                {/* Rejection feedback — the only way a creator knows what to fix */}
+                {s.status === "REJECTED" && s.rejectionReason && (
+                  <p className="mt-3 text-[12.5px] text-rose-700 bg-rose-50 ring-1 ring-rose-100 rounded-2xl px-3.5 py-2.5 leading-relaxed">
+                    <strong>Motif :</strong> {s.rejectionReason}
+                  </p>
+                )}
+
+                {/* Actions — unchanged behaviour, large touch targets */}
+                {(s.status === "RUNNING" || s.status === "PAUSED" || canReplace) && (
+                  <div className="mt-3.5 flex gap-2.5">
+                    {s.status === "RUNNING" && (
+                      <button onClick={() => handlePauseResume(s.id, "pause")} disabled={busy}
+                        className="flex-1 flex items-center justify-center gap-2 px-4 py-3.5 text-[13.5px] font-bold text-orange-700 bg-orange-50 ring-1 ring-orange-100 rounded-2xl active:scale-[0.98] transition disabled:opacity-50">
+                        {busy ? <Loader2 className="w-4 h-4 animate-spin" /> : <Pause className="w-4 h-4" />} Mettre en pause
+                      </button>
+                    )}
+                    {s.status === "PAUSED" && (
+                      <button onClick={() => handlePauseResume(s.id, "resume")} disabled={busy}
+                        className="flex-1 flex items-center justify-center gap-2 px-4 py-3.5 text-[13.5px] font-bold text-emerald-700 bg-emerald-50 ring-1 ring-emerald-100 rounded-2xl active:scale-[0.98] transition disabled:opacity-50">
+                        {busy ? <Loader2 className="w-4 h-4 animate-spin" /> : <Play className="w-4 h-4" />} Reprendre
+                      </button>
+                    )}
+                    {canReplace && (
+                      <button onClick={() => setConfirmReplaceId(s.id)} disabled={busy}
+                        className="flex-1 flex items-center justify-center gap-2 px-4 py-3.5 text-[13.5px] font-bold text-gray-700 bg-gray-50 ring-1 ring-gray-200 rounded-2xl active:scale-[0.98] transition disabled:opacity-50">
+                        {busy ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />} Remplacer
+                      </button>
+                    )}
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* ── Secondary: helper content, collapsed, at the very bottom ── */}
+      <div className="bg-white rounded-[24px] ring-1 ring-gray-100 overflow-hidden">
+        <button onClick={() => setHelpOpen((v) => !v)} className="w-full px-4 py-4 flex items-center gap-3 text-left">
+          <span className="w-9 h-9 rounded-xl bg-gray-50 text-gray-400 flex items-center justify-center shrink-0">
+            <Info className="w-[18px] h-[18px]" />
+          </span>
+          <span className="flex-1 text-[13.5px] font-semibold text-gray-600">Comment ça marche</span>
+          <ChevronRight className={`w-4 h-4 text-gray-300 transition-transform ${helpOpen ? "rotate-90" : ""}`} />
+        </button>
+
+        {helpOpen && (
+          <div className="px-4 pb-5 space-y-3.5 text-sm text-gray-600 border-t border-gray-50 pt-4">
+            <p className="text-[13.5px]">
+              Vous gagnez <strong className="text-gray-800">{fmtMAD(settings.commissionPerSale)} MAD</strong> par vente
+              générée par vos vidéos une fois qu'elles sont en diffusion.
+            </p>
+
+            {Array.isArray(settings.instructions) && settings.instructions.length > 0 && (
+              <ul className="space-y-2">
+                {settings.instructions.map((line, i) => (
+                  <li key={i} className="flex gap-2.5">
+                    <span className="w-1.5 h-1.5 rounded-full bg-violet-400 mt-[7px] shrink-0" />
+                    <span className="text-[13px] leading-relaxed">{line}</span>
+                  </li>
+                ))}
+              </ul>
+            )}
+
+            {settings.exampleVideoUrl && (
+              <button onClick={() => setPlayingUrl(settings.exampleVideoUrl)}
+                className="inline-flex items-center gap-2 text-violet-600 font-semibold text-[13px]">
+                <Play className="w-3.5 h-3.5 fill-violet-600" /> Voir une vidéo exemple
+              </button>
+            )}
+
+            {est && (
+              <div className="rounded-2xl bg-amber-50 ring-1 ring-amber-100 p-3.5">
+                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-200/70 text-amber-800 text-[10px] font-bold uppercase tracking-wide">
+                  <Info className="w-3 h-3" /> Estimation
+                </span>
+                <p className="text-[13px] text-amber-900 mt-2 leading-relaxed">
+                  Une vidéo en diffusion <strong>pourrait</strong> générer entre{" "}
+                  <strong>{fmtMAD(est.minEarning)} MAD</strong> et <strong>{fmtMAD(est.maxEarning)} MAD</strong>.
+                </p>
+                <p className="text-[11.5px] text-amber-700 mt-1.5 leading-relaxed">
+                  Estimation indicative — ce n'est pas un revenu garanti, les résultats réels peuvent varier.
+                </p>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* ── 4. Floating add button (only once the creator has videos) ── */}
+      {hasVideos && (
+        <button onClick={openWizard} aria-label="Ajouter une nouvelle vidéo"
+          className="fixed bottom-6 right-5 z-40 w-16 h-16 rounded-full bg-violet-600 hover:bg-violet-700 text-white shadow-[0_8px_28px_rgba(124,58,237,0.45)] flex items-center justify-center active:scale-95 transition">
+          <Plus className="w-7 h-7" />
+        </button>
+      )}
+
+      {/* ── Replace confirmation (unchanged) ── */}
       {confirmReplaceId && (
-        <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4" onClick={() => setConfirmReplaceId(null)}>
-          <div className="bg-white rounded-2xl p-6 max-w-sm w-full space-y-4" onClick={(e) => e.stopPropagation()}>
-            <div className="flex items-center gap-2 text-gray-900">
-              <AlertTriangle className="w-5 h-5 text-amber-500" />
-              <h3 className="text-base font-bold">Remplacer la vidéo ?</h3>
+        <div className="fixed inset-0 z-[70] bg-black/50 flex items-end sm:items-center justify-center sm:p-4" onClick={() => setConfirmReplaceId(null)}>
+          <div className="bg-white rounded-t-[28px] sm:rounded-[28px] p-6 w-full sm:max-w-sm space-y-4" onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center gap-3">
+              <span className="w-11 h-11 rounded-2xl bg-amber-50 text-amber-500 flex items-center justify-center shrink-0"><AlertTriangle className="w-5 h-5" /></span>
+              <h3 className="text-[17px] font-bold text-gray-900">Remplacer la vidéo ?</h3>
             </div>
-            <p className="text-sm text-gray-600">
+            <p className="text-[13.5px] text-gray-600 leading-relaxed">
               La nouvelle vidéo sera renvoyée en validation et repassera par le processus de révision
               avant de pouvoir être diffusée. La diffusion actuelle, le cas échéant, sera interrompue.
             </p>
-            <div className="flex gap-2 justify-end">
+            <div className="flex gap-2.5 pt-1">
               <button onClick={() => setConfirmReplaceId(null)}
-                className="px-4 py-2 text-sm font-semibold text-gray-600 bg-gray-100 hover:bg-gray-200 rounded-xl">Annuler</button>
+                className="flex-1 px-4 py-3.5 text-sm font-bold text-gray-600 bg-gray-100 rounded-2xl">Annuler</button>
               <button onClick={() => { const id = confirmReplaceId; setConfirmReplaceId(null); triggerReplace(id); }}
-                className="px-4 py-2 text-sm font-semibold text-white bg-gray-900 hover:bg-gray-800 rounded-xl">Continuer</button>
+                className="flex-1 px-4 py-3.5 text-sm font-bold text-white bg-violet-600 rounded-2xl">Continuer</button>
             </div>
           </div>
         </div>
       )}
 
-      {/* ── Earnings stats ── */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-        <MiniStat icon={DollarSign} color="green" label="Gains vidéo (total)" value={fmtMAD(stats?.totalEarnings)} />
-        <MiniStat icon={TrendingUp} color="blue"  label="Gains aujourd'hui"   value={fmtMAD(stats?.todayEarnings)} />
-        <MiniStat icon={Video}      color="gray"  label="Ventes générées"     value={stats?.totalSales ?? 0} />
-        <MiniStat icon={Play}       color="amber" label="Ventes aujourd'hui"  value={stats?.todaySales ?? 0} />
-      </div>
-
-      {/* ── Intro / instructions + explicit estimate ── */}
-      <Section title="Comment ça marche" icon={Info}>
-        <div className="space-y-4 text-sm text-gray-600">
-          <p>
-            Gagnez <strong className="text-gray-900">{fmtMAD(settings.commissionPerSale)}</strong> par vente générée
-            par vos vidéos une fois qu'elles sont en diffusion.
-          </p>
-
-          {Array.isArray(settings.instructions) && settings.instructions.length > 0 && (
-            <ul className="list-disc pl-5 space-y-1">
-              {settings.instructions.map((line, i) => <li key={i}>{line}</li>)}
-            </ul>
-          )}
-
-          {settings.exampleVideoUrl && (
-            <a href={settings.exampleVideoUrl} target="_blank" rel="noopener noreferrer"
-              className="inline-flex items-center gap-1.5 text-blue-600 font-semibold hover:underline">
-              <Eye className="w-4 h-4" /> Voir une vidéo exemple
-            </a>
-          )}
-
-          {est && (
-            <div className="rounded-xl border border-amber-200 bg-amber-50 p-4">
-              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-200 text-amber-800 text-[10px] font-bold uppercase tracking-wide">
-                <Info className="w-3 h-3" /> Estimation
-              </span>
-              <p className="text-sm text-amber-900 mt-2">
-                Une vidéo en diffusion <strong>pourrait</strong> générer entre{" "}
-                <strong>{fmtMAD(est.minEarning)}</strong> et <strong>{fmtMAD(est.maxEarning)}</strong>.
-              </p>
-              <p className="text-xs text-amber-700 mt-1">
-                Estimation indicative calculée à partir des paramètres actuels. Ce n'est pas un revenu garanti — les résultats réels peuvent varier.
-              </p>
+      {/* ── Upload wizard sheet — SAME wizard, same steps, same submit ── */}
+      {wizardOpen && (
+        <div className="fixed inset-0 z-[70] bg-black/50 flex items-end sm:items-center justify-center" onClick={() => !submitting && setWizardOpen(false)}>
+          <div className="bg-white rounded-t-[28px] sm:rounded-[28px] w-full sm:max-w-md max-h-[92vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+            <div className="sticky top-0 bg-white px-5 pt-5 pb-3 border-b border-gray-50 flex items-center justify-between">
+              <h3 className="text-[17px] font-bold text-gray-900">Ajouter une vidéo</h3>
+              <button onClick={() => !submitting && setWizardOpen(false)}
+                className="w-9 h-9 rounded-full bg-gray-100 flex items-center justify-center text-gray-500"><X className="w-4 h-4" /></button>
             </div>
-          )}
-        </div>
-      </Section>
 
-      {/* ── Upload wizard ── */}
-      <Section title="Soumettre une vidéo" icon={Upload}>
-        {availableProducts.length === 0 && !submitting ? (
-          <p className="text-sm text-gray-500">
-            Vous avez déjà soumis une vidéo pour tous les produits disponibles. Vous pouvez remplacer une vidéo rejetée ou en attente ci-dessous.
-          </p>
-        ) : (
-          <div className="max-w-md space-y-5">
-            {/* Stepper */}
-            <div className="flex items-center">
-              {WIZARD.map((label, i) => {
-                const n = i + 1;
-                const complete = n < activeNode;
-                const current = n === activeNode;
-                return (
-                  <Fragment key={label}>
-                    {i > 0 && <div className={`flex-1 h-0.5 ${n <= activeNode ? "bg-gray-900" : "bg-gray-200"}`} />}
-                    <div className="flex flex-col items-center gap-1">
-                      <div className={`w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold
-                        ${complete ? "bg-green-500 text-white" : current ? "bg-gray-900 text-white" : "bg-gray-100 text-gray-400"}`}>
-                        {complete ? <CheckCircle className="w-4 h-4" /> : n}
+            <div className="p-5 space-y-5">
+              {/* Stepper */}
+              <div className="flex items-center">
+                {WIZARD.map((label, i) => {
+                  const n = i + 1;
+                  const complete = n < activeNode;
+                  const current = n === activeNode;
+                  return (
+                    <Fragment key={label}>
+                      {i > 0 && <div className={`flex-1 h-0.5 ${n <= activeNode ? "bg-violet-600" : "bg-gray-200"}`} />}
+                      <div className="flex flex-col items-center gap-1">
+                        <div className={`w-7 h-7 rounded-full flex items-center justify-center text-[11px] font-bold
+                          ${complete ? "bg-emerald-500 text-white" : current ? "bg-violet-600 text-white" : "bg-gray-100 text-gray-400"}`}>
+                          {complete ? <CheckCircle className="w-4 h-4" /> : n}
+                        </div>
+                        <span className={`text-[10px] ${current ? "text-gray-800 font-semibold" : "text-gray-400"}`}>{label}</span>
                       </div>
-                      <span className={`text-[10px] ${current ? "text-gray-800 font-semibold" : "text-gray-400"}`}>{label}</span>
+                    </Fragment>
+                  );
+                })}
+              </div>
+
+              {submitMsg && submitMsg.type === "error" && (
+                <div className="flex items-center gap-2 rounded-2xl px-4 py-3 text-sm font-medium bg-rose-50 text-rose-700 ring-1 ring-rose-100">
+                  <AlertCircle className="w-4 h-4 shrink-0" /> {submitMsg.text}
+                </div>
+              )}
+
+              {/* Step 1 — Produit */}
+              {step === 1 && (
+                <div className="space-y-4">
+                  {availableProducts.length === 0 ? (
+                    <div className="text-center py-6">
+                      <div className="w-12 h-12 rounded-2xl bg-gray-50 flex items-center justify-center mx-auto"><ShoppingBag className="w-5 h-5 text-gray-300" /></div>
+                      <p className="text-sm font-semibold text-gray-700 mt-3">Tous les produits ont déjà une vidéo</p>
+                      <p className="text-[12.5px] text-gray-400 mt-1 leading-relaxed">
+                        Vous pouvez remplacer une vidéo en attente ou rejetée depuis sa carte.
+                      </p>
                     </div>
-                  </Fragment>
-                );
-              })}
-            </div>
-
-            {submitMsg && (
-              <div className={`flex items-center gap-2 rounded-xl px-4 py-3 text-sm font-medium ${
-                submitMsg.type === "success" ? "bg-green-50 border border-green-100 text-green-700"
-                                             : "bg-red-50 border border-red-100 text-red-700"}`}>
-                {submitMsg.type === "success" ? <CheckCircle className="w-4 h-4 shrink-0" /> : <AlertCircle className="w-4 h-4 shrink-0" />}
-                {submitMsg.text}
-              </div>
-            )}
-
-            {/* Step 1 — Produit */}
-            {step === 1 && (
-              <div className="space-y-4">
-                <div>
-                  <label className="block text-xs font-semibold text-gray-600 mb-1.5">Choisissez le produit à promouvoir</label>
-                  <select
-                    value={form.productId}
-                    onChange={(e) => setForm((f) => ({ ...f, productId: e.target.value }))}
-                    className="w-full px-4 py-2.5 text-sm border border-gray-200 rounded-xl bg-gray-50 focus:outline-none focus:border-gray-400"
-                  >
-                    <option value="">— Choisir un produit —</option>
-                    {availableProducts.map((p) => <option key={p.id} value={p.id}>{p.title}</option>)}
-                  </select>
-                </div>
-                <div className="flex justify-end">
-                  <button onClick={() => { setSubmitMsg(null); setStep(2); }} disabled={!form.productId}
-                    className="flex items-center gap-1.5 px-5 py-2.5 bg-gray-900 hover:bg-gray-800 text-white rounded-xl text-sm font-semibold disabled:opacity-40">
-                    Suivant <ChevronRight className="w-4 h-4" />
-                  </button>
-                </div>
-              </div>
-            )}
-
-            {/* Step 2 — Vidéo */}
-            {step === 2 && (
-              <div className="space-y-4">
-                <div>
-                  <label className="block text-xs font-semibold text-gray-600 mb-1.5">
-                    Sélectionnez votre vidéo
-                    {maxBytes ? <span className="text-gray-400 font-normal"> (max {fmtBytes(maxBytes)}{settings.minVideoSeconds ? `, ${settings.minVideoSeconds}–${settings.maxVideoSeconds}s` : ""})</span> : null}
-                  </label>
-                  <input
-                    type="file" accept="video/*"
-                    onChange={(e) => onFileSelected(e.target.files?.[0] || null)}
-                    className="w-full text-sm text-gray-600 file:mr-3 file:py-2 file:px-4 file:rounded-xl file:border-0 file:text-xs file:font-semibold file:bg-gray-900 file:text-white hover:file:bg-gray-800"
-                  />
-                  {file && !sizeOk && <p className="text-xs text-red-600 mt-1">La vidéo dépasse la taille maximale ({fmtBytes(maxBytes)}).</p>}
-                  {file && !fileTypeOk && <p className="text-xs text-red-600 mt-1">Le fichier sélectionné n'est pas une vidéo.</p>}
-                </div>
-                <div className="flex justify-between">
-                  <button onClick={() => setStep(1)} className="flex items-center gap-1.5 px-4 py-2.5 text-gray-600 bg-gray-100 hover:bg-gray-200 rounded-xl text-sm font-semibold">
-                    <ChevronLeft className="w-4 h-4" /> Précédent
-                  </button>
-                  <button onClick={() => { setSubmitMsg(null); setStep(3); }} disabled={!canProceedStep2}
-                    className="flex items-center gap-1.5 px-5 py-2.5 bg-gray-900 hover:bg-gray-800 text-white rounded-xl text-sm font-semibold disabled:opacity-40">
-                    Suivant <ChevronRight className="w-4 h-4" />
-                  </button>
-                </div>
-              </div>
-            )}
-
-            {/* Step 3 — Aperçu + consent + submit */}
-            {step === 3 && (
-              <div className="space-y-4">
-                {/* Preview */}
-                <div className="rounded-xl border border-gray-100 bg-gray-50 overflow-hidden">
-                  {videoMeta?.loading ? (
-                    <div className="flex items-center justify-center py-10"><Loader2 className="w-5 h-5 animate-spin text-gray-400" /></div>
                   ) : (
                     <>
-                      {videoMeta?.url && (
-                        <video src={videoMeta.url} poster={videoMeta.thumbnail || undefined} controls
-                          className="w-full max-h-56 bg-black object-contain" />
-                      )}
-                      <div className="p-3 grid grid-cols-3 gap-2 text-center">
-                        <div>
-                          <p className="text-[10px] text-gray-400 uppercase">Fichier</p>
-                          <p className="text-xs font-semibold text-gray-700 truncate" title={file?.name}>{file?.name || "—"}</p>
-                        </div>
-                        <div>
-                          <p className="text-[10px] text-gray-400 uppercase">Taille</p>
-                          <p className="text-xs font-semibold text-gray-700">{fmtBytes(file?.size)}</p>
-                        </div>
-                        <div>
-                          <p className="text-[10px] text-gray-400 uppercase">Durée</p>
-                          <p className={`text-xs font-semibold ${durationOk ? "text-gray-700" : "text-amber-600"}`}>{fmtDuration(durationSec)}</p>
-                        </div>
+                      <div>
+                        <label className="block text-xs font-bold text-gray-600 mb-2">Choisissez le produit à promouvoir</label>
+                        <select value={form.productId} onChange={(e) => setForm((f) => ({ ...f, productId: e.target.value }))} className={inputCls}>
+                          <option value="">— Choisir un produit —</option>
+                          {availableProducts.map((p) => <option key={p.id} value={p.id}>{p.title}</option>)}
+                        </select>
                       </div>
+                      <button onClick={() => { setSubmitMsg(null); setStep(2); }} disabled={!form.productId}
+                        className="w-full flex items-center justify-center gap-1.5 px-5 py-4 bg-violet-600 text-white rounded-2xl text-sm font-bold disabled:opacity-40">
+                        Suivant <ChevronRight className="w-4 h-4" />
+                      </button>
                     </>
                   )}
                 </div>
-                {!durationOk && (
-                  <p className="text-xs text-amber-600 flex items-center gap-1.5">
-                    <AlertTriangle className="w-3.5 h-3.5" />
-                    Durée recommandée : {settings.minVideoSeconds}–{settings.maxVideoSeconds}s. Votre vidéo pourrait être refusée à la validation.
-                  </p>
-                )}
+              )}
 
-                <div>
-                  <label className="block text-xs font-semibold text-gray-600 mb-1.5">Description (facultatif)</label>
-                  <textarea rows={2} value={form.description}
-                    onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))}
-                    placeholder="Quelques mots sur votre vidéo…"
-                    className="w-full px-4 py-2.5 text-sm border border-gray-200 rounded-xl bg-gray-50 focus:outline-none focus:border-gray-400" />
+              {/* Step 2 — Vidéo */}
+              {step === 2 && (
+                <div className="space-y-4">
+                  <div>
+                    <label className="block text-xs font-bold text-gray-600 mb-2">
+                      Sélectionnez votre vidéo
+                      {maxBytes ? <span className="text-gray-400 font-medium"> (max {fmtBytes(maxBytes)}{settings.minVideoSeconds ? `, ${settings.minVideoSeconds}–${settings.maxVideoSeconds}s` : ""})</span> : null}
+                    </label>
+                    <input type="file" accept="video/*" onChange={(e) => onFileSelected(e.target.files?.[0] || null)}
+                      className="w-full text-sm text-gray-600 file:mr-3 file:py-3 file:px-4 file:rounded-xl file:border-0 file:text-xs file:font-bold file:bg-violet-600 file:text-white" />
+                    {file && !sizeOk && <p className="text-xs text-rose-600 mt-1.5">La vidéo dépasse la taille maximale ({fmtBytes(maxBytes)}).</p>}
+                    {file && !fileTypeOk && <p className="text-xs text-rose-600 mt-1.5">Le fichier sélectionné n'est pas une vidéo.</p>}
+                  </div>
+                  <div className="flex gap-2.5">
+                    <button onClick={() => setStep(1)} className="px-5 py-4 text-gray-600 bg-gray-100 rounded-2xl text-sm font-bold">
+                      <ChevronLeft className="w-4 h-4" />
+                    </button>
+                    <button onClick={() => { setSubmitMsg(null); setStep(3); }} disabled={!canProceedStep2}
+                      className="flex-1 flex items-center justify-center gap-1.5 px-5 py-4 bg-violet-600 text-white rounded-2xl text-sm font-bold disabled:opacity-40">
+                      Suivant <ChevronRight className="w-4 h-4" />
+                    </button>
+                  </div>
                 </div>
+              )}
 
-                <label className="flex items-start gap-2 text-xs text-gray-600 cursor-pointer">
-                  <input type="checkbox" checked={form.consent}
-                    onChange={(e) => setForm((f) => ({ ...f, consent: e.target.checked }))} className="mt-0.5" />
-                  <span>J'autorise l'utilisation de ma vidéo à des fins publicitaires et je confirme en détenir les droits.</span>
-                </label>
+              {/* Step 3 — Aperçu */}
+              {step === 3 && (
+                <div className="space-y-4">
+                  <div className="rounded-2xl ring-1 ring-gray-100 bg-gray-50 overflow-hidden">
+                    {videoMeta?.loading ? (
+                      <div className="flex items-center justify-center py-12"><Loader2 className="w-5 h-5 animate-spin text-violet-500" /></div>
+                    ) : (
+                      <>
+                        {videoMeta?.url && (
+                          <video src={videoMeta.url} poster={videoMeta.thumbnail || undefined} controls playsInline
+                            className="w-full max-h-60 bg-black object-contain" />
+                        )}
+                        <div className="p-3.5 grid grid-cols-3 gap-2 text-center">
+                          <div>
+                            <p className="text-[10px] text-gray-400 uppercase font-semibold">Fichier</p>
+                            <p className="text-[11px] font-bold text-gray-700 truncate" title={file?.name}>{file?.name || "—"}</p>
+                          </div>
+                          <div>
+                            <p className="text-[10px] text-gray-400 uppercase font-semibold">Taille</p>
+                            <p className="text-[11px] font-bold text-gray-700">{fmtBytes(file?.size)}</p>
+                          </div>
+                          <div>
+                            <p className="text-[10px] text-gray-400 uppercase font-semibold">Durée</p>
+                            <p className={`text-[11px] font-bold ${durationOk ? "text-gray-700" : "text-amber-600"}`}>{fmtDuration(durationSec) || "—"}</p>
+                          </div>
+                        </div>
+                      </>
+                    )}
+                  </div>
+                  {!durationOk && (
+                    <p className="text-[12px] text-amber-600 flex items-start gap-1.5">
+                      <AlertTriangle className="w-3.5 h-3.5 mt-0.5 shrink-0" />
+                      Durée recommandée : {settings.minVideoSeconds}–{settings.maxVideoSeconds}s. Votre vidéo pourrait être refusée à la validation.
+                    </p>
+                  )}
 
-                <div className="flex justify-between">
-                  <button onClick={() => setStep(2)} disabled={submitting}
-                    className="flex items-center gap-1.5 px-4 py-2.5 text-gray-600 bg-gray-100 hover:bg-gray-200 rounded-xl text-sm font-semibold disabled:opacity-40">
-                    <ChevronLeft className="w-4 h-4" /> Précédent
-                  </button>
-                  <button onClick={handleCreate} disabled={submitting || !form.consent}
-                    className="flex items-center gap-2 px-6 py-2.5 bg-gray-900 hover:bg-gray-800 text-white rounded-xl text-sm font-semibold disabled:opacity-40">
-                    {submitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />}
-                    {submitting ? "Envoi…" : "Envoyer la vidéo"}
-                  </button>
-                </div>
-              </div>
-            )}
-          </div>
-        )}
-      </Section>
-
-      {/* ── Submissions list with timeline ── */}
-      <Section title={`Mes vidéos (${submissions.length})`} icon={Film}>
-        {submissions.length === 0 ? (
-          <p className="text-sm text-gray-400">Vous n'avez pas encore soumis de vidéo.</p>
-        ) : (
-          <div className="space-y-3">
-            {submissions.map((s) => {
-              const prod = productMap[s.productId];
-              const busy = rowBusy === s.id;
-              const canReplace = s.status === "REJECTED" || s.status === "PENDING";
-              return (
-                <div key={s.id} className="p-3 bg-gray-50 rounded-xl border border-gray-100 space-y-3">
-                  <div className="flex flex-wrap items-center gap-3">
-                    {prod?.image
-                      ? <img src={prod.image} alt="" className="w-12 h-12 rounded-lg object-cover shrink-0" />
-                      : <div className="w-12 h-12 rounded-lg bg-gray-200 flex items-center justify-center shrink-0"><Video className="w-5 h-5 text-gray-400" /></div>}
-
-                    <div className="min-w-0 flex-1">
-                      <p className="text-sm font-semibold text-gray-800 truncate">{prod?.title || "Produit"}</p>
-                      <p className="text-xs text-gray-400">{fmtDate(s.submittedAt || s.createdAt)}</p>
-                      {s.status === "REJECTED" && s.rejectionReason && (
-                        <p className="text-xs text-red-600 mt-0.5">Motif : {s.rejectionReason}</p>
-                      )}
-                    </div>
-
-                    <div className="flex items-center gap-1.5">
-                      {s.videoUrl && (
-                        <a href={s.videoUrl} target="_blank" rel="noopener noreferrer"
-                          className="p-2 text-gray-500 hover:text-gray-800 hover:bg-gray-200 rounded-lg" title="Voir la vidéo">
-                          <Eye className="w-4 h-4" />
-                        </a>
-                      )}
-                      {s.status === "RUNNING" && (
-                        <button onClick={() => handlePauseResume(s.id, "pause")} disabled={busy}
-                          className="flex items-center gap-1 px-3 py-1.5 text-xs font-semibold bg-white border border-gray-200 rounded-lg hover:border-gray-400 disabled:opacity-50">
-                          {busy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Pause className="w-3.5 h-3.5" />} Pause
-                        </button>
-                      )}
-                      {s.status === "PAUSED" && (
-                        <button onClick={() => handlePauseResume(s.id, "resume")} disabled={busy}
-                          className="flex items-center gap-1 px-3 py-1.5 text-xs font-semibold bg-white border border-gray-200 rounded-lg hover:border-gray-400 disabled:opacity-50">
-                          {busy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Play className="w-3.5 h-3.5" />} Reprendre
-                        </button>
-                      )}
-                      {canReplace && (
-                        <button onClick={() => setConfirmReplaceId(s.id)} disabled={busy}
-                          className="flex items-center gap-1 px-3 py-1.5 text-xs font-semibold bg-white border border-gray-200 rounded-lg hover:border-gray-400 disabled:opacity-50">
-                          {busy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Upload className="w-3.5 h-3.5" />} Remplacer
-                        </button>
-                      )}
-                    </div>
+                  <div>
+                    <label className="block text-xs font-bold text-gray-600 mb-2">Description (facultatif)</label>
+                    <textarea rows={2} value={form.description} onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))}
+                      placeholder="Quelques mots sur votre vidéo…" className={inputCls} />
                   </div>
 
-                  {/* Timeline (refinement #4) */}
-                  <StatusTimeline status={s.status} />
+                  <label className="flex items-start gap-2.5 text-[12.5px] text-gray-600 cursor-pointer">
+                    <input type="checkbox" checked={form.consent} onChange={(e) => setForm((f) => ({ ...f, consent: e.target.checked }))} className="mt-0.5" />
+                    <span className="leading-relaxed">J'autorise l'utilisation de ma vidéo à des fins publicitaires et je confirme en détenir les droits.</span>
+                  </label>
+
+                  <div className="flex gap-2.5">
+                    <button onClick={() => setStep(2)} disabled={submitting}
+                      className="px-5 py-4 text-gray-600 bg-gray-100 rounded-2xl text-sm font-bold disabled:opacity-40">
+                      <ChevronLeft className="w-4 h-4" />
+                    </button>
+                    <button onClick={handleCreate} disabled={submitting || !form.consent}
+                      className="flex-1 flex items-center justify-center gap-2 px-5 py-4 bg-violet-600 text-white rounded-2xl text-sm font-bold disabled:opacity-40">
+                      {submitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />}
+                      {submitting ? "Envoi…" : "Envoyer la vidéo"}
+                    </button>
+                  </div>
                 </div>
-              );
-            })}
+              )}
+            </div>
           </div>
-        )}
-      </Section>
+        </div>
+      )}
     </div>
   );
 }
