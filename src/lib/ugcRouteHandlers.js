@@ -13,7 +13,7 @@
  */
 
 import { ugcService as realService } from './services/ugcService.js';
-import { getUgcStats as realGetUgcStats } from './services/ugcEarningsService.js';
+import { getUgcStats as realGetUgcStats, getUgcStatsByVideo as realGetUgcStatsByVideo } from './services/ugcEarningsService.js';
 import { getSettings as realGetSettings, upsertSettings as realUpsertSettings } from './services/settingsService.js';
 import {
   recordUgcSettingsChange as realRecordSettingsChange,
@@ -30,6 +30,7 @@ export function affiliateUgcHandlers(deps = {}) {
   const {
     service = realService,
     getUgcStats = realGetUgcStats,
+    getUgcStatsByVideo = realGetUgcStatsByVideo,
     getSettings = realGetSettings,
     extractVideo = realExtractVideo,
   } = deps;
@@ -37,11 +38,12 @@ export function affiliateUgcHandlers(deps = {}) {
   return {
     async list(decoded) {
       try {
-        const [submissions, stats] = await Promise.all([
+        const [submissions, stats, videoStats] = await Promise.all([
           service.listForAffiliate({ affiliateId: decoded.affiliateId }),
           getUgcStats(decoded.affiliateId),
+          getUgcStatsByVideo(decoded.affiliateId),   // per-video, grouped by ugcVideoId
         ]);
-        return json({ submissions, stats, hasSubmitted: submissions.length > 0 });
+        return json({ submissions, stats, videoStats, hasSubmitted: submissions.length > 0 });
       } catch (e) { return ugcErrorResponse(e); }
     },
 

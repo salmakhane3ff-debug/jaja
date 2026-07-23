@@ -114,7 +114,7 @@ function VideoThumb({ videoUrl, onPlay }) {
           muted
           playsInline
           tabIndex={-1}
-          onLoadedMetadata={(e) => setDuration(e.currentTarget.duration)}
+          onLoadedMetadata={(e) => { const d = e.currentTarget?.duration; setDuration(Number.isFinite(d) ? d : null); }}
           className="absolute inset-0 w-full h-full object-cover pointer-events-none"
         />
       ) : (
@@ -183,6 +183,7 @@ export default function UgcTab() {
   const [settings, setSettings]       = useState(null);
   const [submissions, setSubmissions] = useState([]);
   const [stats, setStats]             = useState(null);
+  const [videoStats, setVideoStats]   = useState({});   // per-video, keyed by ugcVideoId (from API)
   const [products, setProducts]       = useState([]);
 
   // Wizard (unchanged logic)
@@ -223,6 +224,7 @@ export default function UgcTab() {
       setSettings(sData);
       setSubmissions(Array.isArray(listData.submissions) ? listData.submissions : []);
       setStats(listData.stats || null);
+      setVideoStats(listData.videoStats && typeof listData.videoStats === "object" ? listData.videoStats : {});
       setProducts(Array.isArray(prodData) ? prodData : []);
     } catch {
       setError("Impossible de charger l'espace vidéos. Réessayez.");
@@ -239,6 +241,7 @@ export default function UgcTab() {
         const d = await res.json();
         setSubmissions(Array.isArray(d.submissions) ? d.submissions : []);
         setStats(d.stats || null);
+        setVideoStats(d.videoStats && typeof d.videoStats === "object" ? d.videoStats : {});
       }
     } catch { /* keep optimistic state */ }
   }, []);
@@ -436,6 +439,9 @@ export default function UgcTab() {
             const busy = rowBusy === s.id;
             const canReplace = s.status === "REJECTED" || s.status === "PENDING";
             const title = s.description?.trim() || prod?.title || "Ma vidéo";
+            // Per-video stats come from the API (grouped by ugcVideoId). A video
+            // with no earnings has no map entry → real zero, not a fabricated value.
+            const vs = videoStats[s.id] || { todayEarnings: "0", totalEarnings: "0", todaySales: 0, totalSales: 0 };
             return (
               <div key={s.id} className="bg-white rounded-[28px] ring-1 ring-gray-100 shadow-[0_2px_16px_rgba(16,24,40,0.05)] p-4">
                 <div className="flex gap-4">
@@ -455,6 +461,26 @@ export default function UgcTab() {
                       <span className="text-[12.5px] font-semibold text-gray-700 truncate flex-1">{prod?.title || "Produit"}</span>
                       <ExternalLink className="w-4 h-4 text-violet-500 shrink-0" />
                     </a>
+                  </div>
+                </div>
+
+                {/* Per-video stats (grouped by ugcVideoId, from the API) */}
+                <div className="mt-3 rounded-2xl bg-gray-50 ring-1 ring-gray-100 divide-y divide-gray-100">
+                  <div className="flex items-center justify-between px-3.5 py-2.5">
+                    <span className="text-[11px] font-semibold text-gray-400 uppercase tracking-wide">Aujourd'hui</span>
+                    <span className="text-[13px] font-bold text-gray-900 tabular-nums">
+                      {fmtMAD(vs.todayEarnings)} <span className="text-[11px] text-gray-400">MAD</span>
+                      <span className="text-gray-300 font-normal"> · </span>
+                      <span className="text-gray-500 font-semibold">{vs.todaySales}</span> <span className="text-[11px] text-gray-400 font-medium">ventes</span>
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between px-3.5 py-2.5">
+                    <span className="text-[11px] font-semibold text-gray-400 uppercase tracking-wide">Total</span>
+                    <span className="text-[13px] font-bold text-gray-900 tabular-nums">
+                      {fmtMAD(vs.totalEarnings)} <span className="text-[11px] text-gray-400">MAD</span>
+                      <span className="text-gray-300 font-normal"> · </span>
+                      <span className="text-gray-500 font-semibold">{vs.totalSales}</span> <span className="text-[11px] text-gray-400 font-medium">ventes</span>
+                    </span>
                   </div>
                 </div>
 

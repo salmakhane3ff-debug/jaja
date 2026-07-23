@@ -153,3 +153,44 @@ export async function getUgcStats(affiliateId, db = prisma) {
     totalSales:    totalAgg._sum.generatedSales ?? 0,
   };
 }
+
+/**
+ * PER-VIDEO stats from the SAME ledger, grouped by `ugcVideoId`. Read-only; no
+ * frontend calculation, no duplication of the affiliate-wide totals — this reads
+ * the exact same `ugc_earnings` rows the engine writes, just grouped.
+ *
+ * @returns {Promise<Record<string, {todayEarnings:number, totalEarnings:number, todaySales:number, totalSales:number}>>}
+ *          keyed by ugcVideoId (earnings are 2dp-rounded Numbers, same as getUgcStats).
+ *          Videos with no earnings simply don't appear.
+ */
+export async function getUgcStatsByVideo(affiliateId, db = prisma) {
+  const startOfToday = new Date();
+  startOfToday.setUTCHours(0, 0, 0, 0);
+
+  const [todayRows, totalRows] = await Promise.all([
+    db.ugcEarning.groupBy({
+      by: ['ugcVideoId'],
+      where: { affiliateId, status: BALANCE_ELIGIBLE_STATUS, generationDate: { gte: startOfToday } },
+      _sum: { amount: true, generatedSales: true },
+    }),
+    db.ugcEarning.groupBy({
+      by: ['ugcVideoId'],
+      where: { affiliateId, status: BALANCE_ELIGIBLE_STATUS },
+      _sum: { amount: true, generatedSales: true },
+    }),
+  ]);
+
+  const map = {};
+  const ensure = (id) => (map[id] ||= { todayEarnings: serializeAmount(0), totalEarnings: serializeAmount(0), todaySales: 0, totalSales: 0 });
+  for (const r of totalRows) {
+    const e = ensure(r.ugcVideoId);
+    e.totalEarnings = serializeAmount(r._sum.amount ?? 0);
+    e.totalSales = r._sum.generatedSales ?? 0;
+  }
+  for (const r of todayRows) {
+    const e = ensure(r.ugcVideoId);
+    e.todayEarnings = serializeAmount(r._sum.amount ?? 0);
+    e.todaySales = r._sum.generatedSales ?? 0;
+  }
+  return map;
+}

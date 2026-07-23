@@ -140,7 +140,7 @@ const nextConfig: NextConfig = {
               "style-src 'self' 'unsafe-inline'",
               `img-src 'self' data: blob: https://res.cloudinary.com https://*.cloudinary.com https://placehold.co https://img.youtube.com https://www.facebook.com${R2_ORIGIN ? " " + R2_ORIGIN : ""}`,
               "font-src 'self' data:",
-              "connect-src 'self' https://res.cloudinary.com https://ipwho.is https://ip-api.com https://cloudflareinsights.com https://connect.facebook.net https://www.facebook.com https://*.clarity.ms",
+              "connect-src 'self' https://res.cloudinary.com https://media.proprogiftvip.com https://ipwho.is https://ip-api.com https://cloudflareinsights.com https://connect.facebook.net https://www.facebook.com https://*.clarity.ms",
               `media-src 'self' blob:${R2_ORIGIN ? " " + R2_ORIGIN : ""}`,
               "frame-src 'none'",
               "object-src 'none'",

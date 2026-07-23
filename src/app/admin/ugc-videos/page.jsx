@@ -663,7 +663,12 @@ export default function AdminUgcVideosPage() {
                 {detail.submission.videoUrl && (
                   <div className="space-y-2">
                     <video ref={videoRef} src={detail.submission.videoUrl} controls
-                      onLoadedMetadata={(e) => setMediaInfo((m) => ({ ...m, duration: e.currentTarget.duration }))}
+                      onLoadedMetadata={(e) => {
+                        // Read currentTarget SYNCHRONOUSLY — React nulls it before the
+                        // (deferred) state updater runs, which caused the null.duration crash.
+                        const d = e.currentTarget?.duration;
+                        setMediaInfo((m) => ({ ...m, duration: Number.isFinite(d) ? d : null }));
+                      }}
                       className="w-full max-h-72 bg-black rounded-xl object-contain" />
                     {/* Playback speed + fullscreen */}
                     <div className="flex items-center gap-3 flex-wrap">
