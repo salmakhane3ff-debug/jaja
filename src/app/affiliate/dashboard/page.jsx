@@ -7,7 +7,7 @@ import {
   Bell, LogOut, RefreshCw, Copy, Check, Loader2,
   ChevronDown, AlertCircle, Package, Truck,
   XCircle, CheckCircle, Building2, CreditCard,
-  Target, Star, UserPlus, Eye, AlertTriangle, Settings,
+  Target, Star, UserPlus, Eye, AlertTriangle, Settings, Video, Wallet,
 } from "lucide-react";
 import UgcTab from "./UgcTab";
 
@@ -873,6 +873,9 @@ export default function AffiliateDashboard() {
   const [token,       setToken]       = useState(null);
 
   const [data,       setData]       = useState(null);  // { affiliate, stats, gamification, team, bonusConfig }
+  // UGC totals come ONLY from the UGC ledger, computed server-side in the configured
+  // business timezone (never browser-local) and scoped to the authenticated affiliate.
+  const [ugcStats,   setUgcStats]   = useState(null);  // { todayEarnings, todaySales, totalEarnings, totalSales }
   const [orders,     setOrders]     = useState([]);
   const [notifs,     setNotifs]     = useState([]);
   const [claiming,   setClaiming]   = useState(false);
@@ -929,10 +932,12 @@ export default function AffiliateDashboard() {
     setError(null);
     try {
       const headers = { "Content-Type": "application/json", Authorization: `Bearer ${tok}` };
-      const [meRes, ordersRes, notifsRes] = await Promise.all([
+      const [meRes, ordersRes, notifsRes, ugcRes] = await Promise.all([
         fetch("/api/affiliate/me",            { headers }),
         fetch("/api/affiliate/orders",        { headers }),
         fetch("/api/affiliate/notifications", { headers }),
+        // UGC totals only — business-timezone day boundary is applied server-side.
+        fetch("/api/affiliate/ugc/live",      { headers, cache: "no-store" }),
       ]);
 
       if (meRes.status === 401) {
@@ -950,6 +955,7 @@ export default function AffiliateDashboard() {
       setData(meData);
       setOrders(Array.isArray(ordersData) ? ordersData : []);
       setNotifs(Array.isArray(notifsData) ? notifsData : []);
+      setUgcStats(ugcRes.ok ? await ugcRes.json().catch(() => null) : null);
 
       // Pre-fill bank form
       if (meData?.affiliate) {
@@ -1195,6 +1201,7 @@ export default function AffiliateDashboard() {
     { id: "bank",          label: "Coordonnées" },
     { id: "payout",        label: "Retraits" },
     { id: "ugc",           label: "🎬 Vidéos" },
+    { id: "ugc-earnings",  label: "💰 UGC" },
     { id: "notifications", label: `Notifs ${unread > 0 ? `(${unread})` : ""}` },
     { id: "team",          label: `Équipe (${team.length})` },
     { id: "competition",   label: "🏆 Compétition" },
@@ -1348,24 +1355,41 @@ export default function AffiliateDashboard() {
               </div>
             )}
 
-            {/* Stat cards */}
+            {/* ── BOUTIQUE (store / order) earnings — unchanged calculations ── */}
+            <div className="flex items-center gap-2 px-0.5">
+              <ShoppingBag className="w-4 h-4 text-gray-400" />
+              <h2 className="text-sm font-bold text-gray-700">Boutique (commandes)</h2>
+            </div>
             <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
-              <StatCard icon={ShoppingBag} label="Ventes aujourd'hui"   value={stats?.todaySales  ?? "—"} color="blue"   />
+              <StatCard icon={ShoppingBag} label="Commandes boutique aujourd'hui" value={stats?.todaySales  ?? "—"} color="blue"   />
               <StatCard icon={CheckCircle} label="Confirmées"           value={stats?.confirmed   ?? "—"} color="green"  />
               <StatCard icon={XCircle}     label="Annulées"             value={stats?.cancelled   ?? "—"} color="red"    />
               <StatCard icon={Truck}       label="En livraison"         value={stats?.shipping    ?? "—"} color="purple" />
               <StatCard icon={Package}     label="Livrées"              value={stats?.delivered   ?? "—"} color="teal"   />
-              <StatCard icon={TrendingUp}  label="Chiffre d'affaires"   value={fmtMoney(stats?.totalRevenue)}    color="amber"  />
-              <StatCard icon={DollarSign}  label="Commission totale"    value={fmtMoney(stats?.totalCommission)} color="green"
+              <StatCard icon={TrendingUp}  label="Chiffre d'affaires boutique" value={fmtMoney(stats?.totalRevenue)} color="amber" />
+              <StatCard icon={DollarSign}  label="Gains boutique total" value={fmtMoney(stats?.totalCommission)} color="green"
                 sub={`Taux : ${((affiliate?.commissionRate || 0) * 100).toFixed(0)}%`} />
               <StatCard icon={CreditCard}  label="Solde disponible"     value={fmtMoney(balance)}                color="blue"   />
               {/* Tracking stats */}
               <StatCard icon={Eye}         label="Total clics"          value={stats?.totalClicks ?? affiliate?.totalClicks ?? "—"} color="blue"   />
-              <StatCard icon={ShoppingBag} label="Total commandes"      value={orders.length > 0 ? totalItemsAll : (stats?.totalOrders ?? affiliate?.totalOrders ?? "—")} color="teal" sub="articles commandés" />
+              <StatCard icon={ShoppingBag} label="Ventes boutique total" value={orders.length > 0 ? totalItemsAll : (stats?.totalOrders ?? affiliate?.totalOrders ?? "—")} color="teal" sub="articles commandés" />
               <StatCard icon={TrendingUp}  label="Taux de conversion"   value={stats?.conversionRate != null ? `${stats.conversionRate}%` : "—"} color="amber"
                 sub="commandes / clics" />
               <StatCard icon={Users}       label="Commission Équipe"    value={fmtMoney(stats?.teamCommission)} color="teal"
                 sub={`${team.length} membre${team.length !== 1 ? "s" : ""}`} />
+            </div>
+
+            {/* ── UGC (simulated video sales) — separate source, never mixed ── */}
+            <div className="flex items-center gap-2 px-0.5 pt-1">
+              <Video className="w-4 h-4 text-violet-500" />
+              <h2 className="text-sm font-bold text-gray-700">UGC (vidéos)</h2>
+              <span className="px-1.5 py-0.5 rounded-full bg-violet-50 text-violet-700 text-[10px] font-bold">UGC</span>
+            </div>
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
+              <StatCard icon={Wallet}      label="Gains UGC aujourd'hui"  value={fmtMoney(ugcStats?.todayEarnings)} color="purple" sub="UGC" />
+              <StatCard icon={Video}       label="Ventes UGC aujourd'hui" value={ugcStats?.todaySales ?? "—"}       color="purple" sub="UGC" />
+              <StatCard icon={DollarSign}  label="Gains UGC total"        value={fmtMoney(ugcStats?.totalEarnings)} color="purple" sub="UGC" />
+              <StatCard icon={TrendingUp}  label="Ventes UGC total"       value={ugcStats?.totalSales ?? "—"}       color="purple" sub="UGC" />
             </div>
 
             {/* Gamification */}
@@ -2309,7 +2333,8 @@ export default function AffiliateDashboard() {
         })()}
 
         {/* ══ COMPETITION ═══════════════════════════════════════════════════ */}
-        {activeTab === "ugc" && <UgcTab />}
+        {/* Both tabs open the SAME existing component — never duplicated. */}
+        {(activeTab === "ugc" || activeTab === "ugc-earnings") && <UgcTab />}
 
         {activeTab === "competition" && <CompetitionTab lang={lang} />}
 
