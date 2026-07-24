@@ -2,186 +2,219 @@
 /**
  * scripts/ugcEngine.test.mjs
  * ─────────────────────────────────────────────────────────────────────────────
- * Unit tests for the UGC earnings engine CORE (src/lib/ugcEngine.js), driven with
- * an injected clock, DB, RNG, lock, and log sink — no real database or timers.
- * Proves: advisory-lock skip, per-cycle settings gate (disabled vs invalid),
- * RUNNING-only selection, deterministic period, commission snapshot, RNG sales,
- * per-video failure isolation, dry-run, duplicate-suppression accounting, and
- * that the lock is ALWAYS released.
+ * UGC simulation engine (runUgcTick) — driven with an injected clock, RNG, lock and
+ * an in-memory fake Prisma. Proves the mandatory safeguards:
+ *   • one INDIVIDUAL UgcEarning per simulated sale (generatedSales=1)
+ *   • EXACT daily target over a full simulated day (feasible case)
+ *   • generationSpeed is a STRICT per-pollIntervalMs-window maximum
+ *   • never exceeds the daily target; stops when reached
+ *   • midnight (business TZ) starts a NEW target; yesterday's rows remain
+ *   • restart-safe: progress re-derived from the DB, never double-paid
+ *   • RUNNING-only, lock skip, settings gate, dry-run, per-video isolation
  * Run: node scripts/ugcEngine.test.mjs
  * ─────────────────────────────────────────────────────────────────────────────
  */
 
-import { runUgcEngineCycle } from '../src/lib/ugcEngine.js';
-import { generationPeriod, generationDateOf, UGC_EARNING_STATUS } from '../src/lib/ugcEarnings.js';
+import { runUgcTick } from "../src/lib/ugcEngine.js";
+import { startOfBusinessDay, endOfBusinessDay } from "../src/lib/ugcTime.js";
 
 let pass = 0, fail = 0;
-const ok = (n, c) => { if (c) { pass++; console.log('  PASS ', n); } else { fail++; console.log('  FAIL ', n); } };
+const ok = (n, c) => { if (c) { pass++; console.log("  PASS ", n); } else { fail++; console.log("  FAIL ", n); } };
+const TZ = "Africa/Casablanca";
 
-const FIXED = new Date('2026-07-21T13:45:00Z');
-const now = () => FIXED;
-
-const fakeDb = (videos, trace) => ({
-  ugcVideoSubmission: {
-    findMany: async ({ where } = {}) => { trace.findMany.push(where); return videos.filter((v) => v.status === where.status); },
-  },
-});
-
-// Fake recordEarning that emulates the real one's log side-effects, so cycle
-// counters (earningsGenerated / duplicatesSuppressed) are genuinely exercised.
-function fakeRecord(behaviour) {
-  const f = async (p) => {
-    f.calls.push(p);
-    const b = typeof behaviour === 'function' ? behaviour(p) : behaviour;
-    if (b === 'throw') throw new Error('db exploded');
-    if (b === UGC_EARNING_STATUS.DUPLICATE) { p.log?.duplicateSuppressed?.({ ugcVideoId: p.ugcVideoId, idempotencyKey: 'k' }); return { status: 'duplicate' }; }
-    p.log?.earningGenerated?.({ ugcVideoId: p.ugcVideoId, affiliateId: p.affiliateId, amount: '20.00', generatedSales: p.generatedSales, idempotencyKey: 'k' });
-    return { status: 'created', amount: '20.00' };
-  };
-  f.calls = [];
-  return f;
-}
-
-function fakeLock(acquireResult = true) {
-  const l = { acquired: 0, released: 0 };
-  l.acquire = async () => { l.acquired += 1; return acquireResult; };
-  l.release = async () => { l.released += 1; };
-  return l;
-}
-
-const RUNNABLE = { enabled: true, earningsEngineEnabled: true, commissionPerSale: 4, minGeneratedSales: 5, maxGeneratedSales: 5 };
-const run = (over) => {
-  const trace = { findMany: [] };
-  const records = [];
-  const videos = over.videos ?? [];
-  const recordEarning = over.recordEarning ?? fakeRecord(UGC_EARNING_STATUS.CREATED);
-  const lock = over.lock;
-  const settings = over.settings ?? RUNNABLE;
-  return runUgcEngineCycle({
-    db: fakeDb(videos, trace),
-    getSettings: async () => settings,
-    recordEarning,
-    now: over.now ?? now,
-    rng: over.rng ?? (() => 0),
-    dryRun: over.dryRun ?? false,
-    lock,
-    sink: (r) => records.push(r),
-  }).then((report) => ({ report, records, trace, recordEarning, lock }));
+const BASE_SETTINGS = {
+  enabled: true, earningsEngineEnabled: true,
+  commissionPerSale: 5,
+  minGeneratedSales: 50, maxGeneratedSales: 50,   // fixed target = 50 (deterministic)
+  minDailyEstimate: 1, maxDailyEstimate: 30,
+  generationSpeed: 10, pollIntervalMs: 3_600_000, // 10 max per 1h window → 240/day capacity
+  timezone: TZ,
+  minVideoSeconds: 5, maxVideoSeconds: 120, maxUploadBytes: 50 * 1024 * 1024,
+  defaultApprovedStatus: "RUNNING", allowEstimatedEarnings: true,
+  exampleVideoUrl: "", instructions: [],
 };
 
-const V = (id, status = 'RUNNING') => ({ id, affiliateId: `aff-${id}`, productId: `prod-${id}`, status });
-
-console.log('1) advisory lock held elsewhere → skip, no work:');
-{
-  const lock = fakeLock(false);
-  const { report, trace, recordEarning, records } = await run({ videos: [V('a')], lock });
-  ok('report.lock === skipped', report.lock === 'skipped');
-  ok('outcome lock_skipped in finished record', records.some((r) => r.event === 'finished' && r.outcome === 'lock_skipped'));
-  ok('lock_skipped event emitted', records.some((r) => r.event === 'lock_skipped'));
-  ok('no submissions queried', trace.findMany.length === 0);
-  ok('no earnings recorded', recordEarning.calls.length === 0);
-  ok('lock was acquired-attempted, not released (never held)', lock.acquired === 1 && lock.released === 0);
+// ── In-memory fake Prisma (unique constraints, guarded updates, transaction) ────
+function makeDb(subs = [{ id: "v1", affiliateId: "aff1", productId: "p1", status: "RUNNING" }]) {
+  const S = { subs, targets: [], earnings: [], seq: 0, now: () => new Date() };
+  const same = (a, b) => new Date(a).getTime() === new Date(b).getTime();
+  const db = {
+    _s: S,
+    ugcVideoSubmission: {
+      findMany: async ({ where } = {}) => S.subs.filter((v) => !where?.status || v.status === where.status).map((v) => ({ ...v })),
+    },
+    ugcDailyTarget: {
+      findUnique: async ({ where }) => {
+        const { ugcVideoId, generationDate } = where.ugcVideoId_generationDate;
+        const t = S.targets.find((t) => t.ugcVideoId === ugcVideoId && same(t.generationDate, generationDate));
+        return t ? { ...t } : null;
+      },
+      create: async ({ data }) => {
+        if (S.targets.some((t) => t.ugcVideoId === data.ugcVideoId && same(t.generationDate, data.generationDate)))
+          throw Object.assign(new Error("unique"), { code: "P2002" });
+        const row = { id: `t${++S.seq}`, updatedAt: S.now(), ...data };
+        S.targets.push(row); return { ...row };
+      },
+      updateMany: async ({ where, data }) => {
+        const t = S.targets.find((t) => t.id === where.id && (where.generatedToday === undefined || t.generatedToday === where.generatedToday));
+        if (!t) return { count: 0 };
+        Object.assign(t, data, { updatedAt: S.now() }); return { count: 1 };
+      },
+    },
+    ugcEarning: {
+      count: async ({ where }) => S.earnings.filter((e) => e.ugcVideoId === where.ugcVideoId
+        && (!where.createdAt?.gte || e.createdAt.getTime() >= where.createdAt.gte.getTime())).length,
+      create: async ({ data }) => {
+        if (S.earnings.some((e) => e.idempotencyKey === data.idempotencyKey)) throw Object.assign(new Error("unique"), { code: "P2002" });
+        const row = { id: `e${++S.seq}`, createdAt: S.now(), ...data };
+        S.earnings.push(row); return { ...row };
+      },
+    },
+    $transaction: async (fn) => fn(db),
+  };
+  return db;
 }
 
-console.log('2) settings gate — disabled is a quiet no-op:');
+/** Step a whole business day of ticks. Returns the db. */
+async function simulateDay(db, { settings = BASE_SETTINGS, tickMs = 300_000, rng = Math.random, from, to } = {}) {
+  const dayStart = from ?? startOfBusinessDay(new Date("2026-07-22T09:00:00Z"), TZ);
+  const dayEnd = to ?? endOfBusinessDay(dayStart, TZ);
+  for (let t = dayStart.getTime(); t < dayEnd.getTime(); t += tickMs) {
+    const at = new Date(t);
+    db._s.now = () => at;                       // earnings stamp the simulated clock
+    await runUgcTick({ db, getSettings: async () => settings, now: () => at, rng, tickMs, sink: () => {} });
+  }
+  return db;
+}
+const windowOf = (createdAt, dayStart, intervalMs) => Math.floor((createdAt.getTime() - dayStart.getTime()) / intervalMs);
+
+console.log("1) full simulated day — EXACT target, individual sales, cap respected:");
 {
-  const { report, trace, recordEarning, records } = await run({ videos: [V('a')], settings: { enabled: false, earningsEngineEnabled: true } , lock: fakeLock(true) });
-  ok('lock acquired', report.lock === 'acquired');
-  ok('no submissions queried when disabled', trace.findMany.length === 0);
-  ok('no earnings recorded when disabled', recordEarning.calls.length === 0);
-  ok('no failure logged for a normal disable', report.failures === 0);
-  ok('finished event present', records.some((r) => r.event === 'finished' && r.outcome === 'disabled'));
+  const db = makeDb();
+  const dayStart = startOfBusinessDay(new Date("2026-07-22T09:00:00Z"), TZ);
+  await simulateDay(db, { from: dayStart });
+
+  ok("emitted EXACTLY the daily target (50)", db._s.earnings.length === 50);
+  ok("generatedToday == dailyTarget", db._s.targets[0].generatedToday === 50 && db._s.targets[0].dailyTarget === 50);
+  ok("target marked completed", db._s.targets[0].completed === true);
+  ok("every sale is its OWN row with generatedSales = 1", db._s.earnings.every((e) => e.generatedSales === 1));
+  ok("every sale amount = commissionPerSale (5)", db._s.earnings.every((e) => String(e.amount) === "5"));
+  ok("every sale has a unique idempotencyKey", new Set(db._s.earnings.map((e) => e.idempotencyKey)).size === 50);
+  ok("keys follow sim:<video>:<businessDate>:<seq>", db._s.earnings.every((e) => /^sim:v1:\d{4}-\d{2}-\d{2}:\d+$/.test(e.idempotencyKey)));
+
+  // STRICT per-window cap
+  const counts = {};
+  for (const e of db._s.earnings) { const w = windowOf(e.createdAt, dayStart, BASE_SETTINGS.pollIntervalMs); counts[w] = (counts[w] || 0) + 1; }
+  const maxPerWindow = Math.max(...Object.values(counts));
+  ok(`never exceeds generationSpeed per window (max seen ${maxPerWindow} ≤ 10)`, maxPerWindow <= BASE_SETTINGS.generationSpeed);
+
+  // Natural distribution: spread over many windows, not one burst, not uniform.
+  const usedWindows = Object.keys(counts).length;
+  ok(`spread across multiple windows (${usedWindows})`, usedWindows >= 5);
+  ok("not all windows identical (natural variation)", new Set(Object.values(counts)).size > 1);
+  ok("sales have distinct timestamps (individual arrivals)", new Set(db._s.earnings.map((e) => e.createdAt.getTime())).size === 50);
 }
 
-console.log('3) settings gate — invalid config is a FAILURE, generates nothing:');
+console.log("2) never exceeds the target even with many extra ticks:");
 {
-  const { report, recordEarning, records } = await run({
-    videos: [V('a')],
-    settings: { enabled: true, earningsEngineEnabled: true, minGeneratedSales: 10, maxGeneratedSales: 1 },
-    lock: fakeLock(true),
+  const db = makeDb();
+  const dayStart = startOfBusinessDay(new Date("2026-07-22T09:00:00Z"), TZ);
+  await simulateDay(db, { from: dayStart, tickMs: 60_000, rng: () => 0 }); // rng 0 = always emit when quota allows
+  ok("still exactly 50 (hard target guard)", db._s.earnings.length === 50);
+  ok("generatedToday capped at target", db._s.targets[0].generatedToday === 50);
+}
+
+console.log("3) midnight — new business day gets a NEW target, yesterday preserved:");
+{
+  const db = makeDb();
+  const d1 = startOfBusinessDay(new Date("2026-07-22T09:00:00Z"), TZ);
+  await simulateDay(db, { from: d1 });
+  const day1Count = db._s.earnings.length;
+  const d2 = endOfBusinessDay(d1, TZ);
+  await simulateDay(db, { from: d2 });
+
+  ok("two target rows (one per business day)", db._s.targets.length === 2);
+  ok("day 2 target is a separate row", db._s.targets[1].generationDate.getTime() === d2.getTime());
+  ok("day 1 earnings preserved", day1Count === 50);
+  ok("day 2 also reached its target", db._s.earnings.length === 100 && db._s.targets[1].generatedToday === 50);
+  ok("business dates differ", db._s.targets[0].businessDate !== db._s.targets[1].businessDate);
+}
+
+console.log("4) restart-safety — progress re-derived from the DB, no double-pay:");
+{
+  const db = makeDb();
+  const dayStart = startOfBusinessDay(new Date("2026-07-22T09:00:00Z"), TZ);
+  const mid = new Date(dayStart.getTime() + 12 * 3600 * 1000);
+  await simulateDay(db, { from: dayStart, to: mid });      // first "process"
+  const afterHalf = db._s.earnings.length;
+  const keysHalf = new Set(db._s.earnings.map((e) => e.idempotencyKey));
+  ok("partial progress persisted", afterHalf > 0 && afterHalf < 50);
+
+  // Simulate a PM2 restart: brand-new engine calls, zero in-memory state carried over.
+  await simulateDay(db, { from: mid, to: endOfBusinessDay(dayStart, TZ) });
+  ok("resumes and still finishes EXACTLY 50", db._s.earnings.length === 50);
+  ok("no duplicate keys across the restart", new Set(db._s.earnings.map((e) => e.idempotencyKey)).size === 50);
+  ok("earlier keys untouched (never re-paid)", [...keysHalf].every((k) => db._s.earnings.filter((e) => e.idempotencyKey === k).length === 1));
+}
+
+console.log("5) partial day (late start) — respects the cap, finishes BELOW target, no burst:");
+{
+  const db = makeDb();
+  const dayStart = startOfBusinessDay(new Date("2026-07-22T09:00:00Z"), TZ);
+  const dayEnd = endOfBusinessDay(dayStart, TZ);
+  const lateStart = new Date(dayEnd.getTime() - 2 * 3600 * 1000);   // only 2 windows left, target 50
+  await simulateDay(db, { from: lateStart, to: dayEnd });
+
+  ok("finished below target (insufficient capacity)", db._s.earnings.length < 50);
+  ok("emitted up to capacity (≤ 2 windows × 10)", db._s.earnings.length <= 20);
+  const counts = {};
+  for (const e of db._s.earnings) { const w = windowOf(e.createdAt, dayStart, BASE_SETTINGS.pollIntervalMs); counts[w] = (counts[w] || 0) + 1; }
+  ok("NO end-of-day burst — cap still respected", Math.max(...Object.values(counts)) <= BASE_SETTINGS.generationSpeed);
+  ok("target row not marked completed", db._s.targets[0].completed === false);
+}
+
+console.log("6) gates — lock, disabled, invalid settings, RUNNING-only, dry-run:");
+{
+  const at = new Date("2026-07-22T09:00:00Z");
+  const mk = () => { const db = makeDb(); db._s.now = () => at; return db; };
+
+  const dbLock = mk();
+  const rep = await runUgcTick({ db: dbLock, getSettings: async () => BASE_SETTINGS, now: () => at, rng: () => 0, sink: () => {},
+    lock: { acquire: async () => false, release: async () => {} } });
+  ok("lock held elsewhere → nothing emitted", dbLock._s.earnings.length === 0 && rep.lock === "skipped");
+
+  const dbOff = mk();
+  await runUgcTick({ db: dbOff, getSettings: async () => ({ ...BASE_SETTINGS, earningsEngineEnabled: false }), now: () => at, rng: () => 0, sink: () => {} });
+  ok("engine disabled → nothing emitted, no target created", dbOff._s.earnings.length === 0 && dbOff._s.targets.length === 0);
+
+  const dbBad = mk();
+  const badRep = await runUgcTick({ db: dbBad, getSettings: async () => ({ ...BASE_SETTINGS, maxGeneratedSales: 5, minGeneratedSales: 9 }), now: () => at, rng: () => 0, sink: () => {} });
+  ok("invalid settings → failure, nothing emitted", dbBad._s.earnings.length === 0 && badRep.failures >= 1);
+
+  const dbPaused = makeDb([{ id: "v1", affiliateId: "aff1", productId: "p1", status: "PAUSED" }]);
+  dbPaused._s.now = () => at;
+  await runUgcTick({ db: dbPaused, getSettings: async () => BASE_SETTINGS, now: () => at, rng: () => 0, sink: () => {} });
+  ok("PAUSED video → no target, no earnings (only RUNNING earns)", dbPaused._s.earnings.length === 0 && dbPaused._s.targets.length === 0);
+
+  const dbDry = mk();
+  await runUgcTick({ db: dbDry, getSettings: async () => BASE_SETTINGS, now: () => at, rng: () => 0, dryRun: true, sink: () => {} });
+  ok("dry-run → target planned but NO earnings written", dbDry._s.earnings.length === 0);
+
+  // Per-video isolation: a failing video must not stop the others.
+  const dbIso = makeDb([
+    { id: "bad", affiliateId: "aff1", productId: "p1", status: "RUNNING" },
+    { id: "good", affiliateId: "aff2", productId: "p2", status: "RUNNING" },
+  ]);
+  dbIso._s.now = () => at;
+  const isoRep = await runUgcTick({
+    db: dbIso, getSettings: async () => BASE_SETTINGS, now: () => at, rng: () => 0, sink: () => {},
+    getOrCreateDailyTarget: async ({ video, ...rest }) => {
+      if (video.id === "bad") throw new Error("boom");
+      const { getOrCreateDailyTarget } = await import("../src/lib/services/ugcDailyTargetService.js");
+      return getOrCreateDailyTarget({ video, ...rest });
+    },
   });
-  ok('at least one failure logged', report.failures >= 1);
-  ok('nothing generated on invalid settings', recordEarning.calls.length === 0);
-  ok('outcome invalid_settings', records.some((r) => r.event === 'finished' && r.outcome === 'invalid_settings'));
-}
-
-console.log('4) RUNNING submissions only:');
-{
-  const videos = [V('a', 'RUNNING'), V('b', 'PAUSED'), V('c', 'PENDING'), V('d', 'RUNNING'), V('e', 'APPROVED')];
-  const { report, trace, recordEarning } = await run({ videos, lock: fakeLock(true) });
-  ok('query filters on RUNNING', trace.findMany[0].status === 'RUNNING');
-  ok('only the 2 RUNNING videos earn', recordEarning.calls.length === 2);
-  ok('videosProcessed === 2', report.videosProcessed === 2);
-  ok('non-RUNNING ids never recorded', !recordEarning.calls.some((c) => ['b', 'c', 'e'].includes(c.ugcVideoId)));
-}
-
-console.log('5) deterministic period + commission snapshot + RNG sales:');
-{
-  const { recordEarning } = await run({ videos: [V('a')], lock: fakeLock(true), rng: () => 0 });
-  const call = recordEarning.calls[0];
-  ok('generationPeriod is the UTC day bucket', call.generationPeriod === generationPeriod(FIXED));
-  ok('generationDate is UTC midnight', call.generationDate.getTime() === generationDateOf(FIXED).getTime());
-  ok('commissionPerSale snapshot forwarded', call.commissionPerSale === 4);
-  ok('rng()=0 → min sales (5)', call.generatedSales === 5);
-
-  const r2 = await run({ videos: [V('a')], lock: fakeLock(true), settings: { ...RUNNABLE, minGeneratedSales: 1, maxGeneratedSales: 10 }, rng: () => 0.999999 });
-  ok('rng≈1 → max sales (10)', r2.recordEarning.calls[0].generatedSales === 10);
-  const r3 = await run({ videos: [V('a')], lock: fakeLock(true), settings: { ...RUNNABLE, minGeneratedSales: 1, maxGeneratedSales: 10 }, rng: () => 0 });
-  ok('rng=0 → min sales (1)', r3.recordEarning.calls[0].generatedSales === 1);
-}
-
-console.log('6) per-video failure isolation:');
-{
-  const videos = [V('a'), V('b'), V('c')];
-  const recordEarning = fakeRecord((p) => (p.ugcVideoId === 'b' ? 'throw' : UGC_EARNING_STATUS.CREATED));
-  const { report } = await run({ videos, lock: fakeLock(true), recordEarning });
-  ok('all 3 videos attempted', recordEarning.calls.length === 3);
-  ok('one failure recorded', report.failures === 1);
-  ok('the 2 good videos still processed', report.videosProcessed === 2);
-}
-
-console.log('7) dry-run writes nothing:');
-{
-  const videos = [V('a'), V('b')];
-  const { report, recordEarning, records } = await run({ videos, lock: fakeLock(true), dryRun: true });
-  ok('recordEarning NEVER called in dry-run', recordEarning.calls.length === 0);
-  ok('videos still processed (logged)', report.videosProcessed === 2);
-  ok('no earnings generated', report.earningsGenerated === 0);
-  ok('dry-run marked on video records', records.some((r) => r.event === 'video_processed' && r.dryRun === true && typeof r.wouldGenerateSales === 'number'));
-  ok('outcome dry_run', records.some((r) => r.event === 'finished' && r.outcome === 'dry_run'));
-}
-
-console.log('8) duplicate suppression is accounted (expected, not an error):');
-{
-  const videos = [V('a'), V('b')];
-  const recordEarning = fakeRecord(UGC_EARNING_STATUS.DUPLICATE);
-  const { report, records } = await run({ videos, lock: fakeLock(true), recordEarning });
-  ok('duplicatesSuppressed === 2', report.duplicatesSuppressed === 2);
-  ok('duplicates are NOT failures', report.failures === 0);
-  ok('duplicate_suppressed logged with expected:true', records.filter((r) => r.event === 'duplicate_suppressed').every((r) => r.expected === true));
-  ok('videosProcessed still 2', report.videosProcessed === 2);
-}
-
-console.log('9) lock is ALWAYS released (happy, disabled, invalid, throw):');
-{
-  const happy = fakeLock(true);       await run({ videos: [V('a')], lock: happy });
-  ok('released after happy cycle', happy.released === 1);
-  const disabled = fakeLock(true);    await run({ videos: [V('a')], settings: { enabled: false }, lock: disabled });
-  ok('released after disabled cycle', disabled.released === 1);
-  const invalid = fakeLock(true);     await run({ videos: [V('a')], settings: { enabled: true, earningsEngineEnabled: true, minGeneratedSales: 9, maxGeneratedSales: 1 }, lock: invalid });
-  ok('released after invalid cycle', invalid.released === 1);
-  const thrown = fakeLock(true);
-  await run({ videos: [V('a')], lock: thrown, recordEarning: fakeRecord('throw') });
-  ok('released even when a video throws', thrown.released === 1);
-}
-
-console.log('10) structured log integrity:');
-{
-  const { records } = await run({ videos: [V('a')], lock: fakeLock(true) });
-  ok('every record carries schemaVersion', records.length > 0 && records.every((r) => r.schemaVersion === 1));
-  ok('every record tagged component', records.every((r) => r.component === 'ugc-earnings-engine'));
-  ok('started + lock_acquired + finished all present', ['started', 'lock_acquired', 'finished'].every((e) => records.some((r) => r.event === e)));
-  ok('finished carries a durationMs', records.some((r) => r.event === 'finished' && typeof r.durationMs === 'number'));
+  ok("one video failing does not abort the batch", isoRep.failures === 1 && dbIso._s.earnings.length === 1);
 }
 
 console.log(`\nRESULT: ${pass} passed, ${fail} failed`);

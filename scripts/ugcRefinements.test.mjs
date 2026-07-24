@@ -126,7 +126,8 @@ console.log("4) structured cycle logging (refinement #3) + duration:");
   ok("finished summary carries the counts + duration",
      records.at(-1).earningsGenerated === 1 && records.at(-1).durationMs === 500);
   ok("earning amount logged as string (no lossy Number)", records.find((r) => r.event === "earning_generated").amount === "68");
-  ok("all 8 event names are defined", Object.keys(UGC_CYCLE_EVENT).length === 8);
+  // 8 original + daily_target_generated + target_completed (daily-target engine).
+  ok("all 10 event names are defined", Object.keys(UGC_CYCLE_EVENT).length === 10);
 }
 
 console.log("5) duplicate suppression is an EXPLICIT expected event (refinement #4):");

@@ -13,7 +13,11 @@
  */
 
 import { ugcService as realService } from './services/ugcService.js';
-import { getUgcStats as realGetUgcStats, getUgcStatsByVideo as realGetUgcStatsByVideo } from './services/ugcEarningsService.js';
+import {
+  getUgcStats as realGetUgcStats,
+  getUgcStatsByVideo as realGetUgcStatsByVideo,
+  getUgcLive as realGetUgcLive,
+} from './services/ugcEarningsService.js';
 import { getSettings as realGetSettings, upsertSettings as realUpsertSettings } from './services/settingsService.js';
 import {
   recordUgcSettingsChange as realRecordSettingsChange,
@@ -23,7 +27,13 @@ import { extractUploadedVideo as realExtractVideo } from './ugcUpload.js';
 import { normalizeUgcSettings, estimatePotentialEarnings, assertValidUgcSettings } from './ugcSettings.js';
 import { ugcErrorResponse } from './ugcHttp.js';
 
-const json = (data, status = 200) => Response.json(data, { status });
+const json = (data, status = 200, headers) => Response.json(data, { status, headers });
+
+// The affiliate stats reads are per-user and must always reflect the latest DB
+// state (the hourly engine writes new earnings). Mark them uncacheable so no
+// browser or CDN/Cloudflare layer can serve a stale authenticated response.
+// Scoped to the affiliate statistics endpoints only — NOT a global cache change.
+const NO_STORE = { 'Cache-Control': 'private, no-store, no-cache, must-revalidate' };
 
 // ── Affiliate ─────────────────────────────────────────────────────────────────
 export function affiliateUgcHandlers(deps = {}) {
@@ -31,19 +41,32 @@ export function affiliateUgcHandlers(deps = {}) {
     service = realService,
     getUgcStats = realGetUgcStats,
     getUgcStatsByVideo = realGetUgcStatsByVideo,
+    getUgcLive = realGetUgcLive,
     getSettings = realGetSettings,
     extractVideo = realExtractVideo,
   } = deps;
 
+  // Resolve the configured business timezone (stats + engine must agree).
+  const resolveTz = async () => normalizeUgcSettings(await getSettings('ugc')).timezone;
+
   return {
     async list(decoded) {
       try {
+        const tz = await resolveTz();
         const [submissions, stats, videoStats] = await Promise.all([
           service.listForAffiliate({ affiliateId: decoded.affiliateId }),
-          getUgcStats(decoded.affiliateId),
-          getUgcStatsByVideo(decoded.affiliateId),   // per-video, grouped by ugcVideoId
+          getUgcStats(decoded.affiliateId, undefined, tz),
+          getUgcStatsByVideo(decoded.affiliateId, undefined, tz),   // per-video, grouped by ugcVideoId
         ]);
-        return json({ submissions, stats, videoStats, hasSubmitted: submissions.length > 0 });
+        return json({ submissions, stats, videoStats, hasSubmitted: submissions.length > 0 }, 200, NO_STORE);
+      } catch (e) { return ugcErrorResponse(e); }
+    },
+
+    // Cheap live snapshot for the dashboard's short poll (last earning id + totals).
+    async live(decoded) {
+      try {
+        const tz = await resolveTz();
+        return json(await getUgcLive(decoded.affiliateId, undefined, tz), 200, NO_STORE);
       } catch (e) { return ugcErrorResponse(e); }
     },
 
@@ -102,7 +125,7 @@ export function affiliateUgcHandlers(deps = {}) {
           maxVideoSeconds: s.maxVideoSeconds,
           maxUploadBytes: s.maxUploadBytes,
           estimate: estimatePotentialEarnings(raw),
-        });
+        }, 200, NO_STORE);
       } catch (e) { return ugcErrorResponse(e); }
     },
   };

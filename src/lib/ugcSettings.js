@@ -20,11 +20,18 @@
  */
 
 import { UGC_STATUS } from './ugcStatus.js';
+import { isValidTimeZone, UGC_DEFAULT_TIMEZONE } from './ugcTime.js';
 
 // Hard server ceiling for uploads, independent of what an admin configures.
 export const UGC_MAX_UPLOAD_BYTES_CEILING = 200 * 1024 * 1024; // 200 MB
 export const UGC_MIN_POLL_INTERVAL_MS = 60_000;                 // 1 min floor
 export const UGC_APPROVED_STATUSES = [UGC_STATUS.APPROVED, UGC_STATUS.RUNNING];
+
+/** Full-day window count for a given poll interval (speed-cap windows per day). */
+export function windowsPerDay(pollIntervalMs) {
+  const ms = Math.max(UGC_MIN_POLL_INTERVAL_MS, Number(pollIntervalMs) || UGC_MIN_POLL_INTERVAL_MS);
+  return Math.floor(86_400_000 / ms);
+}
 
 // Bounds for free-text/informational settings (refinement #4).
 export const UGC_MAX_INSTRUCTION_LEN = 300;   // per instruction line
@@ -56,12 +63,13 @@ export const UGC_DEFAULT_SETTINGS = Object.freeze({
   allowEstimatedEarnings: true,
   defaultApprovedStatus:  UGC_STATUS.RUNNING,
   commissionPerSale:      4,
-  minGeneratedSales:      1,
-  maxGeneratedSales:      30,
+  minGeneratedSales:      1,             // DAILY target minimum (per RUNNING video)
+  maxGeneratedSales:      30,            // DAILY target maximum
   minDailyEstimate:       1,
   maxDailyEstimate:       30,
-  generationSpeed:        1,            // multiplier ≥ 0 (1 = one generation batch per cycle)
-  pollIntervalMs:         3_600_000,    // 1 hour
+  generationSpeed:        1,             // MAX simulated sales per pollIntervalMs window (strict cap)
+  pollIntervalMs:         3_600_000,     // speed-cap window = 1 hour (24 windows/day)
+  timezone:               UGC_DEFAULT_TIMEZONE, // business timezone for the day boundary + midnight reset
   minVideoSeconds:        5,
   maxVideoSeconds:        120,
   maxUploadBytes:         50 * 1024 * 1024, // 50 MB
@@ -108,6 +116,7 @@ export function normalizeUgcSettings(raw) {
     minVideoSeconds:        num(r.minVideoSeconds,   d.minVideoSeconds),
     maxVideoSeconds:        num(r.maxVideoSeconds,   d.maxVideoSeconds),
     maxUploadBytes:         num(r.maxUploadBytes,    d.maxUploadBytes),
+    timezone:               isValidTimeZone(r.timezone) ? r.timezone : d.timezone,
     exampleVideoUrl:        sanitizePlainText(typeof r.exampleVideoUrl === 'string' ? r.exampleVideoUrl : d.exampleVideoUrl, UGC_MAX_URL_LEN),
     instructions:           (Array.isArray(r.instructions) ? r.instructions : d.instructions)
                               .map((x) => sanitizePlainText(x, UGC_MAX_INSTRUCTION_LEN))
@@ -136,7 +145,26 @@ export function validateUgcSettings(s) {
   if (!(n.maxUploadBytes > 0)) errors.push('maxUploadBytes must be > 0');
   if (n.maxUploadBytes > UGC_MAX_UPLOAD_BYTES_CEILING) errors.push(`maxUploadBytes must be <= server ceiling (${UGC_MAX_UPLOAD_BYTES_CEILING})`);
   if (!(n.pollIntervalMs >= UGC_MIN_POLL_INTERVAL_MS)) errors.push(`pollIntervalMs must be >= ${UGC_MIN_POLL_INTERVAL_MS}`);
-  if (!(n.generationSpeed >= 0)) errors.push('generationSpeed must be >= 0');
+  if (!(n.generationSpeed >= 1)) errors.push('generationSpeed must be >= 1 (max simulated sales per interval window)');
+  if (!isValidTimeZone(n.timezone)) errors.push('timezone must be a valid IANA timezone');
+
+  // FEASIBILITY — only enforced when the earnings engine is (being) ENABLED.
+  // A full day must be able to reach the daily target WITHOUT ever exceeding
+  // generationSpeed in any window, otherwise exact completion is impossible.
+  // Disabled settings may be saved freely; enabling (or editing while enabled)
+  // an infeasible configuration fails. Values are NEVER auto-adjusted.
+  if (n.earningsEngineEnabled) {
+    const windows = windowsPerDay(n.pollIntervalMs);
+    const capacity = Math.floor(n.generationSpeed) * windows;
+    if (n.maxGeneratedSales > capacity) {
+      errors.push(
+        `Maximum daily capacity is ${capacity} sales: ` +
+        `generationSpeed ${n.generationSpeed} × ${windows} windows/day. ` +
+        `Configured maximum daily target is ${n.maxGeneratedSales}. ` +
+        `Increase generationSpeed, reduce maxGeneratedSales, or reduce the engine interval.`,
+      );
+    }
+  }
   if (!UGC_APPROVED_STATUSES.includes(n.defaultApprovedStatus)) errors.push('defaultApprovedStatus must be APPROVED or RUNNING');
 
   return errors;

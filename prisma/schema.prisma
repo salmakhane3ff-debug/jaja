@@ -1089,6 +1089,7 @@ model UgcVideoSubmission {
   product   Product           @relation(fields: [productId], references: [id], onDelete: Restrict)
   histories UgcVideoHistory[]
   earnings  UgcEarning[]
+  dailyTargets UgcDailyTarget[]
 
   @@unique([affiliateId, productId])
   @@index([affiliateId])
@@ -1147,6 +1148,34 @@ model UgcEarning {
   @@index([generationDate])
   @@index([createdAt])
   @@map("ugc_earnings")
+}
+
+/// One simulated-sales DAILY TARGET per RUNNING video per business day.
+/// The engine picks `dailyTarget` once (random in [minGeneratedSales, maxGeneratedSales])
+/// and tracks `generatedToday` as individual simulated sales are emitted (one UgcEarning
+/// each). `generationDate` is the business-day bucket (TZ-local midnight instant, same TZ
+/// as the earnings ledger). No pre-scheduled sale rows: pacing is derived from
+/// `generatedToday` + the ledger, so it is restart-safe. Additive — never touches UgcEarning.
+model UgcDailyTarget {
+  id             String   @id @default(uuid())
+  ugcVideoId     String
+  affiliateId    String
+  generationDate DateTime // business-day bucket (TZ-local midnight instant)
+  businessDate   String   // "YYYY-MM-DD" in the configured timezone (idempotency + audit)
+  timezone       String   // timezone in effect when the target was created
+  dailyTarget    Int
+  generatedToday Int      @default(0)
+  completed      Boolean  @default(false)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  submission UgcVideoSubmission @relation(fields: [ugcVideoId], references: [id], onDelete: Restrict)
+
+  @@unique([ugcVideoId, generationDate])
+  @@index([affiliateId])
+  @@index([generationDate])
+  @@index([completed])
+  @@map("ugc_daily_targets")
 }
 
 /// Append-only audit trail of UGC settings changes.

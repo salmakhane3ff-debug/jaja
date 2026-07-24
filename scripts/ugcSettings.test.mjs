@@ -55,10 +55,13 @@ console.log("4) assert + engine-runnable gate:");
 {
   ok("assert returns normalized on valid", assertValidUgcSettings(valid()).commissionPerSale === UGC_DEFAULT_SETTINGS.commissionPerSale);
   ok("assert throws coded on invalid", throws(() => assertValidUgcSettings(valid({ commissionPerSale: -5 })), "UGC_INVALID_SETTINGS"));
-  ok("engine runnable only when enabled+engine+valid",
-     isEngineRunnable(valid({ enabled: true, earningsEngineEnabled: true })) === true);
-  ok("engine NOT runnable if module disabled", isEngineRunnable(valid({ enabled: false, earningsEngineEnabled: true })) === false);
-  ok("engine NOT runnable if engine flag off", isEngineRunnable(valid({ enabled: true, earningsEngineEnabled: false })) === false);
+  // An ENABLED engine must also be feasible (speed 2 × 24 windows = 48 ≥ target 30).
+  const runnable = { enabled: true, earningsEngineEnabled: true, generationSpeed: 2 };
+  ok("engine runnable only when enabled+engine+valid", isEngineRunnable(valid(runnable)) === true);
+  ok("engine NOT runnable if module disabled", isEngineRunnable(valid({ ...runnable, enabled: false })) === false);
+  ok("engine NOT runnable if engine flag off", isEngineRunnable(valid({ ...runnable, earningsEngineEnabled: false })) === false);
+  ok("engine NOT runnable if enabled config is infeasible (speed 1 × 24 < 30)",
+     isEngineRunnable(valid({ enabled: true, earningsEngineEnabled: true, generationSpeed: 1 })) === false);
   ok("engine NOT runnable on invalid settings (safety)",
      isEngineRunnable(valid({ enabled: true, earningsEngineEnabled: true, maxGeneratedSales: -1 })) === false);
 }
@@ -103,6 +106,41 @@ console.log("7) poll-interval resolution (CLI --interval + per-cycle, final chec
   ok("null → invalid, default fallback", resolvePollIntervalMs(null).invalid === true);
   ok("negative is clamped, not accepted", resolvePollIntervalMs(-5).ms === UGC_MIN_POLL_INTERVAL_MS);
   ok("custom fallback honored + still floored", resolvePollIntervalMs("nope", 10).ms === UGC_MIN_POLL_INTERVAL_MS);
+}
+
+console.log("8) feasibility is enforced ONLY when the earnings engine is enabled:");
+{
+  // Defaults: speed 1 × 24 windows = 24 capacity, max target 30 → infeasible, but engine OFF.
+  ok("default generationSpeed is 1 (unchanged)", UGC_DEFAULT_SETTINGS.generationSpeed === 1);
+  ok("defaults still validate clean (engine disabled)", validateUgcSettings(UGC_DEFAULT_SETTINGS).length === 0);
+
+  const infeasibleOff = valid({ earningsEngineEnabled: false, generationSpeed: 1, maxGeneratedSales: 30, pollIntervalMs: 3_600_000 });
+  ok("DISABLED + infeasible → saving allowed", validateUgcSettings(infeasibleOff).length === 0);
+
+  const infeasibleOn = valid({ enabled: true, earningsEngineEnabled: true, generationSpeed: 1, maxGeneratedSales: 30, pollIntervalMs: 3_600_000 });
+  const errs = validateUgcSettings(infeasibleOn);
+  ok("ENABLING an infeasible config → fails", errs.length === 1);
+  ok("message states the capacity (24)", /Maximum daily capacity is 24 sales/.test(errs[0]));
+  ok("message shows the calculation (1 × 24 windows/day)", /generationSpeed 1 × 24 windows\/day/.test(errs[0]));
+  ok("message states the configured target (30)", /Configured maximum daily target is 30/.test(errs[0]));
+  ok("message suggests the three remedies", /Increase generationSpeed, reduce maxGeneratedSales, or reduce the engine interval/.test(errs[0]));
+  ok("assert throws when enabling an infeasible config", throws(() => assertValidUgcSettings(infeasibleOn), "UGC_INVALID_SETTINGS"));
+
+  // Editing while ALREADY enabled must also fail.
+  const editWhileOn = valid({ enabled: true, earningsEngineEnabled: true, generationSpeed: 2, maxGeneratedSales: 100, pollIntervalMs: 3_600_000 });
+  ok("editing while enabled → infeasible also fails (2×24=48 < 100)", validateUgcSettings(editWhileOn).some((e) => /Maximum daily capacity is 48 sales/.test(e)));
+
+  // Feasible enabled configs pass; nothing is silently adjusted.
+  const feasibleOn = valid({ enabled: true, earningsEngineEnabled: true, generationSpeed: 2, maxGeneratedSales: 30, pollIntervalMs: 3_600_000 });
+  ok("enabled + feasible (2×24=48 ≥ 30) → valid", validateUgcSettings(feasibleOn).length === 0);
+  const normalized = assertValidUgcSettings(feasibleOn);
+  ok("values are NEVER auto-adjusted to pass",
+     normalized.generationSpeed === 2 && normalized.maxGeneratedSales === 30
+     && normalized.minGeneratedSales === feasibleOn.minGeneratedSales && normalized.pollIntervalMs === 3_600_000);
+
+  // A shorter interval raises capacity (more windows/day).
+  ok("shorter interval raises capacity (5min → 288 windows)",
+     validateUgcSettings(valid({ enabled: true, earningsEngineEnabled: true, generationSpeed: 1, maxGeneratedSales: 200, pollIntervalMs: 300_000 })).length === 0);
 }
 
 console.log(`\nRESULT: ${pass} passed, ${fail} failed`);

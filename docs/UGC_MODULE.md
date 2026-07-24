@@ -6,8 +6,9 @@
 |---|---|
 | **Feature Complete** | ✅ yes |
 | **Code Complete** | ✅ yes — code review concluded and approved |
+| **UI Redesigned** | ✅ yes — affiliate UGC tab, presentation-only (§14) |
 | **Staging** | ⏳ **PENDING** — not executed |
-| **Production** | ⛔ **NOT YET VALIDATED** |
+| **Production** | ⏳ **VALIDATION PENDING** |
 
 522 test assertions green; `npx next build` clean. All tests run against in-memory fakes —
 **nothing has ever run against PostgreSQL.** Nothing committed or pushed; neither migration
@@ -382,6 +383,16 @@ writes fail silently by design — but the first migration is required for the m
    a schema addition.
 5. **Admin notifications are UGC-scoped** in the UI (a badge on the review queue). The table is
    generic if a global admin bell is wanted later.
+6. **Three UI slots are laid out but have no data source** (see §14). The affiliate tab reserves
+   space for 7-day earnings, per-video statistics and a performance trend; all three render neutral
+   placeholders because the API cannot supply them. Filling them requires backend work that is
+   **explicitly out of scope for now**:
+   - *7-day earnings* — `getUgcStats` aggregates only "today" and "all time"; a third windowed
+     aggregate would be needed.
+   - *Per-video statistics* — `ugc_earnings` rows already carry `ugcVideoId`, so a
+     `groupBy(ugcVideoId)` aggregate could supply per-video orders/earnings without a schema change.
+   - *Performance trend* — needs the current window compared against the preceding one; only then
+     can a real arrow replace "pas encore assez de données".
 
 ---
 
@@ -439,3 +450,36 @@ PostgreSQL database by someone with staging access.
 
 Set `earningsEngineEnabled = false` (stops generation) or `enabled = false` (hides the module).
 Both take effect on the next cycle with no deploy. The tables are inert when the module is off.
+
+---
+
+## 14. Affiliate UI redesign (presentation-only)
+
+The affiliate UGC tab (`src/app/affiliate/dashboard/UgcTab.jsx`) was redesigned mobile-first to a
+premium card layout. **One file changed.** No database, Prisma, API, service, route, permission,
+affiliate-calculation or earnings-engine change; the six `fetch` calls are byte-identical to before.
+
+**Delivered:** 2×2 rounded stat cards with tinted icon tiles; vertical 9:16 video cards with a
+centred play button, real duration (read from the file's own metadata), status pill, product row
+with an external link to `/products/{id}`; an HTML5 `<video>` **modal** player with
+`controlsList="nodownload"` replacing the previous anchor that navigated to the raw file; a
+full-width premium upload CTA opening the **existing** wizard in a sheet; violet/emerald/orange/rose
+palette, soft shadows, generous spacing.
+
+**Preserved unchanged:** upload wizard (steps, validation, endpoint), pause, resume, replace,
+replace confirmation, optimistic updates + background refresh, estimate disclaimer, instructions,
+example video, status timeline.
+
+**Deliberately not added** (would have been new functionality, not restyling): bottom navigation
+bar, header notification bell, extra statistics, new pages/tabs/buttons/workflows.
+
+**Honest placeholders** — never fabricated, never computed client-side (see §12.6):
+
+| Reference field | API reality | Rendered as |
+|---|---|---|
+| 7-day earnings | not exposed | "Données bientôt disponibles" |
+| Per-video today / 7d / all-time | submissions carry no earnings data | 3-column layout, values `—` |
+| Trend % vs previous period | no comparison data | "pas encore assez de données", no arrow |
+
+This redesign does **not** affect the staging/production status: it is UI only and still requires
+the §13 validation before production.

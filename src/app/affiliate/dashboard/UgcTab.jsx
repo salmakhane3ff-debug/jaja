@@ -28,6 +28,8 @@ import {
   Video, Upload, Loader2, CheckCircle, AlertCircle, Play, Pause,
   DollarSign, TrendingUp, Info, Film, Wallet, Sparkles,
   AlertTriangle, ChevronLeft, ChevronRight, X, ExternalLink, ShoppingBag, Plus,
+  ArrowUpRight, ArrowDownRight, ArrowRight, Flame, TrendingDown, Minus,
+  Volume2, VolumeX,
 } from "lucide-react";
 
 // ── Helpers (unchanged) ────────────────────────────────────────────────────────
@@ -94,6 +96,95 @@ function StatusBadge({ status }) {
       {cfg.label}
     </span>
   );
+}
+
+// ── Day-over-day earnings trend (stock/forex style: ↗ green / ↘ red / → gray) ──
+// Reads ONLY backend-computed fields — never recalculates on the frontend.
+function TrendPill({ vs }) {
+  const pct = vs?.earningsTrendPercent;
+  let Icon, cls, label;
+  if (pct === null) {                     // yesterday 0 & today > 0 → brand-new earner
+    Icon = ArrowUpRight; cls = "bg-emerald-50 text-emerald-700"; label = "Nouveau";
+  } else {
+    const p = Number.isFinite(pct) ? pct : 0;
+    if (p > 0)      { Icon = ArrowUpRight;   cls = "bg-emerald-50 text-emerald-700"; label = `+${p}%`; }
+    else if (p < 0) { Icon = ArrowDownRight; cls = "bg-rose-50 text-rose-700";       label = `${p}%`; }
+    else            { Icon = ArrowRight;     cls = "bg-gray-100 text-gray-500";       label = "0%"; }
+  }
+  return (
+    <span title="vs hier" className={`inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full text-[11px] font-bold ${cls}`}>
+      <Icon className="w-3 h-3" /> {label}
+    </span>
+  );
+}
+
+// ── 7-day earnings sparkline — pure SVG, no chart library ──────────────────────
+function Sparkline({ data }) {
+  const vals = (Array.isArray(data) ? data : []).map((n) => (Number.isFinite(Number(n)) ? Number(n) : 0));
+  if (vals.length < 2) return null;
+  const w = 84, h = 20, pad = 2;
+  const max = Math.max(...vals), min = Math.min(...vals);
+  const range = max - min || 1;
+  const pts = vals.map((v, i) => [
+    pad + (i / (vals.length - 1)) * (w - 2 * pad),
+    h - pad - ((v - min) / range) * (h - 2 * pad),
+  ]);
+  const first = vals[0], last = vals[vals.length - 1];
+  const rel = first !== 0 ? (last - first) / Math.abs(first) : (last !== 0 ? 1 : 0);
+  const color = Math.abs(rel) < 0.02 ? "#9ca3af" : rel > 0 ? "#10b981" : "#ef4444"; // gray / green / red
+  const d = pts.map((p, i) => `${i === 0 ? "M" : "L"}${p[0].toFixed(1)} ${p[1].toFixed(1)}`).join(" ");
+  const [lx, ly] = pts[pts.length - 1];
+  return (
+    <svg width={w} height={h} viewBox={`0 0 ${w} ${h}`} role="img" aria-label="7 derniers jours" className="shrink-0">
+      <title>7 derniers jours</title>
+      <path d={d} fill="none" stroke={color} strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+      <circle cx={lx} cy={ly} r="1.8" fill={color} />
+    </svg>
+  );
+}
+
+// ── Performance badge (HOT / Stable / Cooling) — backend-computed status ───────
+const PERF = {
+  HOT:     { label: "HOT",     cls: "bg-emerald-100 text-emerald-700", Icon: Flame },
+  Stable:  { label: "Stable",  cls: "bg-slate-100 text-slate-600",     Icon: Minus },
+  Cooling: { label: "Cooling", cls: "bg-orange-100 text-orange-700",   Icon: TrendingDown },
+};
+function PerfBadge({ status }) {
+  const cfg = PERF[status] || PERF.Stable;
+  const { Icon } = cfg;
+  return (
+    <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wide ${cfg.cls}`}>
+      <Icon className="w-3 h-3" /> {cfg.label}
+    </span>
+  );
+}
+
+// Rank medal / number (from backend `rank`).
+function rankLabel(rank) {
+  if (rank === 1) return "🥇";
+  if (rank === 2) return "🥈";
+  if (rank === 3) return "🥉";
+  return rank > 0 ? `#${rank}` : "";
+}
+
+// ── One-sentence automatic insight for the best performer (pure) ───────────────
+function isConsistentlyGrowing(arr) {
+  if (!Array.isArray(arr) || arr.length < 3) return false;
+  let ups = 0, downs = 0;
+  for (let i = 1; i < arr.length; i++) {
+    const d = Number(arr[i]) - Number(arr[i - 1]);
+    if (d > 0) ups++; else if (d < 0) downs++;
+  }
+  return ups > downs && Number(arr[arr.length - 1]) > Number(arr[0]);
+}
+function buildInsight(vs, shareOfToday) {
+  if (!vs) return null;
+  if (shareOfToday >= 0.5) return `🔥 Cette vidéo génère ${Math.round(shareOfToday * 100)}% des gains d'aujourd'hui.`;
+  if (vs.performanceStatus === "Cooling") return "⚠️ Cette vidéo est en perte de vitesse.";
+  if (vs.earningsTrendPercent === null) return "📈 Nouvelle vidéo qui commence à générer des gains.";
+  if (Number(vs.earningsTrendPercent) > 0) return `📈 Gains en hausse de ${vs.earningsTrendPercent}% vs hier.`;
+  if (isConsistentlyGrowing(vs.last7DaysEarnings)) return "🎯 Cette vidéo est en croissance constante.";
+  return "🎯 Performance stable aujourd'hui.";
 }
 
 // ── Vertical video preview — playable, never downloadable ──────────────────────
@@ -205,6 +296,55 @@ export default function UgcTab() {
   const [wizardOpen, setWizardOpen] = useState(false);
   const [helpOpen, setHelpOpen]     = useState(false);
 
+  // ── Live / money-sound state ────────────────────────────────────────────────
+  const [muted, setMuted] = useState(true);            // resolved from localStorage on mount
+  const lastEarningIdRef  = useRef(null);              // never replay a seen earning
+  const lastTodaySalesRef = useRef(null);
+  const liveSeededRef     = useRef(false);             // first poll seeds, never plays
+  const audioCtxRef       = useRef(null);
+  const mutedRef          = useRef(true);
+
+  useEffect(() => {
+    try { setMuted(localStorage.getItem("ugcMuted") !== "false"); } catch { /* default muted */ }
+  }, []);
+  useEffect(() => { mutedRef.current = muted; }, [muted]);
+  const toggleMute = () => {
+    setMuted((m) => {
+      const next = !m;
+      try { localStorage.setItem("ugcMuted", String(next)); } catch { /* ignore */ }
+      // Unmuting is a user gesture — a good moment to unlock the audio context.
+      if (!next) { try { audioCtxRef.current?.resume?.(); } catch { /* ignore */ } }
+      return next;
+    });
+  };
+
+  /** Short synthesized coin chime (no asset, no library). Capped queue. */
+  const playCoins = useCallback((count = 1) => {
+    if (mutedRef.current) return;
+    const n = Math.min(3, Math.max(1, count));         // capped queue — never a burst
+    try {
+      const Ctx = window.AudioContext || window.webkitAudioContext;
+      if (!Ctx) return;
+      audioCtxRef.current = audioCtxRef.current || new Ctx();
+      const ctx = audioCtxRef.current;
+      if (ctx.state === "suspended") ctx.resume();
+      for (let i = 0; i < n; i++) {
+        const base = ctx.currentTime + i * 0.16;
+        for (const [freq, at] of [[988, 0], [1319, 0.07]]) {
+          const osc = ctx.createOscillator();
+          const gain = ctx.createGain();
+          osc.type = "triangle";
+          osc.frequency.value = freq;
+          gain.gain.setValueAtTime(0.0001, base + at);
+          gain.gain.exponentialRampToValueAtTime(0.18, base + at + 0.02);
+          gain.gain.exponentialRampToValueAtTime(0.0001, base + at + 0.16);
+          osc.connect(gain); gain.connect(ctx.destination);
+          osc.start(base + at); osc.stop(base + at + 0.18);
+        }
+      }
+    } catch { /* audio is best-effort — never break the dashboard */ }
+  }, []);
+
   const urlRef = useRef(null);
   useEffect(() => { urlRef.current = videoMeta?.url || null; }, [videoMeta]);
   useEffect(() => () => { if (urlRef.current) URL.revokeObjectURL(urlRef.current); }, []);
@@ -214,9 +354,10 @@ export default function UgcTab() {
     setError(null);
     try {
       const [sRes, listRes, prodRes] = await Promise.all([
-        fetch("/api/affiliate/ugc/settings", { headers: authHeaders() }),
-        fetch("/api/affiliate/ugc",          { headers: authHeaders() }),
-        fetch("/api/products?status=Active"),
+        fetch("/api/affiliate/ugc/settings", { headers: authHeaders(), cache: "no-store" }),
+        // Stats must always reflect the latest DB state (hourly engine writes).
+        fetch("/api/affiliate/ugc",          { headers: authHeaders(), cache: "no-store" }),
+        fetch("/api/products?status=Active"),   // catalogue — keep its cacheable response
       ]);
       const sData    = sRes.ok ? await sRes.json() : null;
       const listData = listRes.ok ? await listRes.json() : { submissions: [], stats: null };
@@ -236,7 +377,7 @@ export default function UgcTab() {
 
   const refreshList = useCallback(async () => {
     try {
-      const res = await fetch("/api/affiliate/ugc", { headers: authHeaders() });
+      const res = await fetch("/api/affiliate/ugc", { headers: authHeaders(), cache: "no-store" });
       if (res.ok) {
         const d = await res.json();
         setSubmissions(Array.isArray(d.submissions) ? d.submissions : []);
@@ -245,6 +386,56 @@ export default function UgcTab() {
       }
     } catch { /* keep optimistic state */ }
   }, []);
+
+  /**
+   * LIVE: poll the cheap /live endpoint (~4s) ONLY while the tab is visible.
+   * A change in `lastEarningId` means the engine emitted new simulated sale(s) →
+   * play the money sound once per new earning (capped queue) and pull the full
+   * stats. The very first poll only SEEDS the ids (never plays on initial load),
+   * and an already-seen id is never replayed.
+   */
+  useEffect(() => {
+    let stopped = false;
+
+    const pollLive = async () => {
+      if (document.visibilityState !== "visible") return;
+      try {
+        const res = await fetch("/api/affiliate/ugc/live", { headers: authHeaders(), cache: "no-store" });
+        if (!res.ok || stopped) return;
+        const d = await res.json();
+        const seenId = lastEarningIdRef.current;
+        const newCount = Number(d.todaySales) || 0;
+
+        if (!liveSeededRef.current) {                 // first poll → seed only
+          liveSeededRef.current = true;
+          lastEarningIdRef.current = d.lastEarningId ?? null;
+          lastTodaySalesRef.current = newCount;
+          return;
+        }
+        if (d.lastEarningId && d.lastEarningId !== seenId) {
+          const delta = Math.max(1, newCount - (lastTodaySalesRef.current ?? newCount));
+          lastEarningIdRef.current = d.lastEarningId;  // never replay this earning
+          lastTodaySalesRef.current = newCount;
+          playCoins(delta);                            // capped inside
+          refreshList();                               // full stats/trends/rank/sparkline
+        }
+      } catch { /* transient — next poll retries */ }
+    };
+
+    const onVisible = () => { if (document.visibilityState === "visible") { refreshList(); pollLive(); } };
+    const onFocus = () => { refreshList(); pollLive(); };
+    window.addEventListener("focus", onFocus);
+    document.addEventListener("visibilitychange", onVisible);
+    pollLive();
+    const id = setInterval(pollLive, 4000);
+    return () => {
+      stopped = true;
+      window.removeEventListener("focus", onFocus);
+      document.removeEventListener("visibilitychange", onVisible);
+      clearInterval(id);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [refreshList, muted]);
 
   const patchLocal = (id, patch) => setSubmissions((prev) => prev.map((s) => (s.id === id ? { ...s, ...patch } : s)));
 
@@ -382,15 +573,42 @@ export default function UgcTab() {
   const activeNode = submitting ? 4 : step;
   const hasVideos = submissions.length > 0;
 
+  // Best Performer Today = the submission ranked #1 by the API, shown only when it
+  // actually earned today. Its insight uses the video's share of today's earnings.
+  const totalTodayAll = Object.values(videoStats).reduce((sum, v) => sum + (Number(v.todayEarnings) || 0), 0);
+  const bestSub = submissions.find((s) => videoStats[s.id]?.rank === 1);
+  const bestVs = bestSub ? videoStats[bestSub.id] : null;
+  const showBest = bestVs && Number(bestVs.todayEarnings) > 0;
+  const bestProd = bestSub ? productMap[bestSub.productId] : null;
+  const bestTitle = bestSub ? (bestSub.description?.trim() || bestProd?.title || "Ma vidéo") : "";
+  const bestInsight = showBest ? buildInsight(bestVs, totalTodayAll > 0 ? Number(bestVs.todayEarnings) / totalTodayAll : 0) : null;
+
   return (
     <div className={`space-y-5 ${hasVideos ? "pb-24" : "pb-4"}`}>
       <input ref={replaceInputRef} type="file" accept="video/*" className="hidden" onChange={handleReplaceFile} />
       <VideoModal url={playingUrl} onClose={() => setPlayingUrl(null)} />
 
-      {/* ── 1. Header ── */}
-      <div className="px-0.5">
-        <h1 className="text-[27px] font-extrabold text-gray-900 tracking-tight leading-tight">Mes vidéos</h1>
-        <p className="text-[13.5px] text-gray-500 mt-1">Suivez la performance de vos vidéos</p>
+      {/* ── 1. Header + LIVE indicator ── */}
+      <div className="px-0.5 flex items-start justify-between gap-3">
+        <div>
+          <h1 className="text-[27px] font-extrabold text-gray-900 tracking-tight leading-tight">Mes vidéos</h1>
+          <p className="text-[13.5px] text-gray-500 mt-1">Suivez la performance de vos vidéos</p>
+        </div>
+        <div className="flex items-center gap-1.5 shrink-0 pt-1">
+          <span title="Mise à jour en direct"
+            className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-700 text-[11px] font-bold ring-1 ring-emerald-100">
+            <span className="relative flex w-2 h-2">
+              <span className="absolute inline-flex w-full h-full rounded-full bg-emerald-400 opacity-75 animate-ping" />
+              <span className="relative inline-flex w-2 h-2 rounded-full bg-emerald-500" />
+            </span>
+            Live
+          </span>
+          <button onClick={toggleMute} title={muted ? "Activer le son" : "Couper le son"}
+            aria-label={muted ? "Activer le son" : "Couper le son"}
+            className="w-8 h-8 rounded-full bg-white ring-1 ring-gray-200 flex items-center justify-center text-gray-500 hover:text-gray-800 hover:bg-gray-50 transition">
+            {muted ? <VolumeX className="w-4 h-4" /> : <Volume2 className="w-4 h-4" />}
+          </button>
+        </div>
       </div>
 
       {/* ── 2. Global statistics — every value is real API data ── */}
@@ -409,6 +627,46 @@ export default function UgcTab() {
           {submitMsg.type === "success" ? <CheckCircle className="w-4 h-4 shrink-0 mt-0.5" /> : <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />}
           <span className="flex-1">{submitMsg.text}</span>
           <button onClick={() => setSubmitMsg(null)}><X className="w-4 h-4 opacity-60" /></button>
+        </div>
+      )}
+
+      {/* ── Best Performer Today (below summary cards, above the list) ── */}
+      {showBest && (
+        <div className="rounded-[28px] p-4 text-white shadow-lg shadow-violet-200/40"
+          style={{ background: "linear-gradient(135deg,#7c3aed 0%,#5b21b6 55%,#4c1d95 100%)" }}>
+          <p className="text-[13px] font-extrabold flex items-center gap-1.5">
+            <Flame className="w-4 h-4" /> Best Performer Today
+          </p>
+          <div className="mt-3 flex gap-3">
+            <button
+              onClick={() => bestSub.videoUrl && setPlayingUrl(bestSub.videoUrl)}
+              className="relative w-14 aspect-[9/16] rounded-2xl overflow-hidden bg-black/30 shrink-0 focus:outline-none focus:ring-2 focus:ring-white/60"
+              aria-label="Lire la vidéo">
+              {bestSub.videoUrl
+                ? <video src={bestSub.videoUrl} preload="metadata" muted playsInline tabIndex={-1} className="absolute inset-0 w-full h-full object-cover pointer-events-none" />
+                : <span className="absolute inset-0 flex items-center justify-center"><Film className="w-5 h-5 text-white/60" /></span>}
+              <span className="absolute inset-0 flex items-center justify-center">
+                <span className="w-8 h-8 rounded-full bg-black/40 flex items-center justify-center ring-1 ring-white/25"><Play className="w-3.5 h-3.5 text-white fill-white translate-x-[1px]" /></span>
+              </span>
+            </button>
+
+            <div className="min-w-0 flex-1">
+              <p className="text-[14px] font-bold truncate">{bestTitle}</p>
+              <p className="mt-0.5 text-[22px] font-extrabold leading-none tabular-nums">
+                {fmtMAD(bestVs.todayEarnings)} <span className="text-[12px] font-bold opacity-70">MAD</span>
+              </p>
+              <p className="text-[12px] opacity-80 mt-0.5">{bestVs.todaySales} ventes aujourd'hui</p>
+              <div className="mt-2 flex items-center gap-2">
+                <TrendPill vs={bestVs} />
+                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-white/15 text-[11px] font-bold">
+                  {rankLabel(bestVs.rank)} #{bestVs.rank}
+                </span>
+              </div>
+            </div>
+          </div>
+          {bestInsight && (
+            <p className="mt-3 text-[12.5px] bg-white/15 rounded-2xl px-3.5 py-2.5 leading-relaxed">{bestInsight}</p>
+          )}
         </div>
       )}
 
@@ -440,17 +698,32 @@ export default function UgcTab() {
             const canReplace = s.status === "REJECTED" || s.status === "PENDING";
             const title = s.description?.trim() || prod?.title || "Ma vidéo";
             // Per-video stats come from the API (grouped by ugcVideoId). A video
-            // with no earnings has no map entry → real zero, not a fabricated value.
-            const vs = videoStats[s.id] || { todayEarnings: "0", totalEarnings: "0", todaySales: 0, totalSales: 0 };
+            // with no earnings has no map entry → real zeros, not fabricated values.
+            const vs = videoStats[s.id] || {
+              todayEarnings: 0, todaySales: 0, yesterdayEarnings: 0, yesterdaySales: 0,
+              totalEarnings: 0, totalSales: 0, earningsTrendPercent: 0, salesDifference: 0,
+              last7DaysEarnings: [0, 0, 0, 0, 0, 0, 0], rank: 0, performanceStatus: "Stable",
+            };
+            const salesDiff = vs.salesDifference || 0;
+            const hasStats = !!videoStats[s.id];                          // video has earned at least once
+            const spark = Array.isArray(vs.last7DaysEarnings) ? vs.last7DaysEarnings : [];
+            const hasSpark = hasStats && spark.some((v) => Number(v) > 0);
+            const medal = hasStats ? rankLabel(vs.rank) : "";
             return (
               <div key={s.id} className="bg-white rounded-[28px] ring-1 ring-gray-100 shadow-[0_2px_16px_rgba(16,24,40,0.05)] p-4">
                 <div className="flex gap-4">
                   <VideoThumb videoUrl={s.videoUrl} onPlay={() => s.videoUrl && setPlayingUrl(s.videoUrl)} />
 
                   <div className="min-w-0 flex-1 flex flex-col">
-                    <h3 className="text-[16px] font-bold text-gray-900 leading-snug line-clamp-2">{title}</h3>
+                    <h3 className="text-[16px] font-bold text-gray-900 leading-snug line-clamp-2">
+                      {medal && <span className="mr-1">{medal}</span>}{title}
+                    </h3>
 
-                    <div className="mt-2"><StatusBadge status={s.status} /></div>
+                    {/* Status + performance badge (badge sits above the trend below) */}
+                    <div className="mt-2 flex items-center gap-2 flex-wrap">
+                      <StatusBadge status={s.status} />
+                      {hasStats && <PerfBadge status={vs.performanceStatus} />}
+                    </div>
 
                     {/* Product */}
                     <a href={`/products/${s.productId}`} target="_blank" rel="noopener noreferrer"
@@ -466,9 +739,19 @@ export default function UgcTab() {
 
                 {/* Per-video stats (grouped by ugcVideoId, from the API) */}
                 <div className="mt-3 rounded-2xl bg-gray-50 ring-1 ring-gray-100 divide-y divide-gray-100">
-                  <div className="flex items-center justify-between px-3.5 py-2.5">
-                    <span className="text-[11px] font-semibold text-gray-400 uppercase tracking-wide">Aujourd'hui</span>
-                    <span className="text-[13px] font-bold text-gray-900 tabular-nums">
+                  {hasSpark && (
+                    <div className="flex items-center justify-between gap-2 px-3.5 py-2">
+                      <span className="text-[10px] font-semibold text-gray-400 uppercase tracking-wide">7 derniers jours</span>
+                      <Sparkline data={spark} />
+                    </div>
+                  )}
+                  <div className="flex items-center justify-between gap-2 px-3.5 py-2.5">
+                    <span className="flex items-center gap-1.5 shrink-0">
+                      <span className="text-[11px] font-semibold text-gray-400 uppercase tracking-wide">Aujourd'hui</span>
+                      {/* Trend: today vs hier — arrow direction driven by earnings */}
+                      <TrendPill vs={vs} />
+                    </span>
+                    <span className="text-[13px] font-bold text-gray-900 tabular-nums text-right">
                       {fmtMAD(vs.todayEarnings)} <span className="text-[11px] text-gray-400">MAD</span>
                       <span className="text-gray-300 font-normal"> · </span>
                       <span className="text-gray-500 font-semibold">{vs.todaySales}</span> <span className="text-[11px] text-gray-400 font-medium">ventes</span>
@@ -482,6 +765,13 @@ export default function UgcTab() {
                       <span className="text-gray-500 font-semibold">{vs.totalSales}</span> <span className="text-[11px] text-gray-400 font-medium">ventes</span>
                     </span>
                   </div>
+                  {salesDiff !== 0 && (
+                    <div className="px-3.5 py-1.5">
+                      <span className={`text-[11px] font-semibold ${salesDiff > 0 ? "text-emerald-600" : "text-rose-600"}`}>
+                        {salesDiff > 0 ? `+${salesDiff}` : salesDiff} ventes vs hier
+                      </span>
+                    </div>
+                  )}
                 </div>
 
                 {/* Rejection feedback — the only way a creator knows what to fix */}

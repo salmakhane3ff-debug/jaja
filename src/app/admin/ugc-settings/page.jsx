@@ -113,7 +113,18 @@ export default function AdminUgcSettingsPage() {
     if (!(uploadMb > 0)) e.push("La taille maximale doit être > 0.");
     if (uploadMb > CEILING_MB) e.push(`La taille maximale ne peut pas dépasser ${CEILING_MB} Mo.`);
     if (pollMin < MIN_POLL_MINUTES) e.push(`L'intervalle doit être ≥ ${MIN_POLL_MINUTES} minute.`);
-    if (!(Number(s.generationSpeed) >= 0)) e.push("La vitesse de génération doit être ≥ 0.");
+    if (!(Number(s.generationSpeed) >= 1)) e.push("La vitesse de génération doit être ≥ 1 (max par fenêtre).");
+    if (!s.timezone) e.push("Le fuseau horaire est obligatoire.");
+    // Feasibility — enforced ONLY when the earnings engine is enabled (mirrors the server).
+    if (s.earningsEngineEnabled) {
+      const windows = Math.floor(1440 / Math.max(MIN_POLL_MINUTES, pollMin));
+      const capacity = Math.floor(Number(s.generationSpeed) || 0) * windows;
+      if (Number(s.maxGeneratedSales) > capacity) {
+        e.push(`Capacité quotidienne maximale : ${capacity} ventes (vitesse ${s.generationSpeed} × ${windows} fenêtres/jour). `
+             + `Cible quotidienne maximale configurée : ${s.maxGeneratedSales}. `
+             + `Augmentez la vitesse, réduisez la cible maximale, ou réduisez l'intervalle du moteur.`);
+      }
+    }
     return e;
   })();
 
@@ -223,8 +234,12 @@ export default function AdminUgcSettingsPage() {
         </Field>
 
         <div className="grid grid-cols-2 gap-4">
-          <Field label="Ventes générées — min"><input type="number" min="0" value={s.minGeneratedSales ?? ""} onChange={num("minGeneratedSales")} className={numInput} /></Field>
-          <Field label="Ventes générées — max"><input type="number" min="0" value={s.maxGeneratedSales ?? ""} onChange={num("maxGeneratedSales")} className={numInput} /></Field>
+          <Field label="Cible quotidienne — min" hint="Ventes simulées par vidéo et par jour.">
+            <input type="number" min="0" value={s.minGeneratedSales ?? ""} onChange={num("minGeneratedSales")} className={numInput} />
+          </Field>
+          <Field label="Cible quotidienne — max" hint="Doit tenir dans vitesse × fenêtres/jour.">
+            <input type="number" min="0" value={s.maxGeneratedSales ?? ""} onChange={num("maxGeneratedSales")} className={numInput} />
+          </Field>
         </div>
 
         <div className="grid grid-cols-2 gap-4">
@@ -233,12 +248,27 @@ export default function AdminUgcSettingsPage() {
         </div>
 
         <div className="grid grid-cols-2 gap-4">
-          <Field label="Vitesse de génération" hint="Multiplicateur ≥ 0 (1 = un lot par cycle).">
-            <input type="number" min="0" step="0.1" value={s.generationSpeed ?? ""} onChange={num("generationSpeed")} className={numInput} />
+          <Field label="Vitesse de génération" hint="Maximum STRICT de ventes simulées par fenêtre.">
+            <input type="number" min="1" step="1" value={s.generationSpeed ?? ""} onChange={num("generationSpeed")} className={numInput} />
           </Field>
-          <Field label="Intervalle du moteur (minutes)" hint={`Minimum ${MIN_POLL_MINUTES} minute.`}>
+          <Field label="Fenêtre du moteur (minutes)" hint={`Fenêtre de la vitesse ci-contre. Minimum ${MIN_POLL_MINUTES} minute.`}>
             <input type="number" min={MIN_POLL_MINUTES} value={pollMin} onChange={(e) => setPollMin(Number(e.target.value))} className={numInput} />
           </Field>
+        </div>
+
+        <Field label="Fuseau horaire (jour métier)"
+          hint="Utilisé pour la cible quotidienne, la remise à zéro à minuit et les statistiques aujourd'hui/hier.">
+          <input type="text" dir="ltr" value={s.timezone || ""} onChange={(e) => set("timezone", e.target.value)}
+            placeholder="Africa/Casablanca" className={numInput} />
+        </Field>
+
+        <div className="flex items-start gap-2 bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-xs text-slate-600">
+          <Info className="w-4 h-4 shrink-0 mt-0.5" />
+          <span>
+            Capacité quotidienne = vitesse × fenêtres/jour ={" "}
+            <strong>{Math.max(1, Number(s.generationSpeed) || 0) * Math.floor(1440 / Math.max(MIN_POLL_MINUTES, pollMin))}</strong>{" "}
+            ventes. La cible maximale doit rester en dessous.
+          </span>
         </div>
       </Card>
 

@@ -20,14 +20,16 @@
 export const UGC_LOG_SCHEMA_VERSION = 1;
 
 export const UGC_CYCLE_EVENT = Object.freeze({
-  STARTED:              'started',
-  LOCK_ACQUIRED:        'lock_acquired',
-  LOCK_SKIPPED:         'lock_skipped',
-  VIDEO_PROCESSED:      'video_processed',
-  EARNING_GENERATED:    'earning_generated',
-  DUPLICATE_SUPPRESSED: 'duplicate_suppressed',
-  FAILURE:              'failure',
-  FINISHED:             'finished',
+  STARTED:                'started',
+  LOCK_ACQUIRED:          'lock_acquired',
+  LOCK_SKIPPED:           'lock_skipped',
+  DAILY_TARGET_GENERATED: 'daily_target_generated',
+  VIDEO_PROCESSED:        'video_processed',
+  EARNING_GENERATED:      'earning_generated',
+  DUPLICATE_SUPPRESSED:   'duplicate_suppressed',
+  TARGET_COMPLETED:       'target_completed',
+  FAILURE:                'failure',
+  FINISHED:               'finished',
 });
 
 const defaultSink = (record) => {
@@ -51,8 +53,10 @@ export function createUgcCycleLog({ now = () => Date.now(), sink = defaultSink, 
     durationMs: null,
     lock: null,                 // 'acquired' | 'skipped'
     videosProcessed: 0,
+    dailyTargetsGenerated: 0,
     earningsGenerated: 0,
     duplicatesSuppressed: 0,
+    targetsCompleted: 0,
     failures: 0,
   };
 
@@ -76,6 +80,16 @@ export function createUgcCycleLog({ now = () => Date.now(), sink = defaultSink, 
     lockSkipped(reason = 'lock held by another instance') {
       report.lock = 'skipped';
       emit(UGC_CYCLE_EVENT.LOCK_SKIPPED, { reason });
+    },
+
+    dailyTargetGenerated({ ugcVideoId, businessDate, dailyTarget, timezone } = {}) {
+      report.dailyTargetsGenerated += 1;
+      emit(UGC_CYCLE_EVENT.DAILY_TARGET_GENERATED, { ugcVideoId, businessDate, dailyTarget, timezone });
+    },
+
+    targetCompleted({ ugcVideoId, businessDate, dailyTarget } = {}) {
+      report.targetsCompleted += 1;
+      emit(UGC_CYCLE_EVENT.TARGET_COMPLETED, { ugcVideoId, businessDate, dailyTarget });
     },
 
     videoProcessed(ugcVideoId, extra = {}) {
@@ -109,8 +123,10 @@ export function createUgcCycleLog({ now = () => Date.now(), sink = defaultSink, 
       emit(UGC_CYCLE_EVENT.FINISHED, {
         lock: report.lock,
         videosProcessed: report.videosProcessed,
+        dailyTargetsGenerated: report.dailyTargetsGenerated,
         earningsGenerated: report.earningsGenerated,
         duplicatesSuppressed: report.duplicatesSuppressed,
+        targetsCompleted: report.targetsCompleted,
         failures: report.failures,
         durationMs: report.durationMs,
         ...extra,
