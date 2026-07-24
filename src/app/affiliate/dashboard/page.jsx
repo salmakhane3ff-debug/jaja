@@ -1200,8 +1200,7 @@ export default function AffiliateDashboard() {
     { id: "orders",        label: `Commandes (${orders.length})` },
     { id: "bank",          label: "Coordonnées" },
     { id: "payout",        label: "Retraits" },
-    { id: "ugc",           label: "🎬 Vidéos" },
-    { id: "ugc-earnings",  label: "💰 UGC" },
+    { id: "ugc",           label: "💰 Video UGC" },
     { id: "notifications", label: `Notifs ${unread > 0 ? `(${unread})` : ""}` },
     { id: "team",          label: `Équipe (${team.length})` },
     { id: "competition",   label: "🏆 Compétition" },
@@ -2333,8 +2332,7 @@ export default function AffiliateDashboard() {
         })()}
 
         {/* ══ COMPETITION ═══════════════════════════════════════════════════ */}
-        {/* Both tabs open the SAME existing component — never duplicated. */}
-        {(activeTab === "ugc" || activeTab === "ugc-earnings") && <UgcTab />}
+        {activeTab === "ugc" && <UgcTab />}
 
         {activeTab === "competition" && <CompetitionTab lang={lang} />}
 
