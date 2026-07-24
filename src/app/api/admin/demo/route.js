@@ -28,7 +28,8 @@ export const POST = withAdminAuth(async (req) => {
   try {
     const body  = await req.json().catch(() => ({}));
     const count = Math.min(100, Math.max(10, parseInt(body.count || 60, 10)));
-    const result = await generateDemoAffiliates(count);
+    const mode  = ['men', 'women', 'mixed'].includes(body.mode) ? body.mode : 'mixed';
+    const result = await generateDemoAffiliates(count, mode);
     return Response.json(result);
   } catch (err) {
     console.error('admin/demo POST error:', err);

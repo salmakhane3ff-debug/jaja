@@ -964,6 +964,8 @@ model DemoAffiliate {
   name        String
   username    String   @unique
   avatarColor String   @default("#6366f1")
+  avatarUrl   String?  // persisted uploaded avatar (assigned ONCE at generation, never re-randomized)
+  gender      String?  // "men" | "women" — drives name pool + avatar library at generation
   growthType  String   @default("consistent") // "aggressive" | "consistent" | "slow"
   isActive    Boolean  @default(true)
   createdAt   DateTime @default(now())
@@ -973,6 +975,20 @@ model DemoAffiliate {
 
   @@index([isActive])
   @@map("demo_affiliates")
+}
+
+/// Permanent library of uploaded demo avatars (crop→256×256→WebP q80, stored in
+/// demo/avatars). Never deleted by competition regeneration — only by an admin.
+/// Isolated demo data; no link to real affiliates or any production media.
+model DemoAvatar {
+  id         String   @id @default(uuid())
+  gender     String   // "men" | "women"
+  url        String
+  storageKey String?  // provider public id / key, for admin deletion
+  createdAt  DateTime @default(now())
+
+  @@index([gender])
+  @@map("demo_avatars")
 }
 
 model DemoStats {
@@ -991,6 +1007,12 @@ model DemoStats {
   teamRevenue     Float @default(0)
   teamCommission  Float @default(0)
   rank            Int   @default(0)
+
+  // Demo UGC (presentation-only; NEVER written to ugc_earnings / ugc_daily_targets).
+  ugcTodayEarnings Float @default(0)
+  ugcTodaySales    Int   @default(0)
+  ugcTotalEarnings Float @default(0)
+  ugcTotalSales    Int   @default(0)
 
   updatedAt DateTime @updatedAt
 

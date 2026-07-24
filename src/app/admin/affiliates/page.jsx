@@ -1,7 +1,7 @@
 "use client";
 
-import { useState, useEffect, useMemo } from "react";
-import { Plus, Search, Edit3, Trash2, Users, Loader2, CheckCircle, XCircle, X, Settings, Award, Percent, Trophy, Play, RefreshCw, ToggleLeft, ToggleRight, Zap } from "lucide-react";
+import { useState, useEffect, useMemo, useRef } from "react";
+import { Plus, Search, Edit3, Trash2, Users, Loader2, CheckCircle, XCircle, X, Settings, Award, Percent, Trophy, Play, RefreshCw, ToggleLeft, ToggleRight, Zap, Upload, Image as ImageIcon } from "lucide-react";
 
 const COMMISSION_OPTIONS = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8];
 
@@ -403,6 +403,7 @@ function DemoManagementPanel() {
   const [info,        setInfo]        = useState(null);
   const [loading,     setLoading]     = useState(true);
   const [genCount,    setGenCount]    = useState(60);
+  const [genMode,     setGenMode]     = useState('mixed'); // 'men' | 'women' | 'mixed'
   const [busy,        setBusy]        = useState(null); // 'generate'|'simulate'|'reset'|'save'
   const [msg,         setMsg]         = useState(null);
 
@@ -536,11 +537,21 @@ function DemoManagementPanel() {
                     type="number" min={10} max={100}
                     value={genCount}
                     onChange={(e) => setGenCount(parseInt(e.target.value) || 60)}
-                    className="w-20 px-2 py-2 text-sm border border-gray-200 rounded-xl bg-gray-50 focus:outline-none focus:border-gray-400"
+                    className="w-16 px-2 py-2 text-sm border border-gray-200 rounded-xl bg-gray-50 focus:outline-none focus:border-gray-400"
                   />
+                  <select
+                    value={genMode}
+                    onChange={(e) => setGenMode(e.target.value)}
+                    className="w-24 px-2 py-2 text-sm border border-gray-200 rounded-xl bg-gray-50 focus:outline-none focus:border-gray-400"
+                    title="Mode d'avatars/prénoms"
+                  >
+                    <option value="mixed">Mixte</option>
+                    <option value="men">Hommes</option>
+                    <option value="women">Femmes</option>
+                  </select>
                   <button
                     type="button"
-                    onClick={() => post('/api/admin/demo', { count: genCount }, 'generate')}
+                    onClick={() => post('/api/admin/demo', { count: genCount, mode: genMode }, 'generate')}
                     disabled={!!busy}
                     className="flex-1 flex items-center justify-center gap-1.5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold rounded-xl disabled:opacity-50 transition-colors"
                   >
@@ -596,6 +607,108 @@ function DemoManagementPanel() {
               </div>
             )}
           </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ── Demo Affiliate Avatars ─────────────────────────────────────────────────────
+function AvatarUploader({ gender, label, avatars, onUploaded, onDelete }) {
+  const [busy, setBusy] = useState(false);
+  const [err, setErr]   = useState(null);
+  const inputRef = useRef(null);
+
+  const upload = async (files) => {
+    const list = Array.from(files || []);
+    if (list.length === 0) return;
+    if (list.length > 20) { setErr("Maximum 20 images par envoi."); return; }
+    setBusy(true); setErr(null);
+    try {
+      const fd = new FormData();
+      fd.append("gender", gender);
+      for (const f of list) fd.append("images", f);
+      const r = await fetch("/api/admin/demo/avatars", { method: "POST", body: fd });
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok) { setErr(d.error || "Échec de l'envoi."); return; }
+      await onUploaded();
+    } catch { setErr("Erreur réseau."); }
+    finally { setBusy(false); if (inputRef.current) inputRef.current.value = ""; }
+  };
+
+  return (
+    <div className="space-y-2.5">
+      <div className="flex items-center justify-between">
+        <h4 className="text-xs font-bold text-gray-700">{label} <span className="text-gray-400 font-medium">({avatars.length})</span></h4>
+        <button type="button" onClick={() => inputRef.current?.click()} disabled={busy}
+          className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold bg-indigo-600 hover:bg-indigo-700 text-white rounded-lg disabled:opacity-50">
+          {busy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Upload className="w-3.5 h-3.5" />} Ajouter
+        </button>
+        <input ref={inputRef} type="file" accept="image/jpeg,image/png,image/webp" multiple className="hidden"
+          onChange={(e) => upload(e.target.files)} />
+      </div>
+      {err && <p className="text-[11px] text-red-600">{err}</p>}
+      {avatars.length === 0 ? (
+        <p className="text-[11px] text-gray-400">Aucun avatar. JPG / PNG / WEBP, max 20 par envoi.</p>
+      ) : (
+        <div className="grid grid-cols-4 sm:grid-cols-6 gap-2">
+          {avatars.map((a) => (
+            <div key={a.id} className="relative group aspect-square rounded-xl overflow-hidden ring-1 ring-gray-200">
+              <img src={a.url} alt="" className="w-full h-full object-cover" />
+              <button type="button" onClick={() => onDelete(a.id)}
+                className="absolute top-1 right-1 w-5 h-5 rounded-full bg-black/60 text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition"
+                title="Supprimer">
+                <Trash2 className="w-3 h-3" />
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function DemoAvatarLibrary() {
+  const [avatars, setAvatars] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  const load = async () => {
+    setLoading(true);
+    try {
+      const r = await fetch("/api/admin/demo/avatars");
+      const d = await r.json().catch(() => ({}));
+      setAvatars(Array.isArray(d.avatars) ? d.avatars : []);
+    } catch { setAvatars([]); } finally { setLoading(false); }
+  };
+  useEffect(() => { load(); }, []);
+
+  const remove = async (id) => {
+    if (!confirm("Supprimer cet avatar de la bibliothèque ?")) return;
+    setAvatars((prev) => prev.filter((a) => a.id !== id)); // optimistic
+    try { await fetch(`/api/admin/demo/avatars/${id}`, { method: "DELETE" }); } catch {}
+    load();
+  };
+
+  const men   = avatars.filter((a) => a.gender === "men");
+  const women = avatars.filter((a) => a.gender === "women");
+
+  return (
+    <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden">
+      <div className="flex items-center gap-3 px-5 py-4 border-b border-gray-100 bg-indigo-50">
+        <ImageIcon className="w-5 h-5 text-indigo-600" />
+        <div>
+          <h2 className="text-sm font-bold text-gray-900">Demo Affiliate Avatars</h2>
+          <p className="text-[11px] text-gray-500">Bibliothèque permanente — utilisée à la génération. Supprimée uniquement manuellement.</p>
+        </div>
+      </div>
+      <div className="p-5">
+        {loading ? (
+          <div className="flex justify-center py-8"><Loader2 className="w-6 h-6 animate-spin text-gray-400" /></div>
+        ) : (
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            <AvatarUploader gender="men"   label="Hommes" avatars={men}   onUploaded={load} onDelete={remove} />
+            <AvatarUploader gender="women" label="Femmes" avatars={women} onUploaded={load} onDelete={remove} />
+          </div>
         )}
       </div>
     </div>
@@ -797,6 +910,8 @@ export default function AdminAffiliatesPage() {
 
       <TeamBonusConfigPanel />
       <DemoManagementPanel />
+
+      <DemoAvatarLibrary />
     </div>
   );
 }

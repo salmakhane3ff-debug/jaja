@@ -400,8 +400,17 @@ const GROWTH_BADGE = {
   slow:       { label: 'En croissance',  cls: 'bg-gray-100 text-gray-600'  },
 };
 
-function DemoAvatar({ name, color, size = 'md' }) {
+function DemoAvatar({ name, color, url, size = 'md' }) {
   const sz = size === 'lg' ? 'w-14 h-14 text-xl' : size === 'sm' ? 'w-7 h-7 text-xs' : 'w-10 h-10 text-sm';
+  const [broken, setBroken] = useState(false);
+  // Persisted uploaded avatar when available; on load error (e.g. deleted from the
+  // library) gracefully fall back to the initials avatar — never a broken image.
+  if (url && !broken) {
+    return (
+      <img src={url} alt={name || ''} onError={() => setBroken(true)}
+        className={`${sz} rounded-full object-cover shrink-0 bg-gray-200`} />
+    );
+  }
   return (
     <div className={`${sz} rounded-full flex items-center justify-center font-black text-white shrink-0`}
       style={{ background: color }}>
@@ -460,7 +469,7 @@ function DemoAffiliateModal({ affiliateId, onClose, lang }) {
 
             {/* Identity strip */}
             <div className="flex items-center gap-3 px-5 py-4 bg-gradient-to-r from-gray-50 to-white border-b border-gray-100">
-              <DemoAvatar name={data.name} color={data.avatarColor} size="lg" />
+              <DemoAvatar name={data.name} color={data.avatarColor} url={data.avatarUrl} size="lg" />
               <div className="min-w-0 flex-1">
                 <div className="flex items-center gap-2 flex-wrap">
                   <p className="font-black text-gray-900 text-base truncate">{data.name}</p>
@@ -556,55 +565,25 @@ function DemoAffiliateModal({ affiliateId, onClose, lang }) {
                 </div>
               )}
 
-              {/* ── EARNINGS HISTORY ── */}
+              {/* ── GAINS (UGC) — demo UGC stats only; Boutique stays in Aperçu ── */}
               {activeTab === 'earnings' && (
                 <div className="p-4">
-                  {data.earningsHistory.length === 0 ? (
-                    <p className="text-center text-sm text-gray-400 py-8">
-                      {fr ? 'Aucun historique' : 'لا يوجد سجل'}
-                    </p>
-                  ) : (
-                    <>
-                      {/* Mini bar chart using CSS */}
-                      {(() => {
-                        const maxRev = Math.max(...data.earningsHistory.map((h) => h.revenue), 1);
-                        return (
-                          <div className="mb-4">
-                            <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-3">
-                              {fr ? 'Revenus (30 derniers jours)' : 'الإيرادات (آخر 30 يوماً)'}
-                            </p>
-                            <div className="flex items-end gap-1 h-20">
-                              {data.earningsHistory.slice(-14).map((h, i) => (
-                                <div key={i} className="flex-1 flex flex-col items-center gap-0.5">
-                                  <div
-                                    className="w-full rounded-t-sm bg-indigo-400 transition-all"
-                                    style={{ height: `${Math.round((h.revenue / maxRev) * 100)}%`, minHeight: h.revenue > 0 ? '3px' : '1px' }}
-                                    title={`${h.orders} cmds · ${Math.round(h.revenue)} MAD`}
-                                  />
-                                </div>
-                              ))}
-                            </div>
-                          </div>
-                        );
-                      })()}
-
-                      {/* List */}
-                      <div className="space-y-1.5 max-h-56 overflow-y-auto">
-                        {[...data.earningsHistory].reverse().slice(0, 14).map((h, i) => {
-                          const d = new Date(h.date);
-                          const dateStr = d.toLocaleDateString(fr ? 'fr-FR' : 'ar-MA', { day: '2-digit', month: 'short' });
-                          return (
-                            <div key={i} className="flex items-center justify-between px-3 py-2 bg-gray-50 rounded-lg border border-gray-100 text-xs">
-                              <span className="text-gray-500 font-mono w-16 shrink-0">{dateStr}</span>
-                              <span className="text-gray-700 font-semibold">{h.orders} {fr ? 'cmds' : 'طلب'}</span>
-                              <span className="text-amber-700 font-bold">{Math.round(h.revenue)} MAD</span>
-                              <span className="text-green-700 font-black">+{Math.round(h.commission)} MAD</span>
-                            </div>
-                          );
-                        })}
+                  <p className="text-[10px] font-bold text-violet-500 uppercase tracking-wider mb-3">
+                    {fr ? 'Gains UGC (vidéos)' : 'أرباح UGC'}
+                  </p>
+                  <div className="grid grid-cols-2 gap-2">
+                    {[
+                      { label: fr ? "Gains UGC aujourd'hui" : 'أرباح UGC اليوم',  value: `${Math.round(data.ugcTodayEarnings ?? 0).toLocaleString()} MAD`, color: 'text-violet-700' },
+                      { label: fr ? "Ventes UGC aujourd'hui" : 'مبيعات UGC اليوم', value: data.ugcTodaySales ?? 0, color: 'text-violet-700' },
+                      { label: fr ? 'Gains UGC total'       : 'إجمالي أرباح UGC', value: `${Math.round(data.ugcTotalEarnings ?? 0).toLocaleString()} MAD`, color: 'text-emerald-700' },
+                      { label: fr ? 'Ventes UGC total'      : 'إجمالي مبيعات UGC', value: data.ugcTotalSales ?? 0, color: 'text-emerald-700' },
+                    ].map((s) => (
+                      <div key={s.label} className="bg-violet-50 rounded-xl p-3 border border-violet-100">
+                        <p className={`text-lg font-black ${s.color}`}>{s.value}</p>
+                        <p className="text-[10px] text-gray-500 mt-0.5">{s.label}</p>
                       </div>
-                    </>
-                  )}
+                    ))}
+                  </div>
                 </div>
               )}
 
@@ -802,7 +781,7 @@ function CompetitionTab({ lang }) {
                   </div>
 
                   {/* Avatar */}
-                  <DemoAvatar name={a.name} color={a.avatarColor} size="sm" />
+                  <DemoAvatar name={a.name} color={a.avatarColor} url={a.avatarUrl} size="sm" />
 
                   {/* Name + badge + delta */}
                   <div className="flex-1 min-w-0">
@@ -1183,6 +1162,14 @@ export default function AffiliateDashboard() {
   const refLink   = typeof window !== "undefined" ? `${window.location.origin}?ref=${affiliate?.username}` : "";
   const unread    = notifs.filter((n) => !n.read).length;
   const balance   = stats?.balance ?? 0;
+  // Bank details must be complete before a withdrawal (mirrors the server rule:
+  // non-empty bankName/accountName + RIB length 10–34). Server also re-validates.
+  const _rib = String(affiliate?.rib ?? "").trim();
+  const bankComplete = Boolean(
+    String(affiliate?.bankName ?? "").trim() &&
+    String(affiliate?.accountName ?? "").trim() &&
+    _rib.length >= 10 && _rib.length <= 34
+  );
 
   // Phone-based order count — used to show repeat-client indicator
   const phoneCounts = orders.reduce((acc, o) => {
@@ -1203,7 +1190,6 @@ export default function AffiliateDashboard() {
     { id: "ugc",           label: "💰 Video UGC" },
     { id: "notifications", label: `Notifs ${unread > 0 ? `(${unread})` : ""}` },
     { id: "team",          label: `Équipe (${team.length})` },
-    { id: "competition",   label: "🏆 Compétition" },
     { id: "settings",      label: "Paramètres" },
   ];
 
@@ -1391,35 +1377,11 @@ export default function AffiliateDashboard() {
               <StatCard icon={TrendingUp}  label="Ventes UGC total"       value={ugcStats?.totalSales ?? "—"}       color="purple" sub="UGC" />
             </div>
 
-            {/* Gamification */}
-            {gami && (
-              <Section title="Progression du bonus" icon={Target}>
-                {/* Referral counters */}
-                <div className="flex gap-3 mb-4">
-                  <div className="flex-1 bg-gray-50 rounded-xl p-3 text-center">
-                    <p className="text-2xl font-black text-gray-900">{stats?.totalReferrals ?? 0}</p>
-                    <p className="text-xs text-gray-500 mt-0.5">Total parrainés</p>
-                  </div>
-                  <div className="flex-1 bg-green-50 rounded-xl p-3 text-center">
-                    <p className="text-2xl font-black text-green-700">{stats?.validReferrals ?? 0}</p>
-                    <p className="text-xs text-green-600 mt-0.5">Parrainages valides</p>
-                  </div>
-                </div>
-                <ProgressBar
-                  progress={gami.progress}
-                  target={gami.target}
-                  remaining={gami.remaining}
-                  validReferrals={gami.validReferrals ?? stats?.validReferrals ?? 0}
-                />
-                <p className="text-xs text-gray-400 mt-3">
-                  Un parrainage est <strong>valide</strong> uniquement si le filleul a au moins
-                  1 commande <strong>livrée</strong>. Les commandes en attente, confirmées ou annulées
-                  ne comptent pas.
-                </p>
-              </Section>
-            )}
+            {/* 🏆 Compétition du mois — moved here (where the bonus block used to be).
+                Same component reused inline; the standalone tab has been removed. */}
+            <CompetitionTab lang={lang} />
 
-            {/* Referral link */}
+            {/* Referral link (kept directly below the competition) */}
             <Section title="Lien de parrainage" icon={Users}>
               <div className="flex gap-2">
                 <div className="flex-1 px-3 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-xs font-mono text-gray-700 truncate">
@@ -1646,6 +1608,18 @@ export default function AffiliateDashboard() {
                     {payoutMsg.text}
                   </div>
                 )}
+                {!bankComplete && (
+                  <div className="rounded-xl px-4 py-3 bg-amber-50 border border-amber-200 text-amber-800 text-sm">
+                    <p className="flex items-start gap-2">
+                      <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
+                      Veuillez ajouter vos coordonnées bancaires avant de demander un retrait.
+                    </p>
+                    <button type="button" onClick={() => setActiveTab("bank")}
+                      className="mt-2 inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-white bg-amber-600 hover:bg-amber-700 rounded-lg">
+                      <Building2 className="w-3.5 h-3.5" /> Compléter mes coordonnées
+                    </button>
+                  </div>
+                )}
                 <div>
                   <label className="block text-xs font-semibold text-gray-600 mb-1.5">
                     Montant à retirer (MAD)
@@ -1667,7 +1641,7 @@ export default function AffiliateDashboard() {
                 </div>
                 <button
                   type="submit"
-                  disabled={payoutLoading || !payoutAmount || parseFloat(payoutAmount) <= 0 || parseFloat(payoutAmount) > balance}
+                  disabled={!bankComplete || payoutLoading || !payoutAmount || parseFloat(payoutAmount) <= 0 || parseFloat(payoutAmount) > balance}
                   className="flex items-center gap-2 px-6 py-2.5 bg-gray-900 hover:bg-gray-800 text-white rounded-xl text-sm font-semibold disabled:opacity-50 transition-all"
                 >
                   {payoutLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <CreditCard className="w-4 h-4" />}
@@ -2334,7 +2308,7 @@ export default function AffiliateDashboard() {
         {/* ══ COMPETITION ═══════════════════════════════════════════════════ */}
         {activeTab === "ugc" && <UgcTab />}
 
-        {activeTab === "competition" && <CompetitionTab lang={lang} />}
+        {/* Competition now lives inline on the overview (no standalone tab). */}
 
         {/* ══ SETTINGS ══════════════════════════════════════════════════════ */}
         {activeTab === "settings" && (

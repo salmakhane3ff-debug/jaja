@@ -406,16 +406,44 @@ export async function getAffiliatePayouts(affiliateId) {
   return payouts;
 }
 
-export async function requestPayout(affiliateId, amount) {
+/**
+ * Bank details must be complete before ANY withdrawal (server-side gate — never
+ * rely on the frontend). Trims all fields; RIB length must be 10–34.
+ * @returns {string[]} list of problems (empty = complete)
+ */
+export function validateBankInfo({ bankName, accountName, rib } = {}) {
+  const errors = [];
+  if (!String(bankName ?? '').trim())    errors.push('bankName');
+  if (!String(accountName ?? '').trim()) errors.push('accountName');
+  const ribTrim = String(rib ?? '').trim();
+  if (!ribTrim) errors.push('rib');
+  else if (ribTrim.length < 10 || ribTrim.length > 34) errors.push('ribLength');
+  return errors;
+}
+
+export async function requestPayout(affiliateId, amount, db = prisma) {
   // Validate inputs before entering the transaction
   const parsedAmount = parseFloat(amount);
   if (!isFinite(parsedAmount) || isNaN(parsedAmount) || parsedAmount <= 0) {
     throw Object.assign(new Error('Montant invalide'), { code: 'INVALID_AMOUNT' });
   }
 
+  // Bank details must be complete BEFORE a withdrawal can be requested — checked
+  // here (server-side), never relying on the frontend, and BEFORE the balance tx.
+  const affiliate = await db.affiliate.findUnique({
+    where: { id: affiliateId },
+    select: { bankName: true, accountName: true, rib: true },
+  });
+  if (validateBankInfo(affiliate || {}).length > 0) {
+    throw Object.assign(
+      new Error('Veuillez ajouter vos coordonnées bancaires avant de demander un retrait.'),
+      { code: 'INCOMPLETE_BANK_INFO' },
+    );
+  }
+
   // Use a serializable transaction so the balance read and payout insert
   // are atomic — prevents double-withdrawal under concurrent requests.
-  const payout = await prisma.$transaction(async (tx) => {
+  const payout = await db.$transaction(async (tx) => {
     const balance = await getAffiliateBalance(affiliateId, tx);
     if (parsedAmount > balance) {
       throw Object.assign(new Error('Montant supérieur au solde disponible'), { code: 'INSUFFICIENT_BALANCE' });
