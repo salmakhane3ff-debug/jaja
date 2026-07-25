@@ -64,7 +64,7 @@ function blockMeta(type) {
 function defaultConfig(type) {
   switch (type) {
     case "hero":        return { title: "عنوان رئيسي جذاب", subtitle: "عرض حصري محدود الوقت", bgImage: "", buttonText: "اطلب الآن", buttonColor: "#f59e0b", overlayOpacity: 0.55 };
-    case "image":       return { src: "", alt: "", caption: "", fullWidth: true };
+    case "image":       return { src: "", alt: "", caption: "", fullWidth: true, fullBleed: false };
     case "text":        return { content: "<p>اكتب نصك هنا...</p>", align: "right" };
     case "video":       return { url: "", autoplay: false, controls: true, caption: "" };
     case "beforeAfter": return { beforeImage: "", afterImage: "", beforeLabel: "قبل", afterLabel: "بعد" };
@@ -313,6 +313,8 @@ function BlockSettingsForm({ block, onUpdate }) {
         <FieldRow label="Alt text"><TextInput value={cfg.alt} onChange={(v) => set("alt", v)} placeholder="Description" /></FieldRow>
         <FieldRow label="Caption (optional)"><TextInput value={cfg.caption} onChange={(v) => set("caption", v)} placeholder="Image caption" /></FieldRow>
         <Toggle checked={cfg.fullWidth !== false} onChange={(v) => set("fullWidth", v)} label="Full width" />
+        {/* Edge-to-edge: no spacing/rounding so stacked images form one continuous page. */}
+        <Toggle checked={cfg.fullBleed === true} onChange={(v) => set("fullBleed", v)} label="Full Bleed (Edge-to-Edge)" />
       </div>
     );
 

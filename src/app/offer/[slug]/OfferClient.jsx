@@ -302,14 +302,35 @@ function BlockRenderer({ block, product, landingPage, onBuyNow, buying }) {
       );
     }
 
-    case "image":
-      return cfg.src ? (
+    case "image": {
+      if (!cfg.src) return null;
+      // Full Bleed (Edge-to-Edge): zero spacing so consecutive full-bleed images
+      // stack into ONE continuous page with no gaps. `display:block` +
+      // `line-height:0` kill the inline-image descender whitespace, so the images
+      // touch each other and the container (= mobile viewport) edges perfectly.
+      if (cfg.fullBleed) {
+        return (
+          <>
+            <img
+              src={cfg.src}
+              alt={cfg.alt || ""}
+              loading="lazy"
+              className="block w-full h-auto align-top"
+              style={{ margin: 0, padding: 0, border: "none", borderRadius: 0, display: "block", width: "100%", height: "auto", lineHeight: 0 }}
+            />
+            {cfg.caption && <p className="text-xs text-gray-400 text-center px-4 py-2">{cfg.caption}</p>}
+          </>
+        );
+      }
+      // Default (unchanged): padded, rounded — normal single-image behaviour.
+      return (
         <div className="px-4 py-2">
           <img src={cfg.src} alt={cfg.alt || ""} loading="lazy"
             className={`rounded-2xl ${cfg.fullWidth !== false ? "w-full" : "mx-auto max-w-sm"}`} />
           {cfg.caption && <p className="text-xs text-gray-400 text-center mt-2">{cfg.caption}</p>}
         </div>
-      ) : null;
+      );
+    }
 
     case "text":
       return (
