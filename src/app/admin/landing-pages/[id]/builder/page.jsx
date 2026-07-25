@@ -192,10 +192,21 @@ function ArrayItemEditor({ items, onChange, renderItem, createEmpty }) {
 //  MEDIA UPLOAD HELPER
 // ══════════════════════════════════════════════════════════════════════════════
 
-function UploadImageButton({ onUploaded, accept = "image/*", label = "Upload image" }) {
+// Reuses the project's existing media upload endpoint (/api/image → current
+// storage provider: local / R2 / Cloudinary). `maxBytes` is optional so every
+// existing caller keeps its behaviour unchanged; when set, oversized files are
+// rejected client-side with an inline message before any upload.
+function UploadImageButton({ onUploaded, accept = "image/*", label = "Upload image", maxBytes }) {
   const ref   = useRef(null);
   const [uploading, setUploading] = useState(false);
+  const [err, setErr] = useState(null);
   const upload = async (file) => {
+    setErr(null);
+    if (maxBytes && file.size > maxBytes) {
+      setErr(`Fichier trop volumineux (max ${Math.round(maxBytes / (1024 * 1024))} Mo).`);
+      if (ref.current) ref.current.value = "";
+      return;
+    }
     setUploading(true);
     try {
       const fd = new FormData();
@@ -203,19 +214,21 @@ function UploadImageButton({ onUploaded, accept = "image/*", label = "Upload ima
       const r = await fetch("/api/image", { method: "POST", body: fd });
       const d = await r.json();
       if (d.url) onUploaded(d.url);
-    } catch {}
+      else setErr(d.error || "Échec de l'upload.");
+    } catch { setErr("Échec de l'upload."); }
     setUploading(false);
     if (ref.current) ref.current.value = "";
   };
   return (
-    <>
+    <div className="w-full space-y-1">
       <input ref={ref} type="file" accept={accept} className="hidden"
         onChange={(e) => { const f = e.target.files?.[0]; if (f) upload(f); }} />
       <button type="button" onClick={() => ref.current?.click()} disabled={uploading}
         className="flex items-center gap-1.5 text-xs text-violet-600 border border-dashed border-violet-300 rounded-lg px-2.5 py-1.5 hover:bg-violet-50 disabled:opacity-60 w-full justify-center">
         {uploading ? <><Loader2 className="w-3 h-3 animate-spin" />Uploading…</> : <><Plus className="w-3 h-3" />{label}</>}
       </button>
-    </>
+      {err && <p className="text-[11px] text-red-500">{err}</p>}
+    </div>
   );
 }
 
@@ -270,7 +283,33 @@ function BlockSettingsForm({ block, onUpdate }) {
 
     case "image": return (
       <div className="space-y-3">
-        <FieldRow label="Image URL"><TextInput value={cfg.src} onChange={(v) => set("src", v)} placeholder="https://…" /></FieldRow>
+        {/* Single source of truth = cfg.src. Upload, the URL input and the preview
+            are all bound to it, so they stay perfectly synchronized: an upload fills
+            the URL field, pasting a URL updates the preview, and Remove clears all
+            three. Landing pages that already store an Image URL keep working as-is. */}
+        <FieldRow label="Image" hint="Upload (JPG, PNG, WEBP, GIF · max 10 Mo) ou collez une URL ci-dessous">
+          {cfg.src ? (
+            <div className="space-y-2">
+              <div className="relative rounded-lg overflow-hidden border border-gray-200 bg-gray-100">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img src={cfg.src} alt={cfg.alt || ""} className="w-full max-h-48 object-contain" />
+                {/* Remove → reset the whole block to its empty state (clears preview,
+                    cfg.src and the URL input, which is bound to cfg.src). */}
+                <button type="button" onClick={() => onUpdate({ ...block, config: defaultConfig("image") })} title="Supprimer l'image"
+                  className="absolute top-1 right-1 w-6 h-6 rounded-full bg-red-500 text-white flex items-center justify-center hover:bg-red-600">
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              </div>
+              <UploadImageButton onUploaded={(u) => set("src", u)} accept="image/jpeg,image/png,image/webp,image/gif"
+                label="Remplacer l'image" maxBytes={10 * 1024 * 1024} />
+            </div>
+          ) : (
+            <UploadImageButton onUploaded={(u) => set("src", u)} accept="image/jpeg,image/png,image/webp,image/gif"
+              label="Upload image" maxBytes={10 * 1024 * 1024} />
+          )}
+        </FieldRow>
+        {/* Bound to cfg.src → always synchronized with the upload + preview. */}
+        <FieldRow label="Image URL" hint="Optionnel — alternative à l'upload"><TextInput value={cfg.src} onChange={(v) => set("src", v)} placeholder="https://…" /></FieldRow>
         <FieldRow label="Alt text"><TextInput value={cfg.alt} onChange={(v) => set("alt", v)} placeholder="Description" /></FieldRow>
         <FieldRow label="Caption (optional)"><TextInput value={cfg.caption} onChange={(v) => set("caption", v)} placeholder="Image caption" /></FieldRow>
         <Toggle checked={cfg.fullWidth !== false} onChange={(v) => set("fullWidth", v)} label="Full width" />
