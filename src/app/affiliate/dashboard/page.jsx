@@ -10,6 +10,14 @@ import {
   Target, Star, UserPlus, Eye, AlertTriangle, Settings, Video, Wallet,
 } from "lucide-react";
 import UgcTab from "./UgcTab";
+import { diffNewItems, shouldPlaySaleSound } from "@/lib/liveFeed";
+import { createSaleSound } from "./saleSound";
+
+// Live feed: the gap BETWEEN background polls (measured after the previous poll
+// finishes, so requests can never stack up). ~3s gives near-instant sale
+// appearance while keeping load bounded — one poll at a time, paused when the
+// tab is hidden. Reuses the interval-polling approach already used elsewhere.
+const LIVE_POLL_MS = 3000;
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -862,6 +870,14 @@ export default function AffiliateDashboard() {
   const [loading,    setLoading]    = useState(true);
   const [error,      setError]      = useState(null);
 
+  // ── Live feed (background polling) ─────────────────────────────────────────
+  const [liveConnected, setLiveConnected] = useState(true); // false → last poll failed
+  const [flashOrderIds, setFlashOrderIds] = useState(() => new Set()); // briefly highlight new rows
+  const seenOrderIdsRef = useRef(new Set()); // monotonic — ids we've already surfaced
+  const initialLoadedRef = useRef(false);    // first successful load done? (no sound before)
+  const saleSoundRef = useRef(null);         // lazy Web Audio chime
+  const flashTimerRef = useRef(null);
+
   const [activeTab,  setActiveTab]  = useState("overview");
 
   // Bank form state
@@ -905,10 +921,14 @@ export default function AffiliateDashboard() {
   }, [router]);
 
   // ── Fetch all data ────────────────────────────────────────────────────────
-  const fetchAll = useCallback(async (tok) => {
+  // fetchAll(tok, { silent }) — `silent` is a BACKGROUND poll: no spinner, no
+  // error banner (a transient failure just flips the live indicator and retries
+  // next cycle), and it never clobbers the in-progress bank form. Wallet /
+  // commission / counters / orders / notifications all refresh from the same
+  // response, so a status change made in admin shows up automatically.
+  const fetchAll = useCallback(async (tok, { silent = false } = {}) => {
     if (!tok) return;
-    setLoading(true);
-    setError(null);
+    if (!silent) { setLoading(true); setError(null); }
     try {
       const headers = { "Content-Type": "application/json", Authorization: `Bearer ${tok}` };
       const [meRes, ordersRes, notifsRes, ugcRes] = await Promise.all([
@@ -931,13 +951,33 @@ export default function AffiliateDashboard() {
         notifsRes.ok ? notifsRes.json() : [],
       ]);
 
+      const ordersArr = Array.isArray(ordersData) ? ordersData : [];
+
+      // ── Detect genuinely NEW orders since the last poll ──────────────────
+      // Sound + highlight fire ONCE per new order: driven by a monotonic
+      // seen-id set (a ref, so re-renders never replay it) and suppressed on
+      // the very first load (which would otherwise beep for all history).
+      const { newItems, seen } = diffNewItems(seenOrderIdsRef.current, ordersArr);
+      const initial = !initialLoadedRef.current;
+      seenOrderIdsRef.current = seen;
+      if (shouldPlaySaleSound({ initial, newCount: newItems.length })) {
+        saleSoundRef.current?.play();
+        const ids = new Set(newItems.map((o) => String(o._id ?? o.id)));
+        setFlashOrderIds(ids);
+        clearTimeout(flashTimerRef.current);
+        flashTimerRef.current = setTimeout(() => setFlashOrderIds(new Set()), 6000);
+      }
+      initialLoadedRef.current = true;
+
       setData(meData);
-      setOrders(Array.isArray(ordersData) ? ordersData : []);
+      setOrders(ordersArr);
       setNotifs(Array.isArray(notifsData) ? notifsData : []);
       setUgcStats(ugcRes.ok ? await ugcRes.json().catch(() => null) : null);
+      setLiveConnected(true);
 
-      // Pre-fill bank form
-      if (meData?.affiliate) {
+      // Pre-fill bank form ONLY on a foreground load — never overwrite what the
+      // affiliate is currently typing during a silent background poll.
+      if (!silent && meData?.affiliate) {
         setBankForm({
           bankName:    meData.affiliate.bankName    || "",
           rib:         meData.affiliate.rib         || "",
@@ -945,13 +985,62 @@ export default function AffiliateDashboard() {
         });
       }
     } catch {
-      setError("Impossible de charger les données. Réessayez.");
+      if (silent) setLiveConnected(false);       // will reconnect on the next tick
+      else setError("Impossible de charger les données. Réessayez.");
     } finally {
-      setLoading(false);
+      if (!silent) setLoading(false);
     }
   }, [router]);
 
   useEffect(() => { if (token) fetchAll(token); }, [token, fetchAll]);
+
+  // ── Live background polling + safe reconnect + audio unlock ────────────────
+  // Self-scheduling loop (setTimeout, NOT setInterval): the next poll is armed
+  // only AFTER the previous one settles, so requests can never overlap and a
+  // slow server naturally backs off. Paused while the tab is hidden; resumes
+  // instantly (with an immediate catch-up fetch) when it becomes visible.
+  useEffect(() => {
+    if (!token) return;
+
+    // Lazy-init the chime + unlock it on the first user gesture (autoplay policy).
+    if (!saleSoundRef.current) saleSoundRef.current = createSaleSound();
+    const unlock = () => saleSoundRef.current?.unlock();
+    window.addEventListener("pointerdown", unlock, { once: true });
+    window.addEventListener("keydown", unlock, { once: true });
+
+    let stopped = false;
+    let inFlight = false;
+    let timer = null;
+    const isHidden = () => typeof document !== "undefined" && document.visibilityState === "hidden";
+    const schedule = () => { timer = setTimeout(runPoll, LIVE_POLL_MS); };
+
+    async function runPoll() {
+      if (stopped || inFlight || isHidden()) return; // paused/guarded → visibility handler resumes
+      inFlight = true;
+      try { await fetchAll(token, { silent: true }); }
+      catch { /* fetchAll already flips the live indicator; loop keeps going */ }
+      finally { inFlight = false; }
+      if (!stopped && !isHidden()) schedule(); // arm the next poll only after this one settles
+    }
+
+    schedule(); // first poll after one interval
+
+    const onVisible = () => {
+      if (stopped || isHidden()) return;
+      clearTimeout(timer);   // avoid a double-scheduled poll
+      runPoll();             // immediate catch-up; it re-arms the loop
+    };
+    document.addEventListener("visibilitychange", onVisible);
+
+    return () => {
+      stopped = true;
+      clearTimeout(timer);
+      document.removeEventListener("visibilitychange", onVisible);
+      window.removeEventListener("pointerdown", unlock);
+      window.removeEventListener("keydown", unlock);
+      clearTimeout(flashTimerRef.current);
+    };
+  }, [token, fetchAll]);
 
   // Fetch store bank settings (public — no auth needed)
   useEffect(() => {
@@ -1235,7 +1324,21 @@ export default function AffiliateDashboard() {
               )}
             </button>
 
-            {/* Refresh */}
+            {/* Live indicator — green pulse when the background feed is healthy,
+                amber when the last poll failed (auto-reconnects next tick). */}
+            <span
+              title={liveConnected ? "En direct" : "Reconnexion…"}
+              className="hidden sm:inline-flex items-center gap-1.5 px-2 py-1 rounded-full text-[11px] font-semibold"
+              style={{ color: liveConnected ? "#059669" : "#b45309", background: liveConnected ? "#ecfdf5" : "#fffbeb" }}
+            >
+              <span
+                className={`w-1.5 h-1.5 rounded-full ${liveConnected ? "animate-pulse" : ""}`}
+                style={{ background: liveConnected ? "#10b981" : "#f59e0b" }}
+              />
+              {liveConnected ? "Live" : "…"}
+            </span>
+
+            {/* Refresh (manual fallback — always available) */}
             <button
               onClick={() => fetchAll(token)}
               className="p-2 text-gray-500 hover:text-gray-800 hover:bg-gray-100 rounded-xl transition-colors"
@@ -1467,7 +1570,10 @@ export default function AffiliateDashboard() {
                   </thead>
                   <tbody className="divide-y divide-gray-50">
                     {orders.map((o) => (
-                      <tr key={o.id} className="hover:bg-gray-50 transition-colors">
+                      <tr
+                        key={o.id}
+                        className={`transition-colors ${flashOrderIds.has(String(o._id ?? o.id)) ? "bg-emerald-50 animate-pulse" : "hover:bg-gray-50"}`}
+                      >
                         <td className="py-3 pr-4 font-mono text-xs text-gray-400 whitespace-nowrap">
                           {o.orderId ? `#${o.orderId.slice(0, 8).toUpperCase()}` : "—"}
                         </td>
