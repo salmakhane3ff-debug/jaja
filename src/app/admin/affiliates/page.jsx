@@ -715,6 +715,326 @@ function DemoAvatarLibrary() {
   );
 }
 
+// ── 🎭 Fake Orders Engine ──────────────────────────────────────────────────────
+const WEEKDAYS = [
+  { n: 1, l: "Lun" }, { n: 2, l: "Mar" }, { n: 3, l: "Mer" }, { n: 4, l: "Jeu" },
+  { n: 5, l: "Ven" }, { n: 6, l: "Sam" }, { n: 0, l: "Dim" },
+];
+
+const BLANK_FAKE_FORM = {
+  affiliateIds: [], enabled: true,
+  ordersPerMinute: "", ordersPerHour: "2", ordersPerDay: "20",
+  minDelaySec: "60", maxDelaySec: "600",
+  workingHourStart: "9", workingHourEnd: "22",
+  workingDays: "0,1,2,3,4,5,6",
+  productMode: "all", productIds: [],
+};
+
+function FakeOrdersPanel() {
+  const [data,    setData]    = useState({ configs: [], affiliates: [], products: [] });
+  const [loading, setLoading] = useState(true);
+  const [form,    setForm]    = useState(BLANK_FAKE_FORM);
+  const [busy,    setBusy]    = useState(null); // 'save' | 'tick' | id
+  const [msg,     setMsg]     = useState(null);
+
+  const load = () => {
+    setLoading(true);
+    fetch("/api/admin/fake-orders")
+      .then((r) => r.json())
+      .then((d) => setData({ configs: d.configs || [], affiliates: d.affiliates || [], products: d.products || [] }))
+      .catch(() => setData({ configs: [], affiliates: [], products: [] }))
+      .finally(() => setLoading(false));
+  };
+  useEffect(() => { load(); }, []);
+
+  const set = (k, v) => setForm((f) => ({ ...f, [k]: v }));
+  const toggleDay = (n) => {
+    const days = form.workingDays.split(",").filter(Boolean).map(Number);
+    const next = days.includes(n) ? days.filter((d) => d !== n) : [...days, n];
+    set("workingDays", next.sort().join(","));
+  };
+  const toggleAffiliate = (id) => {
+    setForm((f) => ({
+      ...f,
+      affiliateIds: f.affiliateIds.includes(id)
+        ? f.affiliateIds.filter((a) => a !== id)
+        : [...f.affiliateIds, id],
+    }));
+  };
+
+  const save = async () => {
+    if (!form.affiliateIds.length) { setMsg({ type: "err", text: "Sélectionnez au moins un affilié." }); return; }
+    setBusy("save"); setMsg(null);
+    try {
+      const payload = {
+        enabled: form.enabled,
+        ordersPerMinute: form.ordersPerMinute === "" ? null : form.ordersPerMinute,
+        ordersPerHour:   form.ordersPerHour   === "" ? null : form.ordersPerHour,
+        ordersPerDay:    form.ordersPerDay    === "" ? null : form.ordersPerDay,
+        minDelaySec: form.minDelaySec, maxDelaySec: form.maxDelaySec,
+        workingHourStart: form.workingHourStart, workingHourEnd: form.workingHourEnd,
+        workingDays: form.workingDays,
+        productMode: form.productMode, productIds: form.productIds,
+      };
+      // Apply the same config to every selected affiliate (one or many).
+      for (const affiliateId of form.affiliateIds) {
+        const res = await fetch("/api/admin/fake-orders", {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ affiliateId, ...payload }),
+        });
+        if (!res.ok) throw new Error("save failed");
+      }
+      setMsg({ type: "ok", text: `Configuration enregistrée pour ${form.affiliateIds.length} affilié(s).` });
+      setForm(BLANK_FAKE_FORM);
+      load();
+    } catch {
+      setMsg({ type: "err", text: "Échec de l'enregistrement." });
+    } finally { setBusy(null); }
+  };
+
+  const toggleEnabled = async (cfg) => {
+    setBusy(cfg.affiliateId);
+    try {
+      await fetch("/api/admin/fake-orders", {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ affiliateId: cfg.affiliateId, enabled: !cfg.enabled }),
+      });
+      load();
+    } finally { setBusy(null); }
+  };
+
+  const remove = async (cfg) => {
+    setBusy(cfg.affiliateId);
+    try {
+      await fetch(`/api/admin/fake-orders?affiliateId=${encodeURIComponent(cfg.affiliateId)}`, { method: "DELETE" });
+      load();
+    } finally { setBusy(null); }
+  };
+
+  const runTick = async () => {
+    setBusy("tick"); setMsg(null);
+    try {
+      const res = await fetch("/api/admin/fake-orders/tick", { method: "POST" });
+      const d = await res.json();
+      setMsg({ type: "ok", text: `Tick exécuté — ${d.emitted ?? 0} commande(s) fictive(s) générée(s).` });
+      load();
+    } catch {
+      setMsg({ type: "err", text: "Échec du tick." });
+    } finally { setBusy(null); }
+  };
+
+  const nameFor = (id) => {
+    const a = data.affiliates.find((x) => x.id === id);
+    return a ? (a.name || a.username) : id.slice(0, 8);
+  };
+
+  return (
+    <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden mt-6">
+      <div className="flex items-center justify-between gap-3 px-5 py-4 border-b border-gray-100 bg-fuchsia-50">
+        <div className="flex items-center gap-3">
+          <span className="text-lg">🎭</span>
+          <div>
+            <h2 className="text-sm font-bold text-gray-900">Fake Orders</h2>
+            <p className="text-[11px] text-gray-500">
+              Commandes fictives (motivation). Invisibles pour l'affilié · exclues de toute intégration externe.
+            </p>
+          </div>
+        </div>
+        <button
+          onClick={runTick}
+          disabled={busy === "tick"}
+          className="flex items-center gap-1.5 text-xs font-semibold px-3 py-2 rounded-xl bg-fuchsia-600 text-white hover:bg-fuchsia-700 disabled:opacity-50"
+        >
+          {busy === "tick" ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Play className="w-3.5 h-3.5" />}
+          Lancer un tick
+        </button>
+      </div>
+
+      <div className="p-5 space-y-6">
+        {msg && (
+          <div className={`text-xs px-3 py-2 rounded-lg ${msg.type === "ok" ? "bg-green-50 text-green-700" : "bg-red-50 text-red-700"}`}>
+            {msg.text}
+          </div>
+        )}
+
+        {/* ── Configuration form ─────────────────────────────────────────── */}
+        <div className="border border-gray-100 rounded-xl p-4 space-y-4">
+          <h3 className="text-xs font-bold text-gray-700 uppercase tracking-wide">Nouvelle configuration</h3>
+
+          {/* Affiliate multi-select */}
+          <div>
+            <label className="block text-[11px] font-semibold text-gray-500 mb-1.5">Affiliés (un ou plusieurs)</label>
+            <div className="flex flex-wrap gap-1.5 max-h-32 overflow-y-auto">
+              {data.affiliates.map((a) => (
+                <button
+                  key={a.id}
+                  onClick={() => toggleAffiliate(a.id)}
+                  className={`px-2.5 py-1 rounded-full text-xs border transition-colors ${
+                    form.affiliateIds.includes(a.id)
+                      ? "bg-fuchsia-600 text-white border-fuchsia-600"
+                      : "bg-gray-50 text-gray-600 border-gray-200 hover:border-fuchsia-300"
+                  }`}
+                >
+                  {a.name || a.username}
+                </button>
+              ))}
+              {!data.affiliates.length && <span className="text-xs text-gray-400">Aucun affilié actif.</span>}
+            </div>
+          </div>
+
+          {/* Rate limits */}
+          <div className="grid grid-cols-3 gap-3">
+            <NumField label="Commandes / minute" value={form.ordersPerMinute} onChange={(v) => set("ordersPerMinute", v)} placeholder="∞" />
+            <NumField label="Commandes / heure"  value={form.ordersPerHour}   onChange={(v) => set("ordersPerHour", v)}   placeholder="∞" />
+            <NumField label="Commandes / jour"   value={form.ordersPerDay}    onChange={(v) => set("ordersPerDay", v)}    placeholder="∞" />
+          </div>
+
+          {/* Delay + hours */}
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+            <NumField label="Délai min (s)" value={form.minDelaySec} onChange={(v) => set("minDelaySec", v)} />
+            <NumField label="Délai max (s)" value={form.maxDelaySec} onChange={(v) => set("maxDelaySec", v)} />
+            <NumField label="Heure début (0-23)" value={form.workingHourStart} onChange={(v) => set("workingHourStart", v)} />
+            <NumField label="Heure fin (0-24)"   value={form.workingHourEnd}   onChange={(v) => set("workingHourEnd", v)} />
+          </div>
+
+          {/* Working days */}
+          <div>
+            <label className="block text-[11px] font-semibold text-gray-500 mb-1.5">Jours actifs</label>
+            <div className="flex flex-wrap gap-1.5">
+              {WEEKDAYS.map((d) => {
+                const on = form.workingDays.split(",").filter(Boolean).map(Number).includes(d.n);
+                return (
+                  <button
+                    key={d.n}
+                    onClick={() => toggleDay(d.n)}
+                    className={`px-2.5 py-1 rounded-lg text-xs border ${
+                      on ? "bg-fuchsia-600 text-white border-fuchsia-600" : "bg-gray-50 text-gray-500 border-gray-200"
+                    }`}
+                  >
+                    {d.l}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Products */}
+          <div>
+            <label className="block text-[11px] font-semibold text-gray-500 mb-1.5">Produits</label>
+            <div className="flex gap-2 mb-2">
+              {["all", "selected"].map((m) => (
+                <button
+                  key={m}
+                  onClick={() => set("productMode", m)}
+                  className={`px-3 py-1.5 rounded-lg text-xs border ${
+                    form.productMode === m ? "bg-gray-900 text-white border-gray-900" : "bg-gray-50 text-gray-600 border-gray-200"
+                  }`}
+                >
+                  {m === "all" ? "Tous les produits actifs" : "Produits sélectionnés"}
+                </button>
+              ))}
+            </div>
+            {form.productMode === "selected" && (
+              <select
+                multiple
+                value={form.productIds}
+                onChange={(e) => set("productIds", Array.from(e.target.selectedOptions).map((o) => o.value))}
+                className="w-full h-32 text-xs border border-gray-200 rounded-lg p-2"
+              >
+                {data.products.map((p) => (
+                  <option key={p.id} value={p.id}>{p.title}</option>
+                ))}
+              </select>
+            )}
+          </div>
+
+          <div className="flex items-center justify-between pt-1">
+            <label className="flex items-center gap-2 text-xs text-gray-600">
+              <input type="checkbox" checked={form.enabled} onChange={(e) => set("enabled", e.target.checked)} />
+              Activer immédiatement (Start)
+            </label>
+            <button
+              onClick={save}
+              disabled={busy === "save"}
+              className="flex items-center gap-1.5 text-xs font-semibold px-4 py-2 rounded-xl bg-gray-900 text-white hover:bg-black disabled:opacity-50"
+            >
+              {busy === "save" ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <CheckCircle className="w-3.5 h-3.5" />}
+              Enregistrer
+            </button>
+          </div>
+        </div>
+
+        {/* ── Existing configs ───────────────────────────────────────────── */}
+        <div>
+          <h3 className="text-xs font-bold text-gray-700 uppercase tracking-wide mb-2">Affiliés configurés</h3>
+          {loading ? (
+            <div className="flex justify-center py-6"><Loader2 className="w-5 h-5 animate-spin text-gray-400" /></div>
+          ) : !data.configs.length ? (
+            <p className="text-xs text-gray-400">Aucune configuration.</p>
+          ) : (
+            <div className="space-y-2">
+              {data.configs.map((cfg) => (
+                <div key={cfg.id} className="flex items-center justify-between gap-3 border border-gray-100 rounded-xl px-4 py-3">
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm font-semibold text-gray-900 truncate">
+                        {cfg.affiliate?.name || cfg.affiliate?.username || nameFor(cfg.affiliateId)}
+                      </span>
+                      <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded-full ${cfg.enabled ? "bg-green-50 text-green-700" : "bg-gray-100 text-gray-500"}`}>
+                        {cfg.enabled ? "ON" : "OFF"}
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-gray-500 mt-0.5">
+                      {cfg.ordersPerHour ?? "∞"}/h · {cfg.ordersPerDay ?? "∞"}/j · {cfg.workingHourStart}h-{cfg.workingHourEnd}h ·
+                      délai {cfg.minDelaySec}-{cfg.maxDelaySec}s · {cfg.productMode === "all" ? "tous produits" : `${cfg.productIds.length} produit(s)`}
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    <button
+                      onClick={() => toggleEnabled(cfg)}
+                      disabled={busy === cfg.affiliateId}
+                      className="text-gray-500 hover:text-fuchsia-600"
+                      title={cfg.enabled ? "Stop" : "Start"}
+                    >
+                      {cfg.enabled ? <ToggleRight className="w-6 h-6 text-green-600" /> : <ToggleLeft className="w-6 h-6" />}
+                    </button>
+                    <button
+                      onClick={() => remove(cfg)}
+                      disabled={busy === cfg.affiliateId}
+                      className="text-gray-400 hover:text-red-600"
+                      title="Supprimer"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function NumField({ label, value, onChange, placeholder }) {
+  return (
+    <div>
+      <label className="block text-[11px] font-semibold text-gray-500 mb-1">{label}</label>
+      <input
+        type="number"
+        min="0"
+        value={value}
+        placeholder={placeholder}
+        onChange={(e) => onChange(e.target.value)}
+        className="w-full text-sm border border-gray-200 rounded-lg px-2.5 py-1.5 bg-gray-50 focus:outline-none focus:border-gray-400"
+      />
+    </div>
+  );
+}
+
 export default function AdminAffiliatesPage() {
   const [affiliates, setAffiliates] = useState([]);
   const [loading,    setLoading]    = useState(true);
@@ -912,6 +1232,8 @@ export default function AdminAffiliatesPage() {
       <DemoManagementPanel />
 
       <DemoAvatarLibrary />
+
+      <FakeOrdersPanel />
     </div>
   );
 }

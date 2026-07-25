@@ -154,6 +154,8 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 // Read-only query: REAL orders updated within the lookback window.
 // Excludes abandoned-cart / draft rows (paymentDetails.isDraft = true, or a
 // "draft_" sessionId) so paniers never receive order notifications.
+// Also excludes FAKE orders (Fake Orders Engine) — they carry fabricated phone
+// numbers and must NEVER trigger a real WhatsApp message.
 async function fetchRecentOrders(pool) {
   const res = await pool.query(
     `SELECT id, "customerName", "customerPhone", status, "updatedAt", "utmSource",
@@ -161,6 +163,7 @@ async function fetchRecentOrders(pool) {
        FROM orders
       WHERE "updatedAt" >= NOW() - INTERVAL '${LOOKBACK_DAYS} days'
         AND COALESCE(("paymentDetails"->>'isDraft'), 'false') <> 'true'
+        AND COALESCE("isFake", false) <> true
         AND ("sessionId" IS NULL OR "sessionId" NOT LIKE 'draft\\_%')
       ORDER BY "updatedAt" DESC`
   );

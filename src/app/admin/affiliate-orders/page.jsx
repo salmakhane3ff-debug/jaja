@@ -196,6 +196,7 @@ export default function AdminAffiliateOrdersPage() {
   const [loading,      setLoading]      = useState(true);
   const [search,       setSearch]       = useState("");
   const [filterStatus, setFilterStatus] = useState("all");
+  const [filterSource, setFilterSource] = useState("all"); // all | real | fake
   const [filterSusp,   setFilterSusp]   = useState(false);
   const [updatingId,   setUpdatingId]   = useState(null);
   const [detailsOrder, setDetailsOrder] = useState(null);
@@ -211,6 +212,8 @@ export default function AdminAffiliateOrdersPage() {
   const displayed = useMemo(() => {
     let list = orders;
     if (filterStatus !== "all") list = list.filter((o) => o.status === filterStatus);
+    if (filterSource === "real") list = list.filter((o) => !o.isFake);
+    else if (filterSource === "fake") list = list.filter((o) => o.isFake);
     if (filterSusp)             list = list.filter((o) => o.isSuspicious);
     const q = search.trim().toLowerCase();
     if (q) list = list.filter((o) =>
@@ -221,7 +224,7 @@ export default function AdminAffiliateOrdersPage() {
       o.ipAddress?.includes(q)
     );
     return list;
-  }, [orders, filterStatus, filterSusp, search]);
+  }, [orders, filterStatus, filterSource, filterSusp, search]);
 
   const suspCount = orders.filter((o) => o.isSuspicious).length;
 
@@ -287,6 +290,19 @@ export default function AdminAffiliateOrdersPage() {
                 {s === "all" ? "Tous les statuts" : STATUS_CONFIG[s]?.label || s}
               </option>
             ))}
+          </select>
+          <ChevronDown className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
+        </div>
+        {/* Source filter — All / Real / Fake (🎭) for analytics exclusion */}
+        <div className="relative">
+          <select
+            value={filterSource}
+            onChange={(e) => setFilterSource(e.target.value)}
+            className="pl-8 pr-3 py-2 text-sm border border-gray-200 rounded-xl focus:outline-none focus:border-gray-400 bg-gray-50 appearance-none"
+          >
+            <option value="all">Toutes sources</option>
+            <option value="real">Real uniquement</option>
+            <option value="fake">🎭 Fake uniquement</option>
           </select>
           <ChevronDown className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
         </div>

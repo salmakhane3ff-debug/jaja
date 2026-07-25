@@ -142,11 +142,20 @@ model Order {
   bemobConversionSentAt DateTime?
   bemobConversionStatus String?
 
+  // ── Fake Orders Engine (affiliate motivation) ──────────────────────────────
+  // isFake / orderSource are INTERNAL/admin-only. Fake orders reuse the exact
+  // same lifecycle + commission pipeline as real ones, but are excluded from
+  // every external integration (WhatsApp bot, Bemob, CAPI, shipping, invoices).
+  // Default REAL/false so every existing row and code path is unchanged.
+  isFake      Boolean @default(false)
+  orderSource String  @default("REAL") // "REAL" | "FAKE"
+
   @@index([status])
   @@index([affiliateId])
   @@index([customerPhone])
   @@index([customerEmail])
   @@index([createdAt])
+  @@index([isFake])
   @@map("orders")
 }
 
@@ -285,12 +294,51 @@ model Affiliate {
   // UGC module (additive back-relation — no DB column). onDelete: Restrict on the
   // child side preserves UGC submissions/earnings if an affiliate is ever removed.
   ugcSubmissions       UgcVideoSubmission[]
+  // Fake Orders Engine (additive back-relation — no DB column).
+  fakeOrderConfig      FakeOrderConfig?
 
   @@index([username])
   @@index([isActive])
   @@index([parentId])
   @@index([referralStatus])
   @@map("affiliates")
+}
+
+// ── Fake Orders Engine — per-affiliate configuration ───────────────────────────
+// One row per affiliate the admin has opted into fake-order generation for.
+// The engine (scripts/fake-orders-engine.mjs) reads these rows and injects fake
+// orders into the EXISTING order/commission pipeline while respecting every
+// configured limit. Entirely additive; absence of a row = feature off.
+model FakeOrderConfig {
+  id               String    @id @default(uuid())
+  affiliateId      String    @unique
+  enabled          Boolean   @default(false)
+  // Rate limits (null = that limit is not enforced). The engine never exceeds
+  // the STRICTEST configured limit across minute / hour / day windows.
+  ordersPerMinute  Int?
+  ordersPerHour    Int?
+  ordersPerDay     Int?
+  // Random delay between two consecutive orders for this affiliate (seconds).
+  minDelaySec      Int       @default(60)
+  maxDelaySec      Int       @default(600)
+  // Working window (business-timezone local hours, inclusive start .. exclusive end)
+  workingHourStart Int       @default(9)
+  workingHourEnd   Int       @default(22)
+  // CSV of weekday numbers the engine may run on. 0=Sunday … 6=Saturday.
+  workingDays      String    @default("0,1,2,3,4,5,6")
+  // Product selection: "all" active products, or only the ids in productIds.
+  productMode      String    @default("all")
+  productIds       Json      @default("[]")
+  // Engine bookkeeping — when the last fake order fired and the earliest the next
+  // one may fire (lastOrderAt + random(min,max)Delay).
+  lastOrderAt      DateTime?
+  nextOrderAt      DateTime?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+  affiliate        Affiliate @relation(fields: [affiliateId], references: [id])
+
+  @@index([enabled])
+  @@map("fake_order_configs")
 }
 
 model AffiliateOrder {
@@ -306,6 +354,9 @@ model AffiliateOrder {
   ipAddress        String?
   isSuspicious     Boolean   @default(false)
   suspicionReason  String?
+  // Mirror of Order.isFake so affiliate-side analytics can filter without a join.
+  // INTERNAL/admin-only — never surfaced to the affiliate. Default false.
+  isFake           Boolean   @default(false)
   createdAt        DateTime  @default(now())
   affiliate        Affiliate @relation(fields: [affiliateId], references: [id])
 
@@ -314,6 +365,7 @@ model AffiliateOrder {
   @@index([createdAt])
   @@index([ipAddress])
   @@index([isSuspicious])
+  @@index([isFake])
   @@map("affiliate_orders")
 }
 

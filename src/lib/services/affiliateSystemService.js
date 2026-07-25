@@ -242,7 +242,7 @@ export async function getAffiliateOrders(affiliateId) {
  * Returns null if affiliate not found.
  * Accepts either `affiliateId` (direct FK) or `username` (fallback lookup).
  */
-export async function recordAffiliateOrder({ username, affiliateId, orderId, clientName, clientPhone, productTitle, total, ipAddress }) {
+export async function recordAffiliateOrder({ username, affiliateId, orderId, clientName, clientPhone, productTitle, total, ipAddress, isFake = false }) {
   // Look up affiliate — prefer affiliateId for accuracy, fall back to username
   let affiliate = null;
   if (affiliateId?.trim()) {
@@ -313,6 +313,7 @@ export async function recordAffiliateOrder({ username, affiliateId, orderId, cli
         ipAddress:        ipAddress    || null,
         isSuspicious,
         suspicionReason,
+        isFake:           Boolean(isFake),
       },
     }),
     prisma.affiliateNotification.create({
@@ -344,8 +345,8 @@ export async function recordAffiliateOrder({ username, affiliateId, orderId, cli
  *  - add order total to generatedRevenue
  *  - flip referralStatus to "active" once deliveredOrdersCount >= 1
  */
-async function activateReferralIfDelivered(affiliateId, orderTotal = 0) {
-  const updated = await prisma.affiliate.update({
+async function activateReferralIfDelivered(affiliateId, orderTotal = 0, db = prisma) {
+  const updated = await db.affiliate.update({
     where:  { id: affiliateId },
     data:   {
       deliveredOrdersCount: { increment: 1 },
@@ -354,7 +355,7 @@ async function activateReferralIfDelivered(affiliateId, orderTotal = 0) {
     select: { deliveredOrdersCount: true, referralStatus: true },
   });
   if (updated.deliveredOrdersCount >= 1 && updated.referralStatus !== 'active') {
-    await prisma.affiliate.update({
+    await db.affiliate.update({
       where: { id: affiliateId },
       data:  { referralStatus: 'active' },
     });
@@ -374,6 +375,53 @@ export async function updateAffiliateOrderStatus(affiliateOrderId, status) {
     activateReferralIfDelivered(order.affiliateId, order.total).catch(() => {});
   }
   return mapOrder(order);
+}
+
+/**
+ * Propagate a store Order's status change to its linked AffiliateOrder, reusing
+ * the SAME delivery-credit path as real orders (activateReferralIfDelivered) so
+ * the wallet / commission / ranking all update through the existing engine — no
+ * second commission logic. Idempotent: only a genuine transition INTO 'delivered'
+ * credits, so re-saving 'delivered' never double-counts.
+ *
+ * Used by the Fake Orders Engine sync (orderService.updateOrder) so an admin can
+ * drive a fake order NEW→CONFIRMED→SHIPPED→DELIVERED from the normal Orders page.
+ * Also emits a status-change AffiliateNotification via the EXISTING notification
+ * table so the affiliate is notified exactly like a real event.
+ *
+ * @returns {Promise<{synced:boolean, delivered?:boolean}>}
+ */
+export async function syncLinkedAffiliateOrderStatus(orderId, rawStatus, { notify = true, db = prisma } = {}) {
+  if (!orderId) return { synced: false };
+  const status = String(rawStatus || '').toLowerCase();
+  const linked = await db.affiliateOrder.findFirst({
+    where:  { orderId },
+    select: { id: true, affiliateId: true, total: true, status: true, clientName: true },
+  });
+  if (!linked) return { synced: false };
+  if (linked.status === status) return { synced: false }; // no change → nothing to do
+
+  await db.affiliateOrder.update({ where: { id: linked.id }, data: { status } });
+
+  const becameDelivered = status === 'delivered' && linked.status !== 'delivered';
+  if (becameDelivered) {
+    await activateReferralIfDelivered(linked.affiliateId, linked.total, db).catch(() => {});
+  }
+
+  if (notify) {
+    const label = {
+      confirmed: 'confirmée', shipped: 'expédiée', delivered: 'livrée',
+      cancelled: 'annulée',   pending: 'en attente',
+    }[status] || status;
+    await db.affiliateNotification.create({
+      data: {
+        affiliateId: linked.affiliateId,
+        message:     `Commande ${label}: ${Number(linked.total).toFixed(0)} MAD - Client: ${linked.clientName || 'Inconnu'}`,
+      },
+    }).catch(() => {});
+  }
+
+  return { synced: true, delivered: becameDelivered };
 }
 
 // ── Payouts ───────────────────────────────────────────────────────────────────
@@ -890,6 +938,9 @@ export async function adminGetAllAffiliateOrders() {
     ...mapOrder(o, itemsByOrderId[o.orderId] || null),
     affiliateUsername: o.affiliate?.username,
     affiliateName:     o.affiliate?.name,
+    // Admin-only flag (never included in the affiliate-facing mapOrder) so the
+    // Orders/analytics views can filter All / Real / Fake.
+    isFake:            Boolean(o.isFake),
   }));
 }
 

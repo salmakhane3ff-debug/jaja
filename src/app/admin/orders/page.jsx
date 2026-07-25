@@ -155,6 +155,7 @@ export default function OrdersPage() {
   const [loading,     setLoading]     = useState(true);
   const [search,      setSearch]      = useState("");
   const [statusFilter,setStatusFilter]= useState("ALL");
+  const [sourceFilter,setSourceFilter]= useState("ALL"); // ALL | REAL | FAKE
   const [sortDesc,    setSortDesc]    = useState(true); // newest first
 
   // ── Fetch ─────────────────────────────────────────────────────────────────
@@ -196,6 +197,10 @@ export default function OrdersPage() {
       list = list.filter((o) => normaliseStatus(o.status) === statusFilter);
     }
 
+    // Source filter (Real / Fake) — fake orders are internal/admin-only.
+    if (sourceFilter === "REAL") list = list.filter((o) => !o.isFake);
+    else if (sourceFilter === "FAKE") list = list.filter((o) => o.isFake);
+
     // Sort
     list.sort((a, b) => {
       const diff = new Date(b.createdAt) - new Date(a.createdAt);
@@ -203,7 +208,7 @@ export default function OrdersPage() {
     });
 
     return list;
-  }, [orders, search, statusFilter, sortDesc]);
+  }, [orders, search, statusFilter, sourceFilter, sortDesc]);
 
   // ── Loading ───────────────────────────────────────────────────────────────
   if (loading) {
@@ -258,6 +263,17 @@ export default function OrdersPage() {
           ))}
         </select>
 
+        {/* Source filter — All / Real / Fake (🎭) */}
+        <select
+          value={sourceFilter}
+          onChange={(e) => setSourceFilter(e.target.value)}
+          className="text-sm border border-gray-200 rounded-xl px-3 py-2 bg-gray-50 focus:outline-none focus:border-gray-400"
+        >
+          <option value="ALL">الكل (Real + Fake)</option>
+          <option value="REAL">Real فقط</option>
+          <option value="FAKE">🎭 Fake فقط</option>
+        </select>
+
         {/* Sort toggle */}
         <button
           onClick={() => setSortDesc((d) => !d)}
@@ -302,9 +318,19 @@ export default function OrdersPage() {
                     <tr key={order._id} className="hover:bg-gray-50 transition-colors">
                       {/* Order ID */}
                       <td className="px-4 py-3">
-                        <span className="font-mono text-xs text-gray-500">
-                          #{order._id?.slice(-8).toUpperCase()}
-                        </span>
+                        <div className="flex items-center gap-1.5">
+                          <span className="font-mono text-xs text-gray-500">
+                            #{order._id?.slice(-8).toUpperCase()}
+                          </span>
+                          {order.isFake && (
+                            <span
+                              title="Commande fictive (interne — invisible pour l'affilié)"
+                              className="inline-flex items-center px-1.5 py-0.5 rounded-full text-[10px] font-bold bg-fuchsia-50 text-fuchsia-700 border border-fuchsia-200"
+                            >
+                              🎭 Fake
+                            </span>
+                          )}
+                        </div>
                       </td>
 
                       {/* Customer */}

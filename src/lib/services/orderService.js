@@ -16,6 +16,7 @@ import prisma               from '../prisma.js';
 import { mapOrder, parseOrderBody } from '../utils/mappers.js';
 import { sendBemobPostback } from '../bemobApi.js';
 import { getSettings } from './settingsService.js';
+import { syncLinkedAffiliateOrderStatus } from './affiliateSystemService.js';
 
 // ── Analytics helper ──────────────────────────────────────────────────────────
 /**
@@ -408,7 +409,17 @@ export async function updateOrder(id, body) {
   // Every other update — including edits to an order that is already
   // CONFIRMED, or a status change to any other value — takes the existing
   // plain-update path below, completely unchanged.
-  const isConfirmingNow = typeof data.status === 'string'
+  // ── Fake Orders Engine guard ──────────────────────────────────────────────
+  // Fake orders reuse this exact status-update path, but must NEVER trigger any
+  // external integration. We read isFake once: a fake order skips the Bemob
+  // (CONFIRMED) branch entirely and, after its status is written, syncs the
+  // change to its linked AffiliateOrder through the SAME delivery-credit engine
+  // real orders use (activateReferralIfDelivered). Real orders are unaffected.
+  const meta = await prisma.order.findUnique({ where: { id }, select: { isFake: true } });
+  const isFakeOrder = Boolean(meta?.isFake);
+
+  const isConfirmingNow = !isFakeOrder
+    && typeof data.status === 'string'
     && data.status.toUpperCase() === 'CONFIRMED';
 
   if (isConfirmingNow) {
@@ -481,6 +492,16 @@ export async function updateOrder(id, body) {
       data,
       include: { items: true },
     });
+
+    // Fake orders: propagate the status to the linked AffiliateOrder so the
+    // affiliate's "Mes commandes", wallet, commission, delivered-count and
+    // ranking update through the existing engine. No external integration runs.
+    if (isFakeOrder && data.status !== undefined) {
+      await syncLinkedAffiliateOrderStatus(id, data.status).catch((e) =>
+        console.error('[fake-order] status sync failed:', e?.message ?? e),
+      );
+    }
+
     return mapOrder(order);
   } catch (err) {
     if (err.code === 'P2025') return null; // record not found

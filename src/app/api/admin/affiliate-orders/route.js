@@ -14,9 +14,12 @@ async function getHandler(req) {
   try {
     const { searchParams } = new URL(req.url);
     const status = searchParams.get('status');
+    const source = (searchParams.get('source') || 'all').toLowerCase(); // all | real | fake
 
     const orders = await adminGetAllAffiliateOrders();
-    const filtered = status ? orders.filter((o) => o.status === status) : orders;
+    let filtered = status ? orders.filter((o) => o.status === status) : orders;
+    if (source === 'real') filtered = filtered.filter((o) => !o.isFake);
+    else if (source === 'fake') filtered = filtered.filter((o) => o.isFake);
     return Response.json(filtered);
   } catch (err) {
     console.error('Admin affiliate-orders GET error:', err);
