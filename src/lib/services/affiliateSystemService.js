@@ -489,6 +489,19 @@ export async function requestPayout(affiliateId, amount, db = prisma) {
     );
   }
 
+  // Identity must be APPROVED before ANY withdrawal — enforced server-side, never
+  // relying on the frontend. Read the verification status directly (no row or any
+  // non-APPROVED status blocks the request).
+  const idv = await db.identityVerification.findUnique({
+    where: { affiliateId }, select: { status: true },
+  });
+  if (idv?.status !== 'APPROVED') {
+    throw Object.assign(
+      new Error('Votre identité doit être vérifiée avant de pouvoir effectuer un retrait.'),
+      { code: 'IDENTITY_NOT_VERIFIED' },
+    );
+  }
+
   // Use a serializable transaction so the balance read and payout insert
   // are atomic — prevents double-withdrawal under concurrent requests.
   const payout = await db.$transaction(async (tx) => {

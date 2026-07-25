@@ -17,16 +17,20 @@ import {
   computeMemberCommissionPct,
 } from '@/lib/services/affiliateSystemService';
 import { comparePassword } from '@/lib/services/authService';
+import { getIdentityStatus } from '@/lib/services/identityService';
 
 async function getHandler(req, _ctx, decoded) {
   try {
     const affiliate = await getAffiliateById(decoded.affiliateId);
     if (!affiliate) return Response.json({ error: 'Affilié introuvable' }, { status: 404 });
 
-    const [stats, team, bonusConfig] = await Promise.all([
+    const [stats, team, bonusConfig, identity] = await Promise.all([
       getAffiliateDashboardStats(decoded.affiliateId),
       getAffiliateTeam(decoded.affiliateId),
       getTeamBonusConfig(),
+      // Identity status only (never file keys) — lets the live poll keep the
+      // progression + settings card in sync without a separate request.
+      getIdentityStatus(decoded.affiliateId),
     ]);
 
     const gamification = computeGamification(stats.validReferrals, team.length, affiliate.goalValidReferrals);
@@ -39,7 +43,7 @@ async function getHandler(req, _ctx, decoded) {
       parentEarnings:  parseFloat(((m.generatedRevenue ?? 0) * computeMemberCommissionPct(m.deliveredOrdersCount, tiers) / 100).toFixed(2)),
     }));
 
-    return Response.json({ affiliate, stats, gamification, team: teamEnriched, bonusConfig });
+    return Response.json({ affiliate, stats, gamification, team: teamEnriched, bonusConfig, identity });
   } catch (err) {
     console.error('Affiliate me GET error:', err);
     return Response.json({ error: 'Erreur serveur' }, { status: 500 });

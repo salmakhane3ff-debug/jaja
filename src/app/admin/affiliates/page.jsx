@@ -1035,6 +1035,91 @@ function NumField({ label, value, onChange, placeholder }) {
   );
 }
 
+// ── 💬 Affiliate WhatsApp Support settings ─────────────────────────────────────
+function SupportSettingsPanel() {
+  const [cfg,     setCfg]     = useState({ enabled: false, whatsappNumber: "", defaultMessage: "" });
+  const [loading, setLoading] = useState(true);
+  const [saving,  setSaving]  = useState(false);
+  const [msg,     setMsg]     = useState(null);
+
+  useEffect(() => {
+    fetch("/api/setting?type=affiliate-support")
+      .then((r) => r.json())
+      .then((d) => setCfg({
+        enabled: d?.enabled === true,
+        whatsappNumber: d?.whatsappNumber || "",
+        defaultMessage: d?.defaultMessage || "",
+      }))
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, []);
+
+  const save = async () => {
+    setSaving(true); setMsg(null);
+    try {
+      const res = await fetch("/api/setting?type=affiliate-support", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          enabled: cfg.enabled,
+          whatsappNumber: cfg.whatsappNumber.trim(),
+          defaultMessage: cfg.defaultMessage,
+        }),
+      });
+      setMsg(res.ok ? { ok: true, t: "Enregistré." } : { ok: false, t: "Échec." });
+    } catch { setMsg({ ok: false, t: "Échec." }); }
+    finally { setSaving(false); }
+  };
+
+  return (
+    <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden mt-6">
+      <div className="flex items-center gap-3 px-5 py-4 border-b border-gray-100 bg-green-50">
+        <span className="text-lg">💬</span>
+        <div>
+          <h2 className="text-sm font-bold text-gray-900">Support WhatsApp (affiliés)</h2>
+          <p className="text-[11px] text-gray-500">Numéro & message lus par le dashboard affilié. Désactivé → bouton masqué.</p>
+        </div>
+      </div>
+      <div className="p-5 space-y-4">
+        {loading ? (
+          <div className="flex justify-center py-6"><Loader2 className="w-5 h-5 animate-spin text-gray-400" /></div>
+        ) : (
+          <>
+            {msg && <div className={`text-xs px-3 py-2 rounded-lg ${msg.ok ? "bg-green-50 text-green-700" : "bg-red-50 text-red-700"}`}>{msg.t}</div>}
+            <label className="flex items-center gap-2 text-sm text-gray-700">
+              <input type="checkbox" checked={cfg.enabled} onChange={(e) => setCfg({ ...cfg, enabled: e.target.checked })} />
+              Activer le bouton de support WhatsApp
+            </label>
+            <div>
+              <label className="block text-[11px] font-semibold text-gray-500 mb-1">Numéro WhatsApp (format international, ex: 2126…)</label>
+              <input
+                value={cfg.whatsappNumber}
+                onChange={(e) => setCfg({ ...cfg, whatsappNumber: e.target.value })}
+                placeholder="212600000000"
+                className="w-full text-sm border border-gray-200 rounded-lg px-3 py-2 bg-gray-50 focus:outline-none focus:border-gray-400"
+              />
+            </div>
+            <div>
+              <label className="block text-[11px] font-semibold text-gray-500 mb-1">Message par défaut (placeholders : {"{{username}}"}, {"{{affiliateId}}"})</label>
+              <textarea
+                value={cfg.defaultMessage}
+                onChange={(e) => setCfg({ ...cfg, defaultMessage: e.target.value })}
+                placeholder="Laisser vide pour le message par défaut"
+                className="w-full h-28 text-sm border border-gray-200 rounded-lg px-3 py-2 bg-gray-50 focus:outline-none focus:border-gray-400"
+              />
+            </div>
+            <div className="flex justify-end">
+              <button onClick={save} disabled={saving} className="flex items-center gap-1.5 text-xs font-semibold px-4 py-2 rounded-xl bg-gray-900 text-white hover:bg-black disabled:opacity-50">
+                {saving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <CheckCircle className="w-3.5 h-3.5" />} Enregistrer
+              </button>
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export default function AdminAffiliatesPage() {
   const [affiliates, setAffiliates] = useState([]);
   const [loading,    setLoading]    = useState(true);
@@ -1234,6 +1319,8 @@ export default function AdminAffiliatesPage() {
       <DemoAvatarLibrary />
 
       <FakeOrdersPanel />
+
+      <SupportSettingsPanel />
     </div>
   );
 }

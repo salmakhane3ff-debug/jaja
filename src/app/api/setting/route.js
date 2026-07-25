@@ -38,6 +38,7 @@ const PUBLIC_TYPES = new Set([
   'footer',                // footer content
   'social',                // social links
   'language-settings',     // store default language (storefront reads on first visit)
+  'affiliate-support',     // affiliate WhatsApp support (number/message/enabled — non-sensitive)
 ]);
 
 export function GET(req) {

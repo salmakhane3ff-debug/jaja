@@ -38,7 +38,8 @@ async function postHandler(req, _ctx, decoded) {
     const payout = await requestPayout(decoded.affiliateId, amount);
     return Response.json(payout, { status: 201 });
   } catch (err) {
-    if (err.code === 'INSUFFICIENT_BALANCE' || err.code === 'INVALID_AMOUNT' || err.code === 'INCOMPLETE_BANK_INFO') {
+    if (err.code === 'INSUFFICIENT_BALANCE' || err.code === 'INVALID_AMOUNT'
+        || err.code === 'INCOMPLETE_BANK_INFO' || err.code === 'IDENTITY_NOT_VERIFIED') {
       return Response.json({ error: err.message, code: err.code }, { status: 400 });
     }
     console.error('Affiliate payout POST error:', err);

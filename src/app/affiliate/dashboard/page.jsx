@@ -8,16 +8,26 @@ import {
   ChevronDown, AlertCircle, Package, Truck,
   XCircle, CheckCircle, Building2, CreditCard,
   Target, Star, UserPlus, Eye, AlertTriangle, Settings, Video, Wallet,
+  ShieldCheck, ShieldAlert, MessageCircle, Upload, Trash2,
 } from "lucide-react";
 import UgcTab from "./UgcTab";
 import { diffNewItems, shouldPlaySaleSound } from "@/lib/liveFeed";
 import { createSaleSound } from "./saleSound";
+import { resolveSupportLink } from "@/lib/whatsappSupport";
 
 // Live feed: the gap BETWEEN background polls (measured after the previous poll
 // finishes, so requests can never stack up). ~3s gives near-instant sale
 // appearance while keeping load bounded — one poll at a time, paused when the
 // tab is hidden. Reuses the interval-polling approach already used elsewhere.
 const LIVE_POLL_MS = 3000;
+
+// Identity verification status → French label + emoji + colour (single source).
+const IDENTITY_UI = {
+  NOT_SUBMITTED: { emoji: "🪪", label: "Identité non vérifiée",  color: "#6b7280", bg: "#f3f4f6" },
+  PENDING:       { emoji: "🟡", label: "Vérification en cours",   color: "#b45309", bg: "#fffbeb" },
+  APPROVED:      { emoji: "✅", label: "Identité vérifiée",       color: "#047857", bg: "#ecfdf5" },
+  REJECTED:      { emoji: "❌", label: "Vérification refusée",    color: "#b91c1c", bg: "#fef2f2" },
+};
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -851,6 +861,172 @@ function CompetitionTab({ lang }) {
   );
 }
 
+// ── Identity Verification card (Settings) ─────────────────────────────────────
+const CIN_ACCEPT = ["image/jpeg", "image/jpg", "image/png", "image/webp"];
+const CIN_MAX = 5 * 1024 * 1024;
+
+function CinField({ label, side, file, preview, onPick, onClear, disabled }) {
+  const inputId = `cin-${side}`;
+  return (
+    <div>
+      <p className="text-xs font-semibold text-gray-600 mb-1.5">{label}</p>
+      {preview ? (
+        <div className="relative border border-gray-200 rounded-xl overflow-hidden">
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src={preview} alt={label} className="w-full h-40 object-contain bg-gray-100" />
+          {!disabled && (
+            <button type="button" onClick={onClear}
+              className="absolute top-2 right-2 bg-white/90 hover:bg-white p-1.5 rounded-lg text-red-600 shadow">
+              <Trash2 className="w-3.5 h-3.5" />
+            </button>
+          )}
+        </div>
+      ) : (
+        <label htmlFor={inputId}
+          className={`flex flex-col items-center justify-center h-40 border-2 border-dashed rounded-xl cursor-pointer transition-colors ${disabled ? "opacity-50 pointer-events-none" : "border-gray-200 hover:border-indigo-300 bg-gray-50"}`}>
+          <Upload className="w-5 h-5 text-gray-400 mb-1" />
+          <span className="text-xs text-gray-500">JPG, PNG, WEBP · max 5 Mo</span>
+        </label>
+      )}
+      <input id={inputId} type="file" accept={CIN_ACCEPT.join(",")} className="hidden" disabled={disabled}
+        onChange={(e) => onPick(e.target.files?.[0] || null)} />
+    </div>
+  );
+}
+
+function IdentityVerificationCard({ token, status, identity, onDone }) {
+  const [front, setFront]       = useState(null);
+  const [back, setBack]         = useState(null);
+  const [frontPrev, setFrontPrev] = useState(null);
+  const [backPrev, setBackPrev]   = useState(null);
+  const [err, setErr]           = useState(null);
+  const [submitting, setSubmitting] = useState(false);
+  const [progress, setProgress] = useState(0);
+
+  const locked = status === "APPROVED";
+  const ui = IDENTITY_UI[status] || IDENTITY_UI.NOT_SUBMITTED;
+
+  const validate = (f) => {
+    if (!f) return null;
+    if (!CIN_ACCEPT.includes(f.type)) return "Format non supporté (JPG, PNG ou WEBP).";
+    if (f.size > CIN_MAX) return "Fichier trop volumineux (max 5 Mo).";
+    return null;
+  };
+  const pick = (which) => (f) => {
+    const v = validate(f);
+    if (v) { setErr(v); return; }
+    setErr(null);
+    const prev = f ? URL.createObjectURL(f) : null;
+    if (which === "front") { setFront(f); setFrontPrev(prev); }
+    else { setBack(f); setBackPrev(prev); }
+  };
+  const clear = (which) => () => {
+    if (which === "front") { setFront(null); setFrontPrev(null); }
+    else { setBack(null); setBackPrev(null); }
+  };
+
+  const submit = () => {
+    if (!front || !back || submitting) return; // require both + prevent double submit
+    setSubmitting(true); setErr(null); setProgress(0);
+    const fd = new FormData();
+    fd.append("front", front);
+    fd.append("back", back);
+    // XHR for real upload progress (fetch can't report upload progress).
+    const xhr = new XMLHttpRequest();
+    xhr.open("POST", "/api/affiliate/identity");
+    if (token) xhr.setRequestHeader("Authorization", `Bearer ${token}`);
+    xhr.upload.onprogress = (e) => { if (e.lengthComputable) setProgress(Math.round((e.loaded / e.total) * 100)); };
+    xhr.onload = () => {
+      setSubmitting(false);
+      if (xhr.status >= 200 && xhr.status < 300) {
+        setFront(null); setBack(null); setFrontPrev(null); setBackPrev(null); setProgress(0);
+        onDone?.();
+      } else {
+        let m = "Échec de l'envoi.";
+        try { m = JSON.parse(xhr.responseText)?.error || m; } catch {}
+        setErr(m);
+      }
+    };
+    xhr.onerror = () => { setSubmitting(false); setErr("Erreur réseau."); };
+    xhr.send(fd);
+  };
+
+  return (
+    <Section title="Vérification d'identité" icon={ShieldCheck}>
+      <div className="space-y-4">
+        <div className="flex items-center gap-2">
+          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs font-bold"
+            style={{ color: ui.color, background: ui.bg }}>
+            <span>{ui.emoji}</span> {ui.label}
+          </span>
+        </div>
+
+        <p className="text-xs text-gray-500">
+          Pour sécuriser votre compte et débloquer les retraits, veuillez envoyer une pièce d'identité valide.
+        </p>
+
+        {status === "APPROVED" ? (
+          <div className="rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-sm px-4 py-3">
+            ✅ Identité vérifiée{identity?.approvedAt ? ` le ${fmtDate(identity.approvedAt)}` : ""}. Vos documents sont verrouillés.
+          </div>
+        ) : status === "PENDING" ? (
+          <div className="rounded-xl bg-amber-50 border border-amber-200 text-amber-800 text-sm px-4 py-3">
+            🟡 Votre vérification est en cours d'examen. Vous serez notifié après la décision.
+          </div>
+        ) : (
+          <>
+            {status === "REJECTED" && identity?.rejectionReason && (
+              <div className="rounded-xl bg-red-50 border border-red-200 text-red-800 text-sm px-4 py-3">
+                ❌ Refusée — motif : {identity.rejectionReason}. Vous pouvez renvoyer de nouvelles images.
+              </div>
+            )}
+            {err && <div className="rounded-lg bg-red-50 text-red-700 text-xs px-3 py-2">{err}</div>}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <CinField label="Recto de la CIN" side="front" file={front} preview={frontPrev} onPick={pick("front")} onClear={clear("front")} disabled={locked || submitting} />
+              <CinField label="Verso de la CIN" side="back" file={back} preview={backPrev} onPick={pick("back")} onClear={clear("back")} disabled={locked || submitting} />
+            </div>
+
+            {submitting && (
+              <div className="w-full h-2 rounded-full bg-gray-100 overflow-hidden">
+                <div className="h-full bg-indigo-600 transition-all" style={{ width: `${progress}%` }} />
+              </div>
+            )}
+
+            <button
+              type="button"
+              onClick={submit}
+              disabled={!front || !back || submitting}
+              className="flex items-center gap-2 px-5 py-2.5 bg-gray-900 hover:bg-black text-white rounded-xl text-sm font-semibold disabled:opacity-50"
+            >
+              {submitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <ShieldCheck className="w-4 h-4" />}
+              {submitting ? `Envoi… ${progress}%` : "Envoyer pour vérification"}
+            </button>
+          </>
+        )}
+      </div>
+    </Section>
+  );
+}
+
+function WhatsappSupportCard({ link }) {
+  return (
+    <Section title="Support WhatsApp" icon={MessageCircle}>
+      <div className="space-y-3">
+        <p className="text-xs text-gray-500">Notre équipe est disponible pour vous aider concernant :</p>
+        <ul className="text-xs text-gray-600 grid grid-cols-2 gap-1.5">
+          {["Commandes", "Commissions", "Retraits", "Vérification d'identité", "UGC", "Compétition", "Problèmes techniques"].map((t) => (
+            <li key={t} className="flex items-center gap-1.5"><span className="text-green-500">•</span>{t}</li>
+          ))}
+        </ul>
+        <a href={link} target="_blank" rel="noopener noreferrer"
+          className="inline-flex items-center gap-2 px-5 py-2.5 bg-green-600 hover:bg-green-700 text-white rounded-xl text-sm font-semibold">
+          <MessageCircle className="w-4 h-4" /> Contacter le support WhatsApp
+        </a>
+      </div>
+    </Section>
+  );
+}
+
 // ── Main dashboard ────────────────────────────────────────────────────────────
 
 export default function AffiliateDashboard() {
@@ -869,6 +1045,9 @@ export default function AffiliateDashboard() {
   const [claimMsg,   setClaimMsg]   = useState(null);
   const [loading,    setLoading]    = useState(true);
   const [error,      setError]      = useState(null);
+
+  // WhatsApp support config (read once from platform settings — no polling).
+  const [supportCfg, setSupportCfg] = useState(null);
 
   // ── Live feed (background polling) ─────────────────────────────────────────
   const [liveConnected, setLiveConnected] = useState(true); // false → last poll failed
@@ -1041,6 +1220,14 @@ export default function AffiliateDashboard() {
       clearTimeout(flashTimerRef.current);
     };
   }, [token, fetchAll]);
+
+  // WhatsApp support config — read ONCE from platform settings (no polling).
+  useEffect(() => {
+    fetch("/api/setting?type=affiliate-support")
+      .then((r) => r.json())
+      .then((d) => setSupportCfg(d && typeof d === "object" ? d : null))
+      .catch(() => setSupportCfg(null));
+  }, []);
 
   // Fetch store bank settings (public — no auth needed)
   useEffect(() => {
@@ -1260,6 +1447,21 @@ export default function AffiliateDashboard() {
     _rib.length >= 10 && _rib.length <= 34
   );
 
+  // Identity verification status (from /me — refreshed by the live poll, so the
+  // progression + payout gate update automatically after submit/admin decision).
+  const identity         = data?.identity || null;
+  const identityStatus   = identity?.status || "NOT_SUBMITTED";
+  const identityApproved = identityStatus === "APPROVED";
+  const goToIdentity = () => { setActiveTab("settings"); setTimeout(() => {
+    if (typeof document !== "undefined") document.getElementById("identity-card")?.scrollIntoView({ behavior: "smooth", block: "start" });
+  }, 60); };
+
+  // WhatsApp support link (null when disabled / no number → button hidden).
+  const supportLink = resolveSupportLink(supportCfg, {
+    username:    affiliate?.username,
+    affiliateId: affiliate?.id,
+  });
+
   // Phone-based order count — used to show repeat-client indicator
   const phoneCounts = orders.reduce((acc, o) => {
     if (o.clientPhone) acc[o.clientPhone] = (acc[o.clientPhone] || 0) + 1;
@@ -1311,6 +1513,19 @@ export default function AffiliateDashboard() {
           </div>
 
           <div className="flex items-center gap-2">
+            {/* WhatsApp quick support — shown only when enabled + configured */}
+            {supportLink && (
+              <a
+                href={supportLink}
+                target="_blank"
+                rel="noopener noreferrer"
+                title="Support WhatsApp"
+                className="p-2 rounded-xl transition-colors text-green-600 hover:text-green-700 hover:bg-green-50"
+              >
+                <MessageCircle className="w-4 h-4" />
+              </a>
+            )}
+
             {/* Notifications bell */}
             <button
               onClick={() => { setActiveTab("notifications"); markNotifsRead(); }}
@@ -1439,6 +1654,20 @@ export default function AffiliateDashboard() {
                         style={{ width: `${Math.min(100, ((affiliate?.deliveredOrdersCount ?? 0) / (affiliate?.goalOrders || 5)) * 100)}%` }} />
                     </div>
                   </div>
+
+                  {/* Identity verification condition — click → Paramètres → Vérification */}
+                  <button
+                    onClick={goToIdentity}
+                    title="Vérification d'identité"
+                    className="mt-1 flex items-center justify-between gap-2 rounded-lg px-2.5 py-2 text-left transition-colors"
+                    style={{ background: "rgba(255,255,255,0.18)" }}
+                  >
+                    <span className="flex items-center gap-1.5 text-xs font-bold">
+                      <span>{IDENTITY_UI[identityStatus].emoji}</span>
+                      <span>{IDENTITY_UI[identityStatus].label}</span>
+                    </span>
+                    <svg className="w-3.5 h-3.5 opacity-80" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 18l6-6-6-6"/></svg>
+                  </button>
                 </div>
               </div>
             )}
@@ -1714,6 +1943,18 @@ export default function AffiliateDashboard() {
                     {payoutMsg.text}
                   </div>
                 )}
+                {!identityApproved && (
+                  <div className="rounded-xl px-4 py-3 bg-red-50 border border-red-200 text-red-800 text-sm">
+                    <p className="flex items-start gap-2">
+                      <ShieldAlert className="w-4 h-4 shrink-0 mt-0.5" />
+                      Votre identité doit être vérifiée avant de pouvoir effectuer un retrait.
+                    </p>
+                    <button type="button" onClick={goToIdentity}
+                      className="mt-2 inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-white bg-red-600 hover:bg-red-700 rounded-lg">
+                      <ShieldCheck className="w-3.5 h-3.5" /> Vérifier maintenant
+                    </button>
+                  </div>
+                )}
                 {!bankComplete && (
                   <div className="rounded-xl px-4 py-3 bg-amber-50 border border-amber-200 text-amber-800 text-sm">
                     <p className="flex items-start gap-2">
@@ -1747,7 +1988,7 @@ export default function AffiliateDashboard() {
                 </div>
                 <button
                   type="submit"
-                  disabled={!bankComplete || payoutLoading || !payoutAmount || parseFloat(payoutAmount) <= 0 || parseFloat(payoutAmount) > balance}
+                  disabled={!identityApproved || !bankComplete || payoutLoading || !payoutAmount || parseFloat(payoutAmount) <= 0 || parseFloat(payoutAmount) > balance}
                   className="flex items-center gap-2 px-6 py-2.5 bg-gray-900 hover:bg-gray-800 text-white rounded-xl text-sm font-semibold disabled:opacity-50 transition-all"
                 >
                   {payoutLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <CreditCard className="w-4 h-4" />}
@@ -2428,6 +2669,19 @@ export default function AffiliateDashboard() {
                 onUpdate={(updated) => setData(d => ({ ...d, affiliate: updated }))}
               />
             </Section>
+
+            {/* ── Identity Verification (before profile edit) ── */}
+            <div id="identity-card">
+              <IdentityVerificationCard
+                token={token}
+                status={identityStatus}
+                identity={identity}
+                onDone={() => fetchAll(token, { silent: true })}
+              />
+            </div>
+
+            {/* ── WhatsApp Support (hidden when disabled/unconfigured) ── */}
+            {supportLink && <WhatsappSupportCard link={supportLink} />}
 
             {/* ── Edit Profile ── */}
             <Section title="Modifier le profil" icon={Star}>

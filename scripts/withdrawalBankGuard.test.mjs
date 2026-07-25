@@ -74,6 +74,8 @@ console.log("3) requestPayout rejects incomplete bank info BEFORE touching balan
     _s: { txEntered: false, created: null },
   };
   complete.affiliate = { findUnique: async () => ({ bankName: "CIH", accountName: "Ahmed", rib: "1234567890123" }) };
+  // Identity must be APPROVED to pass the (later) identity gate before the tx.
+  complete.identityVerification = { findUnique: async () => ({ status: "APPROVED" }) };
   complete.$transaction = async (fn) => { complete._s.txEntered = true; return fn(complete); };
   complete.affiliatePayout = { create: async ({ data }) => { complete._s.created = data; return { id: "p1", ...data }; } };
   // getAffiliateBalance uses the injected tx (complete) → needs ugcEarning/affiliateOrder aggregates.

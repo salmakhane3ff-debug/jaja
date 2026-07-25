@@ -296,6 +296,8 @@ model Affiliate {
   ugcSubmissions       UgcVideoSubmission[]
   // Fake Orders Engine (additive back-relation — no DB column).
   fakeOrderConfig      FakeOrderConfig?
+  // Identity verification (additive back-relation — no DB column).
+  identityVerification IdentityVerification?
 
   @@index([username])
   @@index([isActive])
@@ -339,6 +341,29 @@ model FakeOrderConfig {
 
   @@index([enabled])
   @@map("fake_order_configs")
+}
+
+// ── Affiliate identity verification (CIN) ──────────────────────────────────────
+// One row per affiliate (created on first submission). Absence of a row means
+// NOT_SUBMITTED. cinFrontFile / cinBackFile are PRIVATE storage keys (never a
+// public URL, never returned in affiliate-facing responses) — the documents are
+// streamed only through an admin-authenticated route. Entirely additive.
+model IdentityVerification {
+  id              String    @id @default(uuid())
+  affiliateId     String    @unique
+  status          String    @default("PENDING") // PENDING | APPROVED | REJECTED (no row = NOT_SUBMITTED)
+  cinFrontFile    String? // private storage key
+  cinBackFile     String? // private storage key
+  rejectionReason String?
+  submittedAt     DateTime?
+  approvedAt      DateTime?
+  approvedBy      String? // admin user id/email who approved (if available)
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  affiliate       Affiliate @relation(fields: [affiliateId], references: [id])
+
+  @@index([status])
+  @@map("identity_verifications")
 }
 
 model AffiliateOrder {

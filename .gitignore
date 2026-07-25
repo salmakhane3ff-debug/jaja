@@ -66,3 +66,6 @@ next-env.d.ts
 # media migration ledgers (runtime; resume/rollback source of truth)
 media-migration-ledger.json
 media-migration-r2-ledger.json
+
+# Private, sensitive uploads (affiliate CIN identity documents) — never commit
+private_uploads/
