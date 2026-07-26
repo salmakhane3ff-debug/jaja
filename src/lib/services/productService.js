@@ -29,6 +29,7 @@ const PRODUCT_COLUMNS = new Set([
   // ── Redirect & payment control (new) ──────────────────────────────────────
   'redirectMode', 'redirectUrl',
   'allowCOD', 'allowPrepaid',
+  'purchaseFlow',
   // ── Page builder sections ──────────────────────────────────────────────────
   'sections',
   // ── Per-product conversion / scarcity ─────────────────────────────────────

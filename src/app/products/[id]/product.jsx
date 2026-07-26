@@ -5,6 +5,7 @@ import "@/app/prose.css";
 import React, { useState, useEffect, useRef, useCallback, lazy, Suspense, useMemo } from "react";
 import StickyAddToCart from "@/components/Product/StickyAddToCart";
 import ProductGallery from "@/components/ProductGallery";
+import InlineCodForm from "@/components/Product/InlineCodForm";
 import { BadgeCheck, ShieldCheck, ShoppingCart } from "lucide-react";
 import SectionRenderer from "@/components/SectionRenderer";
 import { ShoppingBag, Heart, Star, Truck, Shield, Share2, Plus, Minus, Award, Box, Tag, Check } from "lucide-react";
@@ -56,6 +57,8 @@ export default function Product({ data }) {
   ), [convRaw]);
 
   const [quantity, setQuantity] = useState(1);
+  // Bumped on Buy Now (inline/popup COD) → focuses the COD form's first field.
+  const [codFocus, setCodFocus] = useState(0);
   // Generic variant selections: { [variantName]: selectedOption }
   // e.g. { "Couleur": "Noir", "Taille": "M" }
   const [selectedVariants, setSelectedVariants] = useState({});
@@ -239,6 +242,15 @@ export default function Product({ data }) {
 
   const handleBuyNow = async () => {
     trackClarity("cta_buy_now", data._id);
+    // Inline COD mode: don't redirect — scroll to the embedded COD form, then
+    // focus its first field + play a subtle highlight so it's noticed.
+    if (data.purchaseFlow === "inline_cod") {
+      if (typeof document !== "undefined") {
+        document.getElementById("product-cod-form")?.scrollIntoView({ behavior: "smooth", block: "center" });
+        setTimeout(() => setCodFocus((n) => n + 1), 450); // after the scroll settles
+      }
+      return;
+    }
     let baseItems;
     if (selectedBundle === "2+1") {
       const freeTitle = giftProduct?.title
@@ -655,6 +667,20 @@ export default function Product({ data }) {
               )}
             </div>
 
+            {/* Inline COD form — appears directly below the Buy button, reusing the
+                SAME form + /api/order pipeline as landing pages. Only when enabled. */}
+            {data.purchaseFlow === "inline_cod" && data.stockStatus !== "Out of Stock" && (
+              <div id="product-cod-form" className="pt-2 -mx-4 sm:mx-0">
+                <InlineCodForm
+                  product={data}
+                  quantity={quantity}
+                  variant={variantsList}
+                  price={effectivePrice}
+                  orderSource="product"
+                  focusSignal={codFocus}
+                />
+              </div>
+            )}
 
             {/* Description / Sections */}
             {(data.sections?.length > 0 || data.description) && (

@@ -6,6 +6,7 @@ import { Star, Check, X, Zap, Home, ChevronDown, ChevronUp } from "lucide-react"
 import Link from "next/link";
 import { fetchCached } from "@/lib/dataCache";
 import StickyCTA from "@/components/Product/StickyCTA";
+import InlineCodForm from "@/components/Product/InlineCodForm";
 import { resolveClickId } from "@/lib/tracking/clickId";
 import { trackClarity } from "@/lib/trackClarity";
 
@@ -676,7 +677,7 @@ function BlockRenderer({ block, product, landingPage, onBuyNow, buying }) {
       return <AudioBlock cfg={cfg} />;
 
     case "orderForm":
-      return <div id="lp-order-form"><OrderFormBlock cfg={cfg} product={product} landingPage={landingPage} /></div>;
+      return <div id="lp-order-form"><InlineCodForm cfg={cfg} product={product} landingPage={landingPage} /></div>;
 
     case "upsell": {
       const lpProds = Array.isArray(landingPage?.products) ? landingPage.products : [];
@@ -892,146 +893,6 @@ function AudioBlock({ cfg }) {
           {ready  && <p className="text-[10px] text-purple-400">{playing ? "Playing" : "Tap to play"}</p>}
         </div>
         <span className="text-purple-400 text-xs">🔊</span>
-      </div>
-    </div>
-  );
-}
-
-// ══════════════════════════════════════════════════════════════════════════════
-//  ORDER FORM BLOCK (inline COD checkout)
-// ══════════════════════════════════════════════════════════════════════════════
-
-function OrderFormBlock({ cfg, product, landingPage }) {
-  const [form,   setForm]   = useState({ name: "", phone: "", city: "", address: "" });
-  const [status, setStatus] = useState("idle"); // idle | submitting | success | error
-  const setF = (k, v) => setForm((f) => ({ ...f, [k]: v }));
-
-  const submit = async (e) => {
-    e.preventDefault();
-    if (!form.name.trim() || !form.phone.trim()) return;
-    setStatus("submitting");
-    try {
-      const sessionId = `lp-${Date.now()}-${Math.random().toString(36).slice(2)}`;
-      const price = product?.salePrice || product?.regularPrice || 0;
-
-      // Attribution + tracking — reuse existing storage/fields the working
-      // checkout already relies on (no new capture logic, no schema change).
-      const affiliateId = (() => {
-        try { return localStorage.getItem("affiliateId") || null; } catch { return null; }
-      })();
-      const affiliateRef = (() => {
-        try { return localStorage.getItem("affiliateRef") || null; } catch { return null; }
-      })();
-      const bemobClickId = resolveClickId();
-      const city    = form.city.trim();
-      const address = form.address.trim();
-
-      const res = await fetch("/api/order", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          name:  form.name.trim(),
-          phone: form.phone.trim(),
-          // Nested shape so admin shows city/address (matches working checkout).
-          shipping: {
-            address: { city, address1: address || city },
-            name:  form.name.trim(),
-            phone: form.phone.trim(),
-          },
-          products: {
-            items: [{
-              productId: product?._id || product?.id,
-              title:     product?.title || "منتج",
-              quantity:  1,
-              price,
-              // Same image shape as the working checkout so admin + affiliate
-              // order details render the product image (stored in productSnapshot).
-              images:    (product?.images || []).map(imgSrc).filter(Boolean),
-            }],
-          },
-          paymentDetails: {
-            paymentMethod: "COD",
-            status: "pending",
-            total: price,
-          },
-          status: "pending",
-          sessionId,
-          // Affiliate attribution + landing source marker (existing fields only).
-          affiliateId,
-          orderSource: "landing",
-          utm_source:  landingPage?.slug || null,
-          bemobClickId,
-        }),
-      });
-      if (res.ok) {
-        // Affiliate recording — identical flow/payload to confirm/page.jsx.
-        // Fire-and-forget: must never block or fail the order itself.
-        try {
-          const created = await res.json();
-          const orderId = created?._id || created?.id || null;
-          if (affiliateRef || affiliateId) {
-            fetch("/api/affiliate/record-order", {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                username: affiliateRef, affiliateId, orderId,
-                clientName: form.name.trim(), clientPhone: form.phone.trim() || "",
-                productTitle: product?.title || "", total: price,
-              }),
-            }).catch(() => {});
-          }
-        } catch {}
-        setStatus("success");
-      } else {
-        setStatus("error");
-      }
-    } catch {
-      setStatus("error");
-    }
-  };
-
-  if (status === "success") {
-    return (
-      <div className="px-4 py-3">
-        <div className="bg-green-50 border border-green-200 rounded-2xl p-6 text-center space-y-3">
-          <div className="text-4xl">🎉</div>
-          <p className="text-base font-black text-green-700">
-            {cfg.successMessage || "تم استلام طلبك بنجاح!"}
-          </p>
-          <p className="text-sm text-green-600">سنتصل بك قريباً لتأكيد الطلب.</p>
-        </div>
-      </div>
-    );
-  }
-
-  return (
-    <div className="px-4 py-3">
-      <div className="bg-white rounded-2xl border border-gray-100 p-5 shadow-sm">
-        <p className="text-xs font-black text-gray-400 uppercase tracking-widest mb-4">📦 أكمل طلبك الآن</p>
-        <form onSubmit={submit} className="space-y-3" dir="rtl">
-          <input required value={form.name} onChange={(e) => setF("name", e.target.value)}
-            placeholder="الاسم الكامل *"
-            className="w-full text-sm border border-gray-200 rounded-xl px-4 py-3 focus:outline-none focus:border-amber-400 focus:ring-1 focus:ring-amber-200 bg-gray-50" />
-          <input required type="tel" value={form.phone} onChange={(e) => setF("phone", e.target.value)}
-            placeholder="رقم الهاتف *"
-            className="w-full text-sm border border-gray-200 rounded-xl px-4 py-3 focus:outline-none focus:border-amber-400 focus:ring-1 focus:ring-amber-200 bg-gray-50" />
-          <input value={form.city} onChange={(e) => setF("city", e.target.value)}
-            placeholder="المدينة"
-            className="w-full text-sm border border-gray-200 rounded-xl px-4 py-3 focus:outline-none focus:border-amber-400 focus:ring-1 focus:ring-amber-200 bg-gray-50" />
-          {cfg.showAddress !== false && (
-            <input value={form.address} onChange={(e) => setF("address", e.target.value)}
-              placeholder="العنوان التفصيلي"
-              className="w-full text-sm border border-gray-200 rounded-xl px-4 py-3 focus:outline-none focus:border-amber-400 focus:ring-1 focus:ring-amber-200 bg-gray-50" />
-          )}
-          {status === "error" && (
-            <p className="text-xs text-red-500 text-center">حدث خطأ، يرجى المحاولة مرة أخرى.</p>
-          )}
-          <button type="submit" disabled={status === "submitting"}
-            className="w-full flex items-center justify-center gap-2 py-4 bg-amber-400 hover:bg-amber-500 active:scale-[0.98] text-white rounded-2xl font-black text-base transition-all shadow-lg shadow-amber-200 disabled:opacity-70">
-            <Zap className="w-5 h-5" />
-            {status === "submitting" ? "جارٍ الإرسال…" : (cfg.buttonText || "اطلب الآن")}
-          </button>
-        </form>
       </div>
     </div>
   );

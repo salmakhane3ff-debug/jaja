@@ -424,6 +424,7 @@ function ProductForm() {
     redirectUrl:       "",
     allowCOD:          true,
     allowPrepaid:      true,
+    purchaseFlow:      "checkout", // "checkout" | "inline_cod"
     // ── Per-product conversion / scarcity ──────────────────────────────────
     conversionEnabled: false,
     conversionSold:    "",
@@ -482,6 +483,7 @@ function ProductForm() {
           redirectUrl:       data.redirectUrl   ?? "",
           allowCOD:          data.allowCOD      !== false,
           allowPrepaid:      data.allowPrepaid  !== false,
+          purchaseFlow:      data.purchaseFlow  ?? "checkout",
           // ── Per-product conversion / scarcity ────────────────────────────
           conversionEnabled: data.conversionEnabled ?? false,
           conversionSold:    data.conversionSold    ?? "",
@@ -1062,6 +1064,39 @@ function ProductForm() {
                 </div>
               </div>
             )}
+          </div>
+
+          {/* ── Purchase Mode ── */}
+          <div className="bg-white rounded-xl p-6">
+            <h3 className="text-lg font-semibold text-gray-900 mb-2 flex items-center gap-2">
+              <span>🛒</span> Purchase Mode
+            </h3>
+            <p className="text-xs text-gray-500 mb-4">How the Buy Now button behaves on the product page</p>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              {[
+                { v: "checkout",   title: "Checkout Page",   desc: "Buy Now → checkout page (default)" },
+                { v: "inline_cod", title: "Inline COD Form",  desc: "Buy Now scrolls to an embedded COD form" },
+              ].map((opt) => {
+                const active = (productData.purchaseFlow || "checkout") === opt.v;
+                return (
+                  <div
+                    key={opt.v}
+                    onClick={() => setProductData({ ...productData, purchaseFlow: opt.v })}
+                    className={`cursor-pointer rounded-xl border p-4 transition-all flex items-start gap-3
+                      ${active ? "bg-gray-900 border-gray-900" : "bg-gray-50 border-gray-200 hover:border-gray-300"}`}
+                  >
+                    <div className={`mt-0.5 w-4 h-4 rounded-full border flex items-center justify-center shrink-0
+                      ${active ? "border-white" : "border-gray-300"}`}>
+                      {active && <div className="w-2 h-2 rounded-full bg-white" />}
+                    </div>
+                    <div>
+                      <p className={`text-sm font-semibold ${active ? "text-white" : "text-gray-900"}`}>{opt.title}</p>
+                      <p className={`text-xs ${active ? "text-gray-300" : "text-gray-400"}`}>{opt.desc}</p>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
           </div>
 
           {/* ── Payment Methods ── */}

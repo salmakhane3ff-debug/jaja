@@ -56,6 +56,10 @@ model Product {
   updatedAt         DateTime             @updatedAt
   allowCOD          Boolean              @default(true)
   allowPrepaid      Boolean              @default(true)
+  // Purchase mode (UI label "Purchase Mode"): "checkout" (default — Buy Now →
+  // checkout page) or "inline_cod" (Buy Now scrolls to an embedded COD form on
+  // the product page). Default preserves existing behaviour; no migration needed.
+  purchaseFlow      String               @default("checkout")
   redirectMode      String               @default("default")
   redirectUrl       String?
   sections          Json                 @default("[]")
