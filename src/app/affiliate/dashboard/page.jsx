@@ -67,14 +67,7 @@ function StatusBadge({ status }) {
 
 // ── Stat card ─────────────────────────────────────────────────────────────────
 
-// `ar` is an OPTIONAL small Arabic helper label shown under the French one. It is
-// hardcoded (NOT wired to the public site translation system) so the dashboard
-// always stays French-primary and never flips its whole layout to RTL.
-function ArHelper({ children }) {
-  return children ? <span dir="rtl" className="block text-[10px] font-normal text-gray-300 leading-tight mt-0.5">{children}</span> : null;
-}
-
-function StatCard({ icon: Icon, label, value, sub, color = "gray", ar }) {
+function StatCard({ icon: Icon, label, value, sub, color = "gray" }) {
   const colors = {
     gray:   "bg-gray-100   text-gray-700",
     blue:   "bg-blue-50    text-blue-600",
@@ -91,7 +84,7 @@ function StatCard({ icon: Icon, label, value, sub, color = "gray", ar }) {
       </div>
       <div>
         <p className="text-xl font-bold text-gray-900 leading-none">{value}</p>
-        <p className="text-xs text-gray-500 mt-1">{label}<ArHelper>{ar}</ArHelper></p>
+        <p className="text-xs text-gray-500 mt-1">{label}</p>
         {sub && <p className="text-xs text-gray-400 mt-0.5">{sub}</p>}
       </div>
     </div>
@@ -100,12 +93,12 @@ function StatCard({ icon: Icon, label, value, sub, color = "gray", ar }) {
 
 // ── Section card ──────────────────────────────────────────────────────────────
 
-function Section({ title, children, icon: Icon, ar }) {
+function Section({ title, children, icon: Icon }) {
   return (
     <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden">
       <div className="px-5 py-3.5 border-b border-gray-50 bg-gray-50/60 flex items-center gap-2">
         {Icon && <Icon className="w-4 h-4 text-gray-500" />}
-        <h2 className="text-sm font-bold text-gray-700 leading-tight">{title}<ArHelper>{ar}</ArHelper></h2>
+        <h2 className="text-sm font-bold text-gray-700 leading-tight">{title}</h2>
       </div>
       <div className="p-5">{children}</div>
     </div>
@@ -265,7 +258,7 @@ function OrderDetailsModal({ order, onClose, onStatusChange, updatingOrder }) {
           {/* Products list */}
           <div className="px-5 pt-4 pb-2">
             <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-widest mb-3">
-              📦 المنتجات
+              📦 Produits
             </p>
             <div className="space-y-2">
               {order.orderItems && order.orderItems.length > 0 ? (
@@ -447,7 +440,7 @@ function DemoAvatar({ name, color, url, size = 'md' }) {
 
 // ── Demo Affiliate Detail Modal ───────────────────────────────────────────────
 
-function DemoAffiliateModal({ affiliateId, onClose, lang }) {
+function DemoAffiliateModal({ affiliateId, onClose }) {
   const [data,      setData]      = useState(null);
   const [loading,   setLoading]   = useState(true);
   const [activeTab, setActiveTab] = useState('overview');
@@ -462,8 +455,6 @@ function DemoAffiliateModal({ affiliateId, onClose, lang }) {
       .finally(() => setLoading(false));
   }, [affiliateId]);
 
-  const fr = lang === 'fr';
-
   return (
     <div className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-black/50 backdrop-blur-sm"
       onClick={(e) => e.target === e.currentTarget && onClose()}>
@@ -474,7 +465,7 @@ function DemoAffiliateModal({ affiliateId, onClose, lang }) {
         {/* Header */}
         <div className="flex items-center justify-between px-5 py-4 border-b border-gray-100">
           <h2 className="text-sm font-bold text-gray-800">
-            {fr ? 'Profil compétiteur' : 'ملف المنافس'}
+            {'Profil compétiteur'}
           </h2>
           <button onClick={onClose}
             className="w-7 h-7 rounded-full bg-gray-100 flex items-center justify-center text-gray-500 hover:bg-gray-200 transition-colors">
@@ -488,7 +479,7 @@ function DemoAffiliateModal({ affiliateId, onClose, lang }) {
           </div>
         ) : !data ? (
           <p className="text-center text-sm text-gray-400 py-12">
-            {fr ? 'Données introuvables' : 'البيانات غير موجودة'}
+            {'Données introuvables'}
           </p>
         ) : (
           <div className="flex flex-col max-h-[80vh]">
@@ -504,7 +495,7 @@ function DemoAffiliateModal({ affiliateId, onClose, lang }) {
                 <p className="text-xs text-gray-400 font-mono">@{displayUsername(data.username)}</p>
                 <div className="flex items-center gap-2 mt-1 flex-wrap">
                   <span className="text-xs font-bold px-2 py-0.5 rounded-full bg-gray-900 text-white">
-                    #{data.rank} {fr ? 'classement' : 'ترتيب'}
+                    #{data.rank} {'classement'}
                   </span>
                   <span className={`text-xs font-bold px-2 py-0.5 rounded-full ${GROWTH_BADGE[data.growthType]?.cls}`}>
                     {GROWTH_BADGE[data.growthType]?.label}
@@ -516,9 +507,9 @@ function DemoAffiliateModal({ affiliateId, onClose, lang }) {
             {/* Tabs */}
             <div className="flex border-b border-gray-100 bg-gray-50">
               {[
-                { id: 'overview', label: fr ? 'Aperçu'   : 'نظرة عامة' },
-                { id: 'team',     label: fr ? 'Équipe'   : 'الفريق'    },
-                { id: 'earnings', label: fr ? 'Gains'    : 'الأرباح'   },
+                { id: 'overview', label: 'Aperçu' },
+                { id: 'team',     label: 'Équipe'    },
+                { id: 'earnings', label: 'Gains'   },
               ].map((t) => (
                 <button key={t.id} onClick={() => setActiveTab(t.id)}
                   className={`flex-1 py-2.5 text-xs font-semibold transition-colors border-b-2
@@ -539,10 +530,10 @@ function DemoAffiliateModal({ affiliateId, onClose, lang }) {
                   {/* Main stats */}
                   <div className="grid grid-cols-2 gap-2">
                     {[
-                      { label: fr ? 'Commandes totales' : 'إجمالي الطلبات', value: data.totalOrders,     color: 'text-gray-800' },
-                      { label: fr ? 'CA total (MAD)'    : 'إجمالي الإيرادات', value: `${Math.round(data.totalRevenue).toLocaleString()} MAD`, color: 'text-amber-700' },
-                      { label: fr ? 'Confirmées'        : 'مؤكدة',           value: data.confirmedOrders, color: 'text-green-700' },
-                      { label: fr ? 'Annulées'          : 'ملغاة',            value: data.cancelledOrders, color: 'text-red-600'   },
+                      { label: 'Commandes totales', value: data.totalOrders,     color: 'text-gray-800' },
+                      { label: 'CA total (MAD)', value: `${Math.round(data.totalRevenue).toLocaleString()} MAD`, color: 'text-amber-700' },
+                      { label: 'Confirmées',           value: data.confirmedOrders, color: 'text-green-700' },
+                      { label: 'Annulées',            value: data.cancelledOrders, color: 'text-red-600'   },
                     ].map((s) => (
                       <div key={s.label} className="bg-gray-50 rounded-xl p-3 border border-gray-100">
                         <p className={`text-lg font-black ${s.color}`}>{s.value}</p>
@@ -554,18 +545,18 @@ function DemoAffiliateModal({ affiliateId, onClose, lang }) {
                   {/* Today */}
                   <div className="bg-indigo-50 rounded-xl p-3.5 border border-indigo-100">
                     <p className="text-[10px] font-bold text-indigo-500 uppercase tracking-wider mb-2">
-                      {fr ? "Aujourd'hui" : 'اليوم'}
+                      {"Aujourd'hui"}
                     </p>
                     <div className="flex justify-between items-center">
                       <div>
                         <p className="text-2xl font-black text-indigo-800">{data.todayOrders}</p>
-                        <p className="text-[10px] text-indigo-400">{fr ? 'commandes' : 'طلبات'}</p>
+                        <p className="text-[10px] text-indigo-400">{'commandes'}</p>
                       </div>
                       <div className="text-right">
                         <p className="text-xl font-black text-indigo-700">
                           {Math.round(data.todayRevenue).toLocaleString()} MAD
                         </p>
-                        <p className="text-[10px] text-indigo-400">{fr ? 'CA aujourd\'hui' : 'إيرادات اليوم'}</p>
+                        <p className="text-[10px] text-indigo-400">{'CA aujourd\'hui'}</p>
                       </div>
                     </div>
                   </div>
@@ -577,10 +568,10 @@ function DemoAffiliateModal({ affiliateId, onClose, lang }) {
                 <div className="p-4 space-y-3">
                   <div className="grid grid-cols-2 gap-2">
                     {[
-                      { label: fr ? 'Taille équipe'    : 'حجم الفريق',        value: data.teamSize,       color: 'text-purple-700' },
-                      { label: fr ? 'Cmds équipe'      : 'طلبات الفريق',      value: data.teamOrders,     color: 'text-gray-800'   },
-                      { label: fr ? 'CA équipe (MAD)'  : 'إيرادات الفريق',    value: `${Math.round(data.teamRevenue).toLocaleString()} MAD`, color: 'text-amber-700'  },
-                      { label: fr ? 'Ta commission 5%' : 'عمولتك 5٪',         value: `${Math.round(data.teamCommission).toLocaleString()} MAD`, color: 'text-green-700' },
+                      { label: 'Taille équipe',        value: data.teamSize,       color: 'text-purple-700' },
+                      { label: 'Cmds équipe',      value: data.teamOrders,     color: 'text-gray-800'   },
+                      { label: 'CA équipe (MAD)',    value: `${Math.round(data.teamRevenue).toLocaleString()} MAD`, color: 'text-amber-700'  },
+                      { label: 'Ta commission 5%',         value: `${Math.round(data.teamCommission).toLocaleString()} MAD`, color: 'text-green-700' },
                     ].map((s) => (
                       <div key={s.label} className="bg-gray-50 rounded-xl p-3 border border-gray-100">
                         <p className={`text-lg font-black ${s.color}`}>{s.value}</p>
@@ -595,14 +586,14 @@ function DemoAffiliateModal({ affiliateId, onClose, lang }) {
               {activeTab === 'earnings' && (
                 <div className="p-4">
                   <p className="text-[10px] font-bold text-violet-500 uppercase tracking-wider mb-3">
-                    {fr ? 'Gains UGC (vidéos)' : 'أرباح UGC'}
+                    {'Gains UGC (vidéos)'}
                   </p>
                   <div className="grid grid-cols-2 gap-2">
                     {[
-                      { label: fr ? "Gains UGC aujourd'hui" : 'أرباح UGC اليوم',  value: `${Math.round(data.ugcTodayEarnings ?? 0).toLocaleString()} MAD`, color: 'text-violet-700' },
-                      { label: fr ? "Ventes UGC aujourd'hui" : 'مبيعات UGC اليوم', value: data.ugcTodaySales ?? 0, color: 'text-violet-700' },
-                      { label: fr ? 'Gains UGC total'       : 'إجمالي أرباح UGC', value: `${Math.round(data.ugcTotalEarnings ?? 0).toLocaleString()} MAD`, color: 'text-emerald-700' },
-                      { label: fr ? 'Ventes UGC total'      : 'إجمالي مبيعات UGC', value: data.ugcTotalSales ?? 0, color: 'text-emerald-700' },
+                      { label: "Gains UGC aujourd'hui",  value: `${Math.round(data.ugcTodayEarnings ?? 0).toLocaleString()} MAD`, color: 'text-violet-700' },
+                      { label: "Ventes UGC aujourd'hui", value: data.ugcTodaySales ?? 0, color: 'text-violet-700' },
+                      { label: 'Gains UGC total', value: `${Math.round(data.ugcTotalEarnings ?? 0).toLocaleString()} MAD`, color: 'text-emerald-700' },
+                      { label: 'Ventes UGC total', value: data.ugcTotalSales ?? 0, color: 'text-emerald-700' },
                     ].map((s) => (
                       <div key={s.label} className="bg-violet-50 rounded-xl p-3 border border-violet-100">
                         <p className={`text-lg font-black ${s.color}`}>{s.value}</p>
@@ -625,8 +616,7 @@ function DemoAffiliateModal({ affiliateId, onClose, lang }) {
 
 const REFRESH_SEC = 15;
 
-function CompetitionTab({ lang }) {
-  const fr = lang === 'fr';
+function CompetitionTab() {
   const [leaderboard,  setLeaderboard]  = useState([]);
   const [competition,  setCompetition]  = useState(null);
   const [loading,      setLoading]      = useState(true);
@@ -727,20 +717,18 @@ function CompetitionTab({ lang }) {
           <div className="flex items-center justify-between flex-wrap gap-3">
             <div>
               <p className="text-indigo-300 text-xs font-semibold uppercase tracking-widest mb-1">
-                {fr ? `Cycle #${competition?.cycleNum ?? 1}` : `الدورة #${competition?.cycleNum ?? 1}`}
+                {`Cycle #${competition?.cycleNum ?? 1}`}
               </p>
               <h2 className="text-white text-xl font-black">
-                {fr ? '🏆 Compétition du mois' : '🏆 مسابقة الشهر'}
+                {'🏆 Compétition du mois'}
               </h2>
               <p className="text-indigo-300 text-xs mt-1">
-                {fr
-                  ? `${competition?.totalParticipants ?? 0} participants · ${daysLeft} jours restants`
-                  : `${competition?.totalParticipants ?? 0} مشارك · ${daysLeft} يوم متبقٍ`}
+                {`${competition?.totalParticipants ?? 0} participants · ${daysLeft} jours restants`}
               </p>
             </div>
             <div className="text-center">
               <p className="text-4xl font-black text-white">{daysLeft}</p>
-              <p className="text-indigo-300 text-xs">{fr ? 'jours' : 'أيام'}</p>
+              <p className="text-indigo-300 text-xs">{'jours'}</p>
             </div>
           </div>
           {competition && (() => {
@@ -759,10 +747,10 @@ function CompetitionTab({ lang }) {
       <Section
         title={
           <div className="flex items-center justify-between w-full">
-            <span>{fr ? 'Classement du mois' : 'ترتيب الشهر'}</span>
+            <span>{'Classement du mois'}</span>
             <span className="flex items-center gap-1.5 text-[10px] font-semibold text-gray-400">
               <span className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse" />
-              {fr ? `Live · ${countdown}s` : `مباشر · ${countdown}ث`}
+              {`Live · ${countdown}s`}
             </span>
           </div>
         }
@@ -771,15 +759,15 @@ function CompetitionTab({ lang }) {
         {loading ? (
           <div className="flex items-center justify-center py-10 gap-2">
             <Loader2 className="w-5 h-5 animate-spin text-gray-400" />
-            <span className="text-sm text-gray-400">{fr ? 'Chargement...' : 'جاري التحميل...'}</span>
+            <span className="text-sm text-gray-400">{'Chargement...'}</span>
           </div>
         ) : leaderboard.length === 0 ? (
           <div className="text-center py-12">
             <p className="text-gray-400 text-sm">
-              {fr ? "Aucun participant pour l'instant." : 'لا يوجد مشاركون حتى الآن.'}
+              {"Aucun participant pour l'instant."}
             </p>
             <p className="text-gray-400 text-xs mt-1">
-              {fr ? 'Activez la compétition depuis le panneau admin.' : 'فعّل المسابقة من لوحة الإدارة.'}
+              {'Activez la compétition depuis le panneau admin.'}
             </p>
           </div>
         ) : (
@@ -838,7 +826,7 @@ function CompetitionTab({ lang }) {
                   <div className="text-right shrink-0">
                     <p className="text-sm font-black text-gray-800">
                       {a.totalOrders}
-                      <span className="text-xs font-normal text-gray-400 ml-1">{fr ? 'cmds' : 'طلب'}</span>
+                      <span className="text-xs font-normal text-gray-400 ml-1">{'cmds'}</span>
                     </p>
                     <p className="text-xs text-amber-700 font-bold">{Math.round(a.totalRevenue).toLocaleString()} MAD</p>
                   </div>
@@ -850,9 +838,7 @@ function CompetitionTab({ lang }) {
           </div>
         )}
         <p className="text-xs text-gray-400 mt-3">
-          {fr
-            ? 'Mise à jour automatique toutes les 15 s. Cliquez pour les détails.'
-            : 'يتجدد تلقائياً كل 15 ثانية. انقر للتفاصيل.'}
+          {'Mise à jour automatique toutes les 15 s. Cliquez pour les détails.'}
         </p>
       </Section>
 
@@ -861,7 +847,6 @@ function CompetitionTab({ lang }) {
         <DemoAffiliateModal
           affiliateId={selectedId}
           onClose={() => setSelectedId(null)}
-          lang={lang}
         />
       )}
     </div>
@@ -1442,7 +1427,6 @@ export default function AffiliateDashboard() {
   const bonusProgress  = Math.min(100, Math.round((validReferrals / bonusGoal) * 100));
   const bonusUnlocked  = validReferrals >= bonusGoal;
   const bonusClaimed   = affiliate?.teamBonusClaimed ?? false;
-  const lang = typeof navigator !== "undefined" && navigator.language?.startsWith("fr") ? "fr" : "ar";
   const refLink   = typeof window !== "undefined" ? `${window.location.origin}?ref=${affiliate?.username}` : "";
   const unread    = notifs.filter((n) => !n.read).length;
   const balance   = stats?.balance ?? 0;
@@ -1718,7 +1702,7 @@ export default function AffiliateDashboard() {
               <StatCard icon={TrendingUp}  label="Chiffre d'affaires boutique" value={fmtMoney(stats?.totalRevenue)} color="amber" />
               <StatCard icon={DollarSign}  label="Gains boutique total" value={fmtMoney(stats?.totalCommission)} color="green"
                 sub={`Taux : ${((affiliate?.commissionRate || 0) * 100).toFixed(0)}%`} />
-              <StatCard icon={CreditCard}  label="Solde disponible"     value={fmtMoney(balance)}                color="blue"   ar="الرصيد المتاح" />
+              <StatCard icon={CreditCard}  label="Solde disponible"     value={fmtMoney(balance)}                color="blue"   />
               {/* Tracking stats */}
               <StatCard icon={Eye}         label="Total clics"          value={stats?.totalClicks ?? affiliate?.totalClicks ?? "—"} color="blue"   />
               <StatCard icon={ShoppingBag} label="Ventes boutique total" value={orders.length > 0 ? totalItemsAll : (stats?.totalOrders ?? affiliate?.totalOrders ?? "—")} color="teal" sub="articles commandés" />
@@ -1734,7 +1718,6 @@ export default function AffiliateDashboard() {
                 <div>
                   <div className="flex items-center gap-2 text-indigo-700 text-xs font-semibold">
                     <Wallet className="w-4 h-4" /> Dépôt de garantie
-                    <span dir="rtl" className="text-[10px] font-normal text-indigo-300">وديعة الضمان</span>
                   </div>
                   <p className="text-2xl font-black text-gray-900 mt-1">{fmtMoney(deposit.approvedBalance)}</p>
                   {deposit.pendingTotal > 0 && (
@@ -1763,7 +1746,7 @@ export default function AffiliateDashboard() {
 
             {/* 🏆 Compétition du mois — moved here (where the bonus block used to be).
                 Same component reused inline; the standalone tab has been removed. */}
-            <CompetitionTab lang={lang} />
+            <CompetitionTab />
 
             {/* Referral link (kept directly below the competition) */}
             <Section title="Lien de parrainage" icon={Users}>
@@ -1833,7 +1816,7 @@ export default function AffiliateDashboard() {
 
         {/* ══ ORDERS ════════════════════════════════════════════════════════ */}
         {activeTab === "orders" && (
-          <Section title="Mes commandes" icon={ShoppingBag} ar="الطلبات">
+          <Section title="Mes commandes" icon={ShoppingBag}>
             {orders.length === 0 ? (
               <div className="text-center py-10">
                 <Package className="w-10 h-10 text-gray-200 mx-auto mb-3" />
@@ -1984,7 +1967,7 @@ export default function AffiliateDashboard() {
             </div>
 
             {/* Request form */}
-            <Section title="Demande de retrait" icon={CreditCard} ar="السحب">
+            <Section title="Demande de retrait" icon={CreditCard}>
               <form onSubmit={handlePayout} className="space-y-4 max-w-sm">
                 {payoutMsg && (
                   <div className={`flex items-center gap-2 rounded-xl px-4 py-3 text-sm font-medium
@@ -2108,7 +2091,7 @@ export default function AffiliateDashboard() {
 
         {/* ══ NOTIFICATIONS ═════════════════════════════════════════════════ */}
         {activeTab === "notifications" && (
-          <Section title="Notifications" icon={Bell} ar="الإشعارات">
+          <Section title="Notifications" icon={Bell}>
             {notifs.length === 0 ? (
               <div className="text-center py-10">
                 <Bell className="w-10 h-10 text-gray-200 mx-auto mb-3" />
@@ -2148,12 +2131,12 @@ export default function AffiliateDashboard() {
               });
               const d = await res.json();
               if (res.ok) {
-                setClaimMsg({ type: "success", text: lang === "fr" ? `Félicitations ! ${d.bonus} MAD ajoutés à votre solde.` : `مبروك! تمت إضافة ${d.bonus} درهم إلى رصيدك.` });
+                setClaimMsg({ type: "success", text: `Félicitations ! ${d.bonus} MAD ajoutés à votre solde.` });
                 fetchAll(token);
               } else {
-                setClaimMsg({ type: "error", text: d.error || (lang === "fr" ? "Erreur" : "خطأ") });
+                setClaimMsg({ type: "error", text: d.error || ("Erreur") });
               }
-            } catch { setClaimMsg({ type: "error", text: lang === "fr" ? "Erreur réseau" : "خطأ في الشبكة" }); }
+            } catch { setClaimMsg({ type: "error", text: "Erreur réseau" }); }
             finally { setClaiming(false); }
           };
           return (
@@ -2181,14 +2164,12 @@ export default function AffiliateDashboard() {
                     <span className="text-2xl">🏆</span>
                     <div>
                       <p className={`text-sm font-black ${bonusClaimed ? "text-gray-500" : bonusUnlocked ? "text-amber-900" : "text-amber-100"}`}>
-                        {lang === "fr" ? "Bonus d'équipe" : "مكافأة الفريق"}
+                        {"Bonus d'équipe"}
                       </p>
                       <p className={`text-xs font-semibold ${bonusClaimed ? "text-gray-400" : bonusUnlocked ? "text-amber-800" : "text-amber-300"}`}>
                         {bonusClaimed
-                          ? (lang === "fr" ? "Bonus déjà réclamé ✓" : "تم استلام المكافأة ✓")
-                          : lang === "fr"
-                            ? `Gagnez ${bonusAmount} MAD avec ${bonusGoal} filleuls actifs`
-                            : `احصل على ${bonusAmount} درهم عند ${bonusGoal} إحالات نشطة`}
+                          ? ("Bonus déjà réclamé ✓")
+                          : `Gagnez ${bonusAmount} MAD avec ${bonusGoal} filleuls actifs`}
                       </p>
                     </div>
                   </div>
@@ -2204,19 +2185,19 @@ export default function AffiliateDashboard() {
                   <div className={`flex-1 rounded-xl p-2.5 text-center ${bonusClaimed ? "bg-gray-200/60" : bonusUnlocked ? "bg-amber-900/15" : "bg-amber-950/40"}`}>
                     <p className={`text-xl font-black ${bonusClaimed ? "text-gray-500" : bonusUnlocked ? "text-amber-900" : "text-amber-100"}`}>{stats?.totalReferrals ?? team.length}</p>
                     <p className={`text-xs ${bonusClaimed ? "text-gray-400" : bonusUnlocked ? "text-amber-800" : "text-amber-300"}`}>
-                      {lang === "fr" ? "Total parrainés" : "إجمالي المُحالين"}
+                      {"Total parrainés"}
                     </p>
                   </div>
                   <div className={`flex-1 rounded-xl p-2.5 text-center ${bonusClaimed ? "bg-green-100" : bonusUnlocked ? "bg-amber-900/15" : "bg-amber-950/40"}`}>
                     <p className={`text-xl font-black ${bonusClaimed ? "text-green-600" : bonusUnlocked ? "text-amber-900" : "text-amber-100"}`}>{validReferrals}</p>
                     <p className={`text-xs ${bonusClaimed ? "text-green-500" : bonusUnlocked ? "text-amber-800" : "text-amber-300"}`}>
-                      {lang === "fr" ? "Actifs" : "نشطون"}
+                      {"Actifs"}
                     </p>
                   </div>
                   <div className={`flex-1 rounded-xl p-2.5 text-center ${bonusClaimed ? "bg-gray-200/60" : bonusUnlocked ? "bg-amber-900/15" : "bg-amber-950/40"}`}>
                     <p className={`text-xl font-black ${bonusClaimed ? "text-gray-500" : bonusUnlocked ? "text-amber-900" : "text-amber-100"}`}>{bonusGoal}</p>
                     <p className={`text-xs ${bonusClaimed ? "text-gray-400" : bonusUnlocked ? "text-amber-800" : "text-amber-300"}`}>
-                      {lang === "fr" ? "Objectif" : "الهدف"}
+                      {"Objectif"}
                     </p>
                   </div>
                 </div>
@@ -2229,7 +2210,7 @@ export default function AffiliateDashboard() {
                   />
                 </div>
                 <div className={`flex justify-between text-xs mb-4 ${bonusClaimed ? "text-gray-400" : bonusUnlocked ? "text-amber-800" : "text-amber-300"}`}>
-                  <span>{validReferrals} / {bonusGoal} {lang === "fr" ? "filleuls actifs" : "إحالة نشطة"}</span>
+                  <span>{validReferrals} / {bonusGoal} {"filleuls actifs"}</span>
                   <span className="font-semibold">{bonusProgress}%</span>
                 </div>
 
@@ -2237,7 +2218,7 @@ export default function AffiliateDashboard() {
                 {bonusClaimed ? (
                   <div className="flex items-center justify-center gap-2 py-2.5 bg-gray-300 rounded-xl text-gray-500 text-sm font-bold">
                     <CheckCircle className="w-4 h-4" />
-                    {lang === "fr" ? "Bonus réclamé" : "تم استلام المكافأة"}
+                    {"Bonus réclamé"}
                   </div>
                 ) : bonusUnlocked ? (
                   <button
@@ -2246,13 +2227,11 @@ export default function AffiliateDashboard() {
                     className="w-full flex items-center justify-center gap-2 py-3 bg-amber-900 hover:bg-amber-950 active:scale-[0.98] text-amber-100 rounded-xl text-sm font-black transition-all shadow-lg disabled:opacity-60"
                   >
                     {claiming ? <Loader2 className="w-4 h-4 animate-spin" /> : <span>🎁</span>}
-                    {lang === "fr" ? "Réclamer la récompense" : "احصل على المكافأة"}
+                    {"Réclamer la récompense"}
                   </button>
                 ) : (
                   <div className="flex items-center justify-center gap-2 py-2.5 bg-amber-950/40 rounded-xl text-amber-300 text-xs font-semibold">
-                    🔒 {lang === "fr"
-                      ? `Encore ${Math.max(0, bonusGoal - validReferrals)} filleul(s) actif(s) requis`
-                      : `تحتاج ${Math.max(0, bonusGoal - validReferrals)} إحالة نشطة أخرى`}
+                    🔒 {`Encore ${Math.max(0, bonusGoal - validReferrals)} filleul(s) actif(s) requis`}
                   </div>
                 )}
 
@@ -2266,7 +2245,7 @@ export default function AffiliateDashboard() {
 
             {/* ── Commission tiers legend ── */}
             {bonusConfig.commissionTiers?.length > 0 && (
-              <Section title={lang === "fr" ? "Barème de commission dynamique" : "جدول العمولة الديناميكية"} icon={TrendingUp}>
+              <Section title={"Barème de commission dynamique"} icon={TrendingUp}>
                 <div className="space-y-2">
                   {bonusConfig.commissionTiers.map((t, i) => (
                     <div key={i} className="flex items-center justify-between p-2.5 bg-gray-50 rounded-xl">
@@ -2276,8 +2255,8 @@ export default function AffiliateDashboard() {
                         </div>
                         <span className="text-sm text-gray-700">
                           {t.maxDelivered == null
-                            ? (lang === "fr" ? `${t.minDelivered}+ livraisons` : `${t.minDelivered}+ توصيل`)
-                            : (lang === "fr" ? `${t.minDelivered}–${t.maxDelivered} livraisons` : `${t.minDelivered}–${t.maxDelivered} توصيل`)}
+                            ? (`${t.minDelivered}+ livraisons`)
+                            : (`${t.minDelivered}–${t.maxDelivered} livraisons`)}
                         </span>
                       </div>
                       <span className="text-sm font-black text-blue-700 bg-blue-50 px-2.5 py-0.5 rounded-full">
@@ -2287,15 +2266,13 @@ export default function AffiliateDashboard() {
                   ))}
                 </div>
                 <p className="text-xs text-gray-400 mt-2">
-                  {lang === "fr"
-                    ? "La commission augmente automatiquement selon les livraisons du filleul."
-                    : "تزيد العمولة تلقائياً مع زيادة توصيلات المُحال."}
+                  {"La commission augmente automatiquement selon les livraisons du filleul."}
                 </p>
               </Section>
             )}
 
             {/* ── Invite link ── */}
-            <Section title={lang === "fr" ? "Inviter un partenaire" : "دعوة شريك"} icon={UserPlus}>
+            <Section title={"Inviter un partenaire"} icon={UserPlus}>
               <div className="flex gap-2">
                 <div className="flex-1 px-3 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-xs font-mono text-gray-700 truncate">
                   {refLink}
@@ -2303,19 +2280,17 @@ export default function AffiliateDashboard() {
                 <CopyButton text={refLink} />
               </div>
               <p className="text-xs text-gray-400 mt-2">
-                {lang === "fr"
-                  ? "Partagez ce lien. Les personnes qui s'inscrivent via ce lien rejoindront votre équipe."
-                  : "شارك هذا الرابط. من يسجل عبره سينضم لفريقك."}
+                {"Partagez ce lien. Les personnes qui s'inscrivent via ce lien rejoindront votre équipe."}
               </p>
             </Section>
 
             {/* ── Team list ── */}
-            <Section title={`${lang === "fr" ? "Mon équipe" : "فريقي"} (${team.length})`} icon={Users}>
+            <Section title={`${"Mon équipe"} (${team.length})`} icon={Users}>
               {team.length === 0 ? (
                 <div className="text-center py-10">
                   <Users className="w-10 h-10 text-gray-200 mx-auto mb-3" />
                   <p className="text-gray-400 text-sm">
-                    {lang === "fr" ? "Votre équipe est vide pour l'instant" : "فريقك فارغ حالياً"}
+                    {"Votre équipe est vide pour l'instant"}
                   </p>
                 </div>
               ) : (() => {
@@ -2402,7 +2377,7 @@ export default function AffiliateDashboard() {
                               {/* Score badge */}
                               {score > 0 && (
                                 <span className="text-[10px] font-black px-2 py-0.5 rounded-full bg-purple-100 text-purple-700 whitespace-nowrap">
-                                  {lang === "fr" ? "Score" : "نقاط"} {score}
+                                  {"Score"} {score}
                                 </span>
                               )}
 
@@ -2410,8 +2385,8 @@ export default function AffiliateDashboard() {
                               <span className={`text-xs px-2.5 py-1 rounded-full font-bold whitespace-nowrap
                                 ${isActive ? "bg-green-200 text-green-800" : "bg-amber-100 text-amber-700"}`}>
                                 {isActive
-                                  ? (lang === "fr" ? "Actif" : "نشط")
-                                  : (lang === "fr" ? "En attente" : "قيد الانتظار")}
+                                  ? ("Actif")
+                                  : ("En attente")}
                               </span>
 
                               {/* Expand chevron */}
@@ -2424,17 +2399,17 @@ export default function AffiliateDashboard() {
                           <div className="grid grid-cols-4 divide-x divide-gray-100 bg-white">
                             <div className="text-center py-2.5 px-1.5">
                               <p className="text-base font-black text-gray-800">{m.deliveredOrdersCount ?? 0}</p>
-                              <p className="text-xs text-gray-400">{lang === "fr" ? "Livrées" : "مُوصّل"}</p>
+                              <p className="text-xs text-gray-400">{"Livrées"}</p>
                             </div>
                             <div className="text-center py-2.5 px-1.5">
                               <p className="text-base font-black text-blue-700">{commPct}%</p>
-                              <p className="text-xs text-gray-400">{lang === "fr" ? "Commission" : "عمولتك"}</p>
+                              <p className="text-xs text-gray-400">{"Commission"}</p>
                             </div>
                             <div className="text-center py-2.5 px-1.5">
                               <p className="text-base font-black text-amber-700">
                                 {revenue.toFixed(0)} <span className="text-[10px] font-semibold">MAD</span>
                               </p>
-                              <p className="text-xs text-gray-400">{lang === "fr" ? "CA généré" : "الإيرادات"}</p>
+                              <p className="text-xs text-gray-400">{"CA généré"}</p>
                             </div>
                             <div className="text-center py-2.5 px-1.5">
                               <p className="text-[11px] font-black leading-tight">
@@ -2442,7 +2417,7 @@ export default function AffiliateDashboard() {
                                 <span className="text-gray-300 mx-0.5">/</span>
                                 <span className="text-amber-500">{sub.pending}</span>
                               </p>
-                              <p className="text-xs text-gray-400">{lang === "fr" ? "Filleuls" : "إحالات"}</p>
+                              <p className="text-xs text-gray-400">{"Filleuls"}</p>
                             </div>
                           </div>
 
@@ -2450,7 +2425,7 @@ export default function AffiliateDashboard() {
                           {isActive && (
                             <div className="flex items-center justify-between px-3.5 py-2 bg-blue-50 border-t border-blue-100">
                               <span className="text-xs text-blue-700">
-                                {lang === "fr" ? "Vos gains de ce filleul" : "أرباحك من هذا المُحال"}
+                                {"Vos gains de ce filleul"}
                               </span>
                               <span className="text-sm font-black text-blue-800">+{parentEarn.toFixed(0)} MAD</span>
                             </div>
@@ -2476,7 +2451,7 @@ export default function AffiliateDashboard() {
                                         : "border-transparent text-gray-400 hover:text-gray-700"}`}
                                   >
                                     <Package className="w-3.5 h-3.5 shrink-0" />
-                                    {lang === "fr" ? "Commandes" : "الطلبات"}
+                                    {"Commandes"}
                                     <span className={`px-1.5 py-0.5 rounded-full text-[10px] font-black
                                       ${activeTab === 'orders' ? "bg-gray-900 text-white" : "bg-gray-200 text-gray-500"}`}>
                                       {m.deliveredOrdersCount ?? 0}
@@ -2493,7 +2468,7 @@ export default function AffiliateDashboard() {
                                           : "border-transparent text-gray-400 hover:text-gray-700"}`}
                                     >
                                       <Users className="w-3.5 h-3.5 shrink-0" />
-                                      {lang === "fr" ? "Équipe" : "الفريق"}
+                                      {"Équipe"}
                                       <span className={`px-1.5 py-0.5 rounded-full text-[10px] font-black
                                         ${activeTab === 'team' ? "bg-gray-900 text-white" : "bg-gray-200 text-gray-500"}`}>
                                         {sub.active + sub.pending}
@@ -2510,7 +2485,7 @@ export default function AffiliateDashboard() {
                                     <div className="flex items-center gap-2 px-3.5 pt-3 pb-2">
                                       <Package className="w-3.5 h-3.5 text-gray-400 shrink-0" />
                                       <span className="text-[11px] font-bold text-gray-500 uppercase tracking-wider">
-                                        {lang === "fr" ? "Commandes" : "الطلبات"}
+                                        {"Commandes"}
                                       </span>
                                     </div>
 
@@ -2518,14 +2493,14 @@ export default function AffiliateDashboard() {
                                       <div className="flex items-center justify-center gap-2 py-6 bg-white mx-3 mb-3 rounded-xl border border-gray-100">
                                         <Loader2 className="w-4 h-4 animate-spin text-gray-400" />
                                         <span className="text-xs text-gray-400">
-                                          {lang === "fr" ? "Chargement..." : "جاري التحميل..."}
+                                          {"Chargement..."}
                                         </span>
                                       </div>
                                     ) : !memberOrders || memberOrders.length === 0 ? (
                                       <div className="flex flex-col items-center py-8 bg-white mx-3 mb-3 rounded-xl border border-dashed border-gray-200">
                                         <Package className="w-8 h-8 text-gray-200 mb-2" />
                                         <p className="text-xs font-semibold text-gray-400">
-                                          {lang === "fr" ? "Aucune commande pour l'instant" : "لا توجد طلبات حتى الآن"}
+                                          {"Aucune commande pour l'instant"}
                                         </p>
                                       </div>
                                     ) : (() => {
@@ -2541,7 +2516,7 @@ export default function AffiliateDashboard() {
                                             <div className="text-center py-2.5 px-2">
                                               <p className="text-sm font-black text-gray-800">{totalOrders}</p>
                                               <p className="text-[10px] text-gray-400">
-                                                {lang === "fr" ? "Commandes" : "طلبات"}
+                                                {"Commandes"}
                                               </p>
                                             </div>
                                             <div className="text-center py-2.5 px-2">
@@ -2550,7 +2525,7 @@ export default function AffiliateDashboard() {
                                                 <span className="text-[9px] font-semibold ml-0.5">MAD</span>
                                               </p>
                                               <p className="text-[10px] text-gray-400">
-                                                {lang === "fr" ? "CA total" : "إجمالي"}
+                                                {"CA total"}
                                               </p>
                                             </div>
                                             <div className="text-center py-2.5 px-2">
@@ -2559,7 +2534,7 @@ export default function AffiliateDashboard() {
                                                 <span className="text-[9px] font-semibold ml-0.5">MAD</span>
                                               </p>
                                               <p className="text-[10px] text-gray-400">
-                                                {lang === "fr" ? "Vos gains" : "أرباحك"}
+                                                {"Vos gains"}
                                               </p>
                                             </div>
                                           </div>
@@ -2570,7 +2545,7 @@ export default function AffiliateDashboard() {
                                               const sCfg    = STATUS_CONFIG[o.status] || { label: o.status, cls: "bg-gray-100 text-gray-600" };
                                               const shortId = o.orderId || o.id.slice(0, 8).toUpperCase();
                                               const dateStr = new Date(o.createdAt).toLocaleDateString(
-                                                lang === "fr" ? "fr-FR" : "ar-MA",
+                                                "fr-FR",
                                                 { day: "2-digit", month: "2-digit", year: "numeric" }
                                               );
                                               const isDelivered = o.status === "delivered";
@@ -2585,7 +2560,7 @@ export default function AffiliateDashboard() {
                                                   {/* Line 1: product name + status badge */}
                                                   <div className="flex items-start justify-between gap-2 mb-2">
                                                     <p className="text-xs font-bold text-gray-800 leading-tight truncate">
-                                                      {o.productTitle || (lang === "fr" ? "Produit" : "منتج")}
+                                                      {o.productTitle || ("Produit")}
                                                     </p>
                                                     <span className={`text-[10px] px-2 py-0.5 rounded-full font-bold shrink-0 ${sCfg.cls}`}>
                                                       {sCfg.label}
@@ -2609,7 +2584,7 @@ export default function AffiliateDashboard() {
                                                   <div className="flex items-center justify-between pt-2 border-t border-gray-100">
                                                     <div className="flex items-center gap-1">
                                                       <span className="text-[10px] text-gray-400">
-                                                        {lang === "fr" ? "Total" : "المجموع"}
+                                                        {"Total"}
                                                       </span>
                                                       <span className="text-xs font-black text-gray-700">
                                                         {o.total.toFixed(0)} MAD
@@ -2637,20 +2612,20 @@ export default function AffiliateDashboard() {
                                       <div className="flex items-center justify-center gap-2 py-4">
                                         <Loader2 className="w-4 h-4 animate-spin text-gray-400" />
                                         <span className="text-xs text-gray-400">
-                                          {lang === "fr" ? "Chargement..." : "جاري التحميل..."}
+                                          {"Chargement..."}
                                         </span>
                                       </div>
                                     ) : !subMembers || subMembers.length === 0 ? (
                                       <div className="flex flex-col items-center py-6">
                                         <Users className="w-7 h-7 text-gray-200 mb-2" />
                                         <p className="text-xs text-gray-400">
-                                          {lang === "fr" ? "Aucun filleul enregistré" : "لا يوجد إحالات مسجلة"}
+                                          {"Aucun filleul enregistré"}
                                         </p>
                                       </div>
                                     ) : (
                                       <div className="px-3.5 py-2.5 space-y-1.5">
                                         <p className="text-[10px] font-bold text-gray-400 uppercase tracking-wider mb-2">
-                                          {lang === "fr" ? `Équipe de @${m.username}` : `فريق @${m.username}`}
+                                          {`Équipe de @${m.username}`}
                                         </p>
                                         {subMembers.map((s) => {
                                           const sActive = s.referralStatus === "active";
@@ -2666,15 +2641,15 @@ export default function AffiliateDashboard() {
                                                 <span className="font-semibold text-gray-700 truncate">@{s.username}</span>
                                                 {s.deliveredOrdersCount > 0 && (
                                                   <span className="text-gray-400 shrink-0">
-                                                    · {s.deliveredOrdersCount} {lang === "fr" ? "liv." : "توصيل"}
+                                                    · {s.deliveredOrdersCount} {"liv."}
                                                   </span>
                                                 )}
                                               </div>
                                               <span className={`px-2 py-0.5 rounded-full font-bold shrink-0 ml-2
                                                 ${sActive ? "bg-green-200 text-green-800" : "bg-amber-100 text-amber-700"}`}>
                                                 {sActive
-                                                  ? (lang === "fr" ? "Actif" : "نشط")
-                                                  : (lang === "fr" ? "En attente" : "انتظار")}
+                                                  ? ("Actif")
+                                                  : ("En attente")}
                                               </span>
                                             </div>
                                           );
@@ -2695,9 +2670,7 @@ export default function AffiliateDashboard() {
                 );
               })()}
               <p className="text-xs text-gray-400 mt-3">
-                {lang === "fr"
-                  ? "Triés par performance. Cliquez sur un membre pour voir ses commandes et son équipe."
-                  : "مرتّبون حسب الأداء. انقر على عضو لعرض طلباته وفريقه."}
+                {"Triés par performance. Cliquez sur un membre pour voir ses commandes et son équipe."}
               </p>
             </Section>
           </div>

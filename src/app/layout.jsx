@@ -110,7 +110,7 @@ export default async function RootLayout({ children }) {
         )}
         <script
           dangerouslySetInnerHTML={{
-            __html: `(function(){try{var l=localStorage.getItem('store_lang');var h=document.documentElement;if(l==='fr'||l==='ar'){h.setAttribute('data-lang',l);h.setAttribute('lang',l);var a=window.location.pathname.startsWith('/admin');h.setAttribute('dir',(!a&&l==='ar')?'rtl':'ltr');}else{var a=window.location.pathname.startsWith('/admin');if(a)h.setAttribute('dir','ltr');}}catch(e){}}())`,
+            __html: `(function(){try{var l=localStorage.getItem('store_lang');var h=document.documentElement;var p=window.location.pathname;var a=p.startsWith('/admin')||p.startsWith('/affiliate');if(l==='fr'||l==='ar'){h.setAttribute('data-lang',l);h.setAttribute('lang',l);h.setAttribute('dir',(!a&&l==='ar')?'rtl':'ltr');}else{if(a)h.setAttribute('dir','ltr');}}catch(e){}}())`,
           }}
         />
       </head>

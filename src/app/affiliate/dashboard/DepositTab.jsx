@@ -2,32 +2,56 @@
 
 /**
  * src/app/affiliate/dashboard/DepositTab.jsx
- * Affiliate "Dépôt de garantie" — approved (derived) balance + pending total,
- * a new-request form (proof upload), and the request history. Completely
- * separate from Solde disponible / withdrawals.
+ * ─────────────────────────────────────────────────────────────────────────────
+ * Affiliate "Dépôt de garantie" — visually identical to /checkout/confirm by
+ * REUSING the same extracted UI components (amount banner, bank details card
+ * with copy buttons, proof upload card, submit button). Only the business logic
+ * + labels differ: the amount is the security-deposit amount, bank info comes
+ * from Bank Settings, the proof uploads to PRIVATE deposit storage, and Submit
+ * creates an affiliate deposit request (status: En attente / Approuvé / Refusé).
+ * ─────────────────────────────────────────────────────────────────────────────
  */
-import { useState, useEffect, useRef } from "react";
-import { Wallet, Loader2, Upload, CheckCircle, AlertCircle } from "lucide-react";
+import { useState, useEffect } from "react";
+import { Wallet, CreditCard, Loader2, CheckCircle, AlertCircle } from "lucide-react";
+import BankTransferAmountBanner from "@/components/checkout/BankTransferAmountBanner";
+import BankDetailsCard from "@/components/checkout/BankDetailsCard";
+import ProofUploadCard from "@/components/checkout/ProofUploadCard";
 
 const STATUS = {
-  PENDING:  { label: "En attente", cls: "bg-amber-50 text-amber-700" },
-  APPROVED: { label: "Approuvé", cls: "bg-emerald-50 text-emerald-700" },
-  REJECTED: { label: "Refusé", cls: "bg-red-50 text-red-700" },
+  PENDING:  { label: "En attente", cls: "bg-amber-50 text-amber-700", banner: "bg-amber-50 border-amber-200 text-amber-800" },
+  APPROVED: { label: "Approuvé",  cls: "bg-emerald-50 text-emerald-700", banner: "bg-emerald-50 border-emerald-200 text-emerald-800" },
+  REJECTED: { label: "Refusé",    cls: "bg-red-50 text-red-700", banner: "bg-red-50 border-red-200 text-red-800" },
 };
-const ACCEPT = ["image/jpeg", "image/jpg", "image/png", "image/webp", "application/pdf"];
+const ACCEPT = "image/jpeg,image/png,image/webp,application/pdf";
+const ACCEPT_LIST = ["image/jpeg", "image/jpg", "image/png", "image/webp", "application/pdf"];
 const MAX = 8 * 1024 * 1024;
 const fmtMoney = (n) => `${Number(n || 0).toFixed(0)} MAD`;
 const fmtDate = (d) => (d ? new Date(d).toLocaleDateString("fr-FR", { dateStyle: "medium" }) : "—");
 
+const BANK_LABELS = {
+  title: "Coordonnées bancaires", bankName: "Banque", accountHolder: "Titulaire du compte",
+  accountNumber: "Numéro de compte", copy: "Copier", copied: "Copié",
+};
+const UPLOAD_LABELS = {
+  title: "Preuve du virement", click: "Cliquez pour téléverser",
+  drag: "ou glissez-déposez (JPG, PNG, WEBP, PDF · max 8 Mo)",
+  uploaded: "Ajouté", processing: "Téléversement…", previewAlt: "Preuve du virement",
+};
+
 export default function DepositTab({ token, onChanged }) {
   const [data, setData]       = useState({ summary: { approvedBalance: 0, pendingTotal: 0 }, deposits: [] });
+  const [bankInfo, setBankInfo] = useState(null);
   const [loading, setLoading] = useState(true);
-  const [form, setForm]       = useState({ amount: "", paymentMethod: "", transferReference: "", affiliateNote: "" });
-  const [file, setFile]       = useState(null);
-  const [preview, setPreview] = useState(null);
-  const [submitting, setSubmitting] = useState(false);
-  const [msg, setMsg]         = useState(null);
-  const fileRef = useRef(null);
+
+  const [amount, setAmount]           = useState("");
+  const [paymentMethod, setMethod]    = useState("");
+  const [transferReference, setRef]   = useState("");
+  const [affiliateNote, setNote]      = useState("");
+  const [file, setFile]               = useState(null);
+  const [preview, setPreview]         = useState(null);
+  const [previewIsPdf, setPreviewPdf] = useState(false);
+  const [submitting, setSubmitting]   = useState(false);
+  const [msg, setMsg]                 = useState(null);
 
   const authHeaders = () => (token ? { Authorization: `Bearer ${token}` } : {});
 
@@ -41,32 +65,43 @@ export default function DepositTab({ token, onChanged }) {
   };
   useEffect(() => { load(); /* eslint-disable-next-line */ }, []);
 
-  // Only one open request at a time — a PENDING request blocks new submissions.
-  const hasPending = data.deposits.some((d) => d.status === "PENDING");
+  // Bank info from the existing Bank Settings (first/default method).
+  useEffect(() => {
+    fetch("/api/setting?type=bank-settings")
+      .then((r) => r.json())
+      .then((d) => {
+        const methods = Array.isArray(d?.methods) ? d.methods : [];
+        setBankInfo(methods[0] || (d && (d.rib || d.bankName) ? d : null));
+      })
+      .catch(() => {});
+  }, []);
 
-  const setF = (k, v) => setForm((f) => ({ ...f, [k]: v }));
-  const pickFile = (f) => {
+  const hasPending = data.deposits.some((d) => d.status === "PENDING");
+  const latest = data.deposits[0] || null;
+
+  const selectFile = (f) => {
     if (!f) return;
-    if (!ACCEPT.includes(f.type)) { setMsg({ type: "err", text: "Format non supporté (JPG, PNG, WEBP ou PDF)." }); return; }
+    if (!ACCEPT_LIST.includes(f.type)) { setMsg({ type: "err", text: "Format non supporté (JPG, PNG, WEBP ou PDF)." }); return; }
     if (f.size > MAX) { setMsg({ type: "err", text: "Fichier trop volumineux (max 8 Mo)." }); return; }
     setMsg(null);
     setFile(f);
-    setPreview(f.type === "application/pdf" ? null : URL.createObjectURL(f));
+    setPreviewPdf(f.type === "application/pdf");
+    setPreview(f.type === "application/pdf" ? "pdf" : URL.createObjectURL(f));
   };
+  const removeFile = () => { setFile(null); setPreview(null); setPreviewPdf(false); };
 
-  const submit = (e) => {
-    e.preventDefault();
-    if (submitting || hasPending) return; // prevent double submission / second pending request
-    if (!form.amount || parseFloat(form.amount) <= 0) { setMsg({ type: "err", text: "Montant invalide." }); return; }
-    if (!form.paymentMethod.trim()) { setMsg({ type: "err", text: "Méthode de paiement requise." }); return; }
+  const submit = () => {
+    if (submitting || hasPending) return;
+    if (!amount || parseFloat(amount) <= 0) { setMsg({ type: "err", text: "Montant invalide." }); return; }
+    if (!paymentMethod.trim()) { setMsg({ type: "err", text: "Méthode de paiement requise." }); return; }
     if (!file) { setMsg({ type: "err", text: "La preuve du virement est requise." }); return; }
 
     setSubmitting(true); setMsg(null);
     const fd = new FormData();
-    fd.append("amount", form.amount);
-    fd.append("paymentMethod", form.paymentMethod);
-    fd.append("transferReference", form.transferReference);
-    fd.append("affiliateNote", form.affiliateNote);
+    fd.append("amount", amount);
+    fd.append("paymentMethod", paymentMethod);
+    fd.append("transferReference", transferReference);
+    fd.append("affiliateNote", affiliateNote);
     fd.append("proof", file);
 
     const xhr = new XMLHttpRequest();
@@ -75,10 +110,7 @@ export default function DepositTab({ token, onChanged }) {
     xhr.onload = () => {
       setSubmitting(false);
       if (xhr.status >= 200 && xhr.status < 300) {
-        // Reset the form ONLY after confirmed success.
-        setForm({ amount: "", paymentMethod: "", transferReference: "", affiliateNote: "" });
-        setFile(null); setPreview(null);
-        if (fileRef.current) fileRef.current.value = "";
+        setAmount(""); setMethod(""); setRef(""); setNote(""); removeFile();
         setMsg({ type: "ok", text: "Demande envoyée. Elle sera validée par l'administrateur." });
         load();
         onChanged?.();
@@ -92,9 +124,11 @@ export default function DepositTab({ token, onChanged }) {
     xhr.send(fd);
   };
 
+  const inputCls = "w-full text-sm border border-gray-200 rounded-xl px-4 py-3 bg-gray-50 focus:outline-none focus:border-gray-400";
+
   return (
-    <div className="space-y-5">
-      {/* Summary */}
+    <div className="max-w-lg mx-auto space-y-4">
+      {/* Summary — approved (derived) + pending, kept separate from Solde disponible */}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <div className="rounded-2xl border border-gray-100 bg-white p-5">
           <div className="flex items-center gap-2 text-gray-500 text-xs mb-1"><Wallet className="w-4 h-4" /> Dépôt de garantie approuvé</div>
@@ -107,60 +141,92 @@ export default function DepositTab({ token, onChanged }) {
         </div>
       </div>
 
-      {/* New request form */}
-      <div className="rounded-2xl border border-gray-100 bg-white p-5">
-        <h3 className="text-sm font-bold text-gray-900 mb-3">Nouvelle demande de dépôt</h3>
-        {hasPending && (
-          <div className="flex items-center gap-2 text-xs px-3 py-2 rounded-lg mb-3 bg-amber-50 text-amber-700">
-            <AlertCircle className="w-4 h-4 shrink-0" />
-            Vous avez déjà une demande en attente de validation.
+      {/* Latest request status (En attente / Approuvé / Refusé) */}
+      {latest && (
+        <div className={`rounded-2xl border px-4 py-3 text-sm ${STATUS[latest.status]?.banner || "bg-gray-50 border-gray-200 text-gray-700"}`}>
+          <div className="flex items-center justify-between gap-2">
+            <span className="font-bold">Dernière demande : {STATUS[latest.status]?.label || latest.status}</span>
+            <span className="font-black">{fmtMoney(latest.amount)}</span>
           </div>
-        )}
-        {msg && (
-          <div className={`flex items-center gap-2 text-xs px-3 py-2 rounded-lg mb-3 ${msg.type === "ok" ? "bg-green-50 text-green-700" : "bg-red-50 text-red-700"}`}>
-            {msg.type === "ok" ? <CheckCircle className="w-4 h-4" /> : <AlertCircle className="w-4 h-4" />}{msg.text}
-          </div>
-        )}
-        <form onSubmit={submit} className="space-y-3">
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <input type="number" min="1" step="0.01" value={form.amount} onChange={(e) => setF("amount", e.target.value)}
-              placeholder="Montant (MAD) *" className="w-full text-sm border border-gray-200 rounded-xl px-4 py-3 bg-gray-50 focus:outline-none focus:border-gray-400" />
-            <input value={form.paymentMethod} onChange={(e) => setF("paymentMethod", e.target.value)}
-              placeholder="Méthode de paiement *" className="w-full text-sm border border-gray-200 rounded-xl px-4 py-3 bg-gray-50 focus:outline-none focus:border-gray-400" />
-          </div>
-          <input value={form.transferReference} onChange={(e) => setF("transferReference", e.target.value)}
-            placeholder="Référence du virement (optionnel)" className="w-full text-sm border border-gray-200 rounded-xl px-4 py-3 bg-gray-50 focus:outline-none focus:border-gray-400" />
-          <textarea value={form.affiliateNote} onChange={(e) => setF("affiliateNote", e.target.value)}
-            placeholder="Commentaire (optionnel)" className="w-full text-sm border border-gray-200 rounded-xl px-4 py-3 bg-gray-50 h-20 focus:outline-none focus:border-gray-400" />
+          {latest.status === "REJECTED" && latest.rejectionReason && (
+            <p className="text-xs mt-1">Motif : {latest.rejectionReason}</p>
+          )}
+        </div>
+      )}
 
-          {/* Proof upload (required) */}
-          <div>
-            <input ref={fileRef} type="file" accept={ACCEPT.join(",")} className="hidden" onChange={(e) => pickFile(e.target.files?.[0])} />
-            {file ? (
-              <div className="flex items-center gap-3 border border-gray-200 rounded-xl p-3">
-                {preview
-                  // eslint-disable-next-line @next/next/no-img-element
-                  ? <img src={preview} alt="preuve" className="w-16 h-16 object-cover rounded-lg" />
-                  : <div className="w-16 h-16 rounded-lg bg-gray-100 flex items-center justify-center text-xs text-gray-500">PDF</div>}
-                <span className="text-xs text-gray-600 flex-1 truncate">{file.name}</span>
-                <button type="button" onClick={() => { setFile(null); setPreview(null); if (fileRef.current) fileRef.current.value = ""; }}
-                  className="text-xs text-red-600 hover:underline">Retirer</button>
+      {msg && (
+        <div className={`flex items-center gap-2 text-sm px-4 py-3 rounded-2xl ${msg.type === "ok" ? "bg-green-50 border border-green-200 text-green-700" : "bg-red-50 border border-red-200 text-red-600"}`}>
+          {msg.type === "ok" ? <CheckCircle className="w-4 h-4 shrink-0" /> : <AlertCircle className="w-4 h-4 shrink-0" />}{msg.text}
+        </div>
+      )}
+
+      {hasPending ? (
+        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6 text-center">
+          <div className="w-12 h-12 rounded-full bg-amber-50 flex items-center justify-center mx-auto mb-3">
+            <Loader2 className="w-6 h-6 text-amber-500 animate-spin" />
+          </div>
+          <p className="text-sm font-bold text-gray-900">Vous avez déjà une demande en attente de validation.</p>
+          <p className="text-xs text-gray-500 mt-1">Vous pourrez soumettre une nouvelle demande une fois celle-ci traitée.</p>
+        </div>
+      ) : (
+        <>
+          {/* ── Amount banner (reused) — editable deposit amount ── */}
+          <BankTransferAmountBanner
+            label="Montant du dépôt de garantie"
+            value={
+              <div className="flex items-center justify-center gap-2">
+                <input
+                  type="number" min="1" step="0.01" value={amount} onChange={(e) => setAmount(e.target.value)}
+                  placeholder="0" inputMode="decimal"
+                  className="bg-transparent text-white text-4xl font-black text-center outline-none w-44 placeholder-white/30"
+                />
+                <span className="text-lg font-bold opacity-60">MAD</span>
               </div>
-            ) : (
-              <button type="button" onClick={() => fileRef.current?.click()}
-                className="w-full flex items-center justify-center gap-2 border-2 border-dashed border-gray-200 rounded-xl py-4 text-sm text-gray-500 hover:border-indigo-300 bg-gray-50">
-                <Upload className="w-4 h-4" /> Capture / preuve du virement * (JPG, PNG, WEBP, PDF · max 8 Mo)
-              </button>
-            )}
+            }
+          />
+
+          {/* ── Bank details card (reused) — from Bank Settings ── */}
+          <BankDetailsCard bankInfo={bankInfo} labels={BANK_LABELS} />
+
+          {/* ── Transfer details (deposit-specific business fields) ── */}
+          <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+            <div className="px-5 py-3.5 border-b border-gray-50 flex items-center gap-2">
+              <div className="w-7 h-7 rounded-full bg-gray-100 flex items-center justify-center">
+                <CreditCard className="w-3.5 h-3.5 text-gray-700" />
+              </div>
+              <h2 className="font-bold text-gray-900 text-sm">Détails du virement</h2>
+            </div>
+            <div className="p-5 space-y-3">
+              <input value={paymentMethod} onChange={(e) => setMethod(e.target.value)} placeholder="Méthode de paiement *" className={inputCls} />
+              <input value={transferReference} onChange={(e) => setRef(e.target.value)} placeholder="Référence du virement (optionnel)" className={inputCls} />
+              <textarea value={affiliateNote} onChange={(e) => setNote(e.target.value)} placeholder="Commentaire (optionnel)" className={`${inputCls} h-20`} />
+            </div>
           </div>
 
-          <button type="submit" disabled={submitting || hasPending}
-            className="flex items-center gap-2 px-5 py-2.5 bg-gray-900 hover:bg-black text-white rounded-xl text-sm font-semibold disabled:opacity-50 disabled:cursor-not-allowed">
-            {submitting ? <Loader2 className="w-4 h-4 animate-spin" /> : <Wallet className="w-4 h-4" />}
-            {submitting ? "Envoi…" : "Envoyer la demande"}
+          {/* ── Proof upload (reused) — PRIVATE deposit storage on submit ── */}
+          <ProofUploadCard
+            preview={preview}
+            previewIsPdf={previewIsPdf}
+            uploading={false}
+            onSelectFile={selectFile}
+            onRemove={removeFile}
+            accept={ACCEPT}
+            labels={UPLOAD_LABELS}
+          />
+
+          {/* ── Submit button (identical style) ── */}
+          <button
+            onClick={submit}
+            disabled={submitting || !amount || !paymentMethod.trim() || !file}
+            className="w-full bg-gray-900 hover:bg-gray-800 active:scale-[0.99] disabled:opacity-50 disabled:cursor-not-allowed text-white py-4 rounded-2xl font-black text-base flex items-center justify-center gap-2 transition-all shadow-lg">
+            {submitting ? (
+              <><span className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" /> Envoi…</>
+            ) : (
+              <><CreditCard className="w-5 h-5" /> Envoyer la demande</>
+            )}
           </button>
-        </form>
-      </div>
+        </>
+      )}
 
       {/* History */}
       <div className="rounded-2xl border border-gray-100 bg-white p-5">

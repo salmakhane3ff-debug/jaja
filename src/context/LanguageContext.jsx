@@ -57,12 +57,15 @@ export function LanguageProvider({ children }) {
   }, []);
 
   // Sync HTML attributes and persist whenever lang changes.
-  // IMPORTANT: Never apply RTL on admin pages — the admin must always be LTR.
+  // IMPORTANT: Never apply RTL on admin OR affiliate-dashboard pages — both are
+  // management interfaces that must always be LTR (the affiliate dashboard is
+  // also forced to French; RTL/Arabic there breaks its layout).
   // window.location.pathname is read at effect time (always current route).
   useEffect(() => {
     if (!mounted) return;
-    const onAdmin = window.location.pathname.startsWith("/admin");
-    const dir = (!onAdmin && lang === "ar") ? "rtl" : "ltr";
+    const p = window.location.pathname;
+    const alwaysLtr = p.startsWith("/admin") || p.startsWith("/affiliate");
+    const dir = (!alwaysLtr && lang === "ar") ? "rtl" : "ltr";
     document.documentElement.lang = lang;
     document.documentElement.dir = dir;
     document.documentElement.setAttribute("data-lang", lang);

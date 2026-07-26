@@ -1,13 +1,15 @@
 "use client";
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useLanguage } from "@/context/LanguageContext";
 import {
-  ArrowLeft, Building2, Copy, CheckCircle, Upload,
-  X, Shield, CreditCard, Zap, MessageCircle,
+  ArrowLeft, CheckCircle, Shield, CreditCard, Zap, MessageCircle,
 } from "lucide-react";
 import { resolveClickId } from "@/lib/tracking/clickId";
 import { trackClarity } from "@/lib/trackClarity";
+import BankTransferAmountBanner from "@/components/checkout/BankTransferAmountBanner";
+import BankDetailsCard from "@/components/checkout/BankDetailsCard";
+import ProofUploadCard from "@/components/checkout/ProofUploadCard";
 
 // ── Steps bar — step 3 active ─────────────────────────────────────────────────
 
@@ -81,7 +83,6 @@ function clearCheckoutStorage() {
 
 export default function ConfirmPage() {
   const router  = useRouter();
-  const fileRef = useRef(null);
   const { t, formatPrice } = useLanguage();
 
   // ── State ──────────────────────────────────────────────────────────────────
@@ -94,8 +95,6 @@ export default function ConfirmPage() {
   const [screenshot,   setScreenshot]   = useState(null);  // URL returned by upload-receipt
   const [uploading,    setUploading]    = useState(false);
   const [isInstant,    setIsInstant]    = useState(false);
-  const [ribCopied,    setRibCopied]    = useState(false);
-  const [acctCopied,   setAcctCopied]   = useState(false);
   const [submitting,   setSubmitting]   = useState(false);
   const [submitError,  setSubmitError]  = useState("");
   const [isHydrated,   setIsHydrated]   = useState(false);
@@ -189,24 +188,6 @@ export default function ConfirmPage() {
                          ? Math.max(0, total - deposit)
                          : 0;
   const amountNow    = shipping?.paymentType === "cod_deposit" ? deposit : total;
-
-  // ── Copy RIB ──────────────────────────────────────────────────────────────
-  const copyRIB = () => {
-    if (!bankInfo?.rib) return;
-    navigator.clipboard.writeText(bankInfo.rib).then(() => {
-      setRibCopied(true);
-      setTimeout(() => setRibCopied(false), 2500);
-    });
-  };
-
-  // ── Copy Account Number ───────────────────────────────────────────────────
-  const copyAcct = () => {
-    if (!bankInfo?.accountNumber) return;
-    navigator.clipboard.writeText(bankInfo.accountNumber).then(() => {
-      setAcctCopied(true);
-      setTimeout(() => setAcctCopied(false), 2500);
-    });
-  };
 
   // ── Screenshot upload — validate client-side, compress, then upload securely ─
   // The server (/api/checkout/upload-receipt) re-validates magic bytes, enforces
@@ -548,130 +529,36 @@ export default function ConfirmPage() {
         <StepsBar />
 
         {/* ── Amount banner ── */}
-        <div className="bg-gray-900 rounded-2xl p-5 text-white text-center shadow-lg shadow-gray-900/20">
-          <p className="text-xs font-medium opacity-60 mb-1">
-            {shipping.paymentType === "cod_deposit" ? t("checkout_deposit_amount_label") : t("checkout_full_transfer_label")}
-          </p>
-          <p className="text-4xl font-black">{formatPrice(amountNow.toFixed(0))}</p>
-          {promoDiscount > 0 && (
-            <p className="text-xs mt-1 opacity-70">{t("checkout_discount_included")} {formatPrice(promoDiscount.toFixed(0))} ✓</p>
-          )}
-          {shipping.paymentType === "cod_deposit" && (
-            <div className="mt-3 pt-3 border-t border-white/15 text-sm">
-              <span className="opacity-80">{t("checkout_remaining_delivery2")} </span>
-              <strong className="font-black">{formatPrice(remaining.toFixed(0))}</strong>
-            </div>
-          )}
-        </div>
+        <BankTransferAmountBanner
+          label={shipping.paymentType === "cod_deposit" ? t("checkout_deposit_amount_label") : t("checkout_full_transfer_label")}
+          value={formatPrice(amountNow.toFixed(0))}
+          footer={
+            <>
+              {promoDiscount > 0 && (
+                <p className="text-xs mt-1 opacity-70">{t("checkout_discount_included")} {formatPrice(promoDiscount.toFixed(0))} ✓</p>
+              )}
+              {shipping.paymentType === "cod_deposit" && (
+                <div className="mt-3 pt-3 border-t border-white/15 text-sm">
+                  <span className="opacity-80">{t("checkout_remaining_delivery2")} </span>
+                  <strong className="font-black">{formatPrice(remaining.toFixed(0))}</strong>
+                </div>
+              )}
+            </>
+          }
+        />
 
         {/* ── Bank details card ── */}
-        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
-          <div className="px-5 py-3.5 border-b border-gray-50 flex items-center gap-2">
-            <div className="w-7 h-7 rounded-full bg-gray-100 flex items-center justify-center">
-              <Building2 className="w-3.5 h-3.5 text-gray-700" />
-            </div>
-            <h2 className="font-bold text-gray-900 text-sm">{t("checkout_bank_info")}</h2>
-          </div>
-
-          <div className="p-5">
-            {!bankInfo ? (
-              <div className="flex justify-center py-4">
-                <div className="w-5 h-5 border-2 border-gray-200 border-t-transparent rounded-full animate-spin" />
-              </div>
-            ) : (
-              <div className="space-y-0">
-                {/* Logo row */}
-                {bankInfo.logo && (
-                  <div className="flex items-center gap-3 pb-3 mb-1 border-b border-gray-50">
-                    <img
-                      src={bankInfo.logo}
-                      alt={bankInfo.name || bankInfo.bankName}
-                      className="h-10 w-auto max-w-[100px] object-contain rounded-lg"
-                    />
-                    <span className="text-sm font-bold text-gray-900">
-                      {bankInfo.name || bankInfo.bankName}
-                    </span>
-                  </div>
-                )}
-
-                {/* Fields */}
-                {[
-                  {
-                    label: t("checkout_bank_name"),
-                    value: bankInfo.logo ? null : (bankInfo.name || bankInfo.bankName),
-                  },
-                  {
-                    label: t("checkout_account_holder"),
-                    value: bankInfo.accountName,
-                  },
-                ].map(({ label, value }) =>
-                  value ? (
-                    <div key={label} dir="rtl" className="flex items-center justify-between py-3 border-b border-gray-50">
-                      <span className="text-xs text-gray-400 font-medium">{label}</span>
-                      <span className="text-sm font-bold text-gray-900">{value}</span>
-                    </div>
-                  ) : null
-                )}
-
-                {/* RIB with copy */}
-                {bankInfo.rib && (
-                  <div dir="rtl" className="flex items-center justify-between gap-2 py-3 border-b border-gray-50">
-                    {/* RIGHT: label + copy button */}
-                    <div className="flex items-center gap-1.5 shrink-0">
-                      <span className="text-xs text-gray-400 font-medium">RIB</span>
-                      <button
-                        onClick={copyRIB}
-                        className={`flex items-center gap-1 text-xs px-2 py-0.5 rounded-lg font-semibold transition-all
-                          ${ribCopied
-                            ? "bg-green-100 text-green-600"
-                            : "bg-gray-100 text-gray-600 hover:bg-gray-200"}`}>
-                        {ribCopied
-                          ? <><CheckCircle className="w-3 h-3" /> {t("checkout_copied")}</>
-                          : <><Copy className="w-3 h-3" /> {t("checkout_copy")}</>}
-                      </button>
-                    </div>
-                    {/* LEFT: value */}
-                    <span className="text-sm font-mono font-bold text-gray-900 flex-1 text-left leading-relaxed" style={{ wordBreak: "break-all" }}>
-                      {bankInfo.rib}
-                    </span>
-                  </div>
-                )}
-
-                {/* Account Number with copy */}
-                {bankInfo.accountNumber && (
-                  <div dir="rtl" className="flex items-center justify-between gap-2 py-3 border-b border-gray-50">
-                    {/* RIGHT: label + copy button */}
-                    <div className="flex items-center gap-1.5 shrink-0">
-                      <span className="text-xs text-gray-400 font-medium">{t("checkout_account_number")}</span>
-                      <button
-                        onClick={copyAcct}
-                        className={`flex items-center gap-1 text-xs px-2 py-0.5 rounded-lg font-semibold transition-all
-                          ${acctCopied
-                            ? "bg-green-100 text-green-600"
-                            : "bg-gray-100 text-gray-600 hover:bg-gray-200"}`}>
-                        {acctCopied
-                          ? <><CheckCircle className="w-3 h-3" /> {t("checkout_copied")}</>
-                          : <><Copy className="w-3 h-3" /> {t("checkout_copy")}</>}
-                      </button>
-                    </div>
-                    {/* LEFT: value */}
-                    <span className="text-sm font-mono font-bold text-gray-900 flex-1 text-left leading-relaxed" style={{ wordBreak: "break-all" }}>
-                      {bankInfo.accountNumber}
-                    </span>
-                  </div>
-                )}
-
-                {/* SWIFT */}
-                {bankInfo.swift && (
-                  <div dir="rtl" className="flex items-center justify-between py-3">
-                    <span className="text-xs text-gray-400 font-medium">SWIFT / BIC</span>
-                    <span className="text-sm font-mono font-bold text-gray-900">{bankInfo.swift}</span>
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
-        </div>
+        <BankDetailsCard
+          bankInfo={bankInfo}
+          labels={{
+            title:         t("checkout_bank_info"),
+            bankName:      t("checkout_bank_name"),
+            accountHolder: t("checkout_account_holder"),
+            accountNumber: t("checkout_account_number"),
+            copy:          t("checkout_copy"),
+            copied:        t("checkout_copied"),
+          }}
+        />
 
         {/* ── Instructions — card styled like a button ── */}
         {bankInfo?.instructions && (
@@ -715,62 +602,21 @@ export default function ConfirmPage() {
         </button>
 
         {/* ── Upload receipt ── */}
-        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
-          <div className="px-5 py-3.5 border-b border-gray-50 flex items-center gap-2">
-            <div className="w-7 h-7 rounded-full bg-gray-100 flex items-center justify-center">
-              <Upload className="w-3.5 h-3.5 text-gray-700" />
-            </div>
-            <h2 className="font-bold text-gray-900 text-sm">{t("checkout_upload_proof")}</h2>
-          </div>
-          <div className="p-5">
-            {!screenshot ? (
-              <div
-                onClick={() => !uploading && fileRef.current?.click()}
-                onDrop={e => { e.preventDefault(); if (!uploading) handleFile(e.dataTransfer.files?.[0]); }}
-                onDragOver={e => e.preventDefault()}
-                className={`flex flex-col items-center justify-center h-36 border-2 border-dashed rounded-2xl transition-all group
-                  ${uploading
-                    ? "border-gray-200 bg-gray-50 cursor-not-allowed"
-                    : "border-gray-200 cursor-pointer hover:border-gray-400 hover:bg-gray-50"}`}>
-                {uploading ? (
-                  <>
-                    <div className="w-8 h-8 border-[3px] border-gray-300 border-t-gray-700 rounded-full animate-spin mb-2.5" />
-                    <p className="text-sm font-semibold text-gray-500">{t("checkout_processing") || "Uploading…"}</p>
-                  </>
-                ) : (
-                  <>
-                    <div className="w-12 h-12 rounded-full bg-gray-100 group-hover:bg-gray-200 flex items-center justify-center mb-2.5 transition-colors">
-                      <Upload className="w-5 h-5 text-gray-400 group-hover:text-gray-700 transition-colors" />
-                    </div>
-                    <p className="text-sm font-semibold text-gray-600 group-hover:text-gray-900 transition-colors">
-                      {t("checkout_upload_click")}
-                    </p>
-                    <p className="text-xs text-gray-400 mt-1">{t("checkout_upload_drag")}</p>
-                  </>
-                )}
-              </div>
-            ) : (
-              <div className="relative rounded-2xl overflow-hidden border border-gray-200">
-                <img src={screenshot} alt="إثبات التحويل" className="w-full max-h-64 object-contain bg-gray-50" />
-                <button
-                  onClick={() => { setScreenshot(null); setSubmitError(""); }}
-                  className="absolute top-3 right-3 w-8 h-8 bg-red-500 hover:bg-red-600 text-white rounded-full flex items-center justify-center shadow-lg transition-colors">
-                  <X className="w-4 h-4" />
-                </button>
-                <div className="absolute bottom-3 left-3 flex items-center gap-1.5 bg-green-500 text-white text-xs px-2.5 py-1 rounded-full font-semibold">
-                  <CheckCircle className="w-3 h-3" /> {t("checkout_uploaded")}
-                </div>
-              </div>
-            )}
-            <input
-              ref={fileRef}
-              type="file"
-              accept="image/jpeg,image/png,image/webp"
-              className="hidden"
-              onChange={e => { handleFile(e.target.files?.[0]); e.target.value = ""; }}
-            />
-          </div>
-        </div>
+        <ProofUploadCard
+          preview={screenshot}
+          uploading={uploading}
+          onSelectFile={handleFile}
+          onRemove={() => { setScreenshot(null); setSubmitError(""); }}
+          accept="image/jpeg,image/png,image/webp"
+          labels={{
+            title:      t("checkout_upload_proof"),
+            click:      t("checkout_upload_click"),
+            drag:       t("checkout_upload_drag"),
+            uploaded:   t("checkout_uploaded"),
+            processing: t("checkout_processing") || "Uploading…",
+            previewAlt: "إثبات التحويل",
+          }}
+        />
 
         {/* Submit error */}
         {submitError && (

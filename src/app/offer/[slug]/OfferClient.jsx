@@ -7,6 +7,7 @@ import Link from "next/link";
 import { fetchCached } from "@/lib/dataCache";
 import StickyCTA from "@/components/Product/StickyCTA";
 import InlineCodForm from "@/components/Product/InlineCodForm";
+import { resolveCtaAction, isCtaDisabled } from "@/lib/landingCta";
 import { resolveClickId } from "@/lib/tracking/clickId";
 import { trackClarity } from "@/lib/trackClarity";
 
@@ -272,7 +273,7 @@ function ActivityPopup({ cfg, product }) {
 //  DYNAMIC BLOCK RENDERER
 // ══════════════════════════════════════════════════════════════════════════════
 
-function BlockRenderer({ block, product, landingPage, onBuyNow, buying }) {
+function BlockRenderer({ block, product, landingPage, onBuyNow, onCta, hasOrderForm, ctaFocus, buying }) {
   const { type, config: cfg = {}, visible } = block;
   if (visible === false) return null;
 
@@ -445,12 +446,17 @@ function BlockRenderer({ block, product, landingPage, onBuyNow, buying }) {
           <div className="rounded-2xl p-5 text-center" style={{ background: cfg.bgColor || "#fffbeb" }}>
             {cfg.text && <p className="text-base font-black text-gray-800 mb-4">{cfg.text}</p>}
             <button
-              onClick={cfg.buttonUrl ? () => window.location.href = cfg.buttonUrl : onBuyNow}
-              disabled={!cfg.buttonUrl && (buying || !product)}
+              // Every CTA block routes through the SAME order-form-aware handler,
+              // so multiple CTA instances on one page all work independently.
+              onClick={() => onCta(cfg.buttonUrl)}
+              // Only the real checkout path can disable. When the action is
+              // "scroll to the form" (or redirect), the button is NEVER disabled —
+              // so one CTA firing can never freeze another instance.
+              disabled={isCtaDisabled({ buttonUrl: cfg.buttonUrl, hasOrderForm, buying, product })}
               className="w-full flex items-center justify-center gap-2 py-3.5 rounded-2xl font-black text-white text-base transition-all active:scale-[0.98] shadow-lg disabled:opacity-70"
               style={{ background: cfg.buttonColor || "#f59e0b" }}>
               <Zap className="w-5 h-5" />
-              {buying && !cfg.buttonUrl ? "جارٍ التحويل..." : (cfg.buttonText || "اطلب الآن")}
+              {buying && !cfg.buttonUrl && !hasOrderForm ? "جارٍ التحويل..." : (cfg.buttonText || "اطلب الآن")}
             </button>
           </div>
         </div>
@@ -677,7 +683,7 @@ function BlockRenderer({ block, product, landingPage, onBuyNow, buying }) {
       return <AudioBlock cfg={cfg} />;
 
     case "orderForm":
-      return <div id="lp-order-form"><InlineCodForm cfg={cfg} product={product} landingPage={landingPage} /></div>;
+      return <div id="lp-order-form"><InlineCodForm cfg={cfg} product={product} landingPage={landingPage} focusSignal={ctaFocus} /></div>;
 
     case "upsell": {
       const lpProds = Array.isArray(landingPage?.products) ? landingPage.products : [];
@@ -1134,6 +1140,9 @@ function OfferContent({ initialLandingPage = null, initialProduct = null }) {
   const [loading,     setLoading]     = useState(!initialLandingPage && !initialProduct);
   const [notFound,    setNotFound]    = useState(false);
   const [buying,      setBuying]      = useState(false);
+  // Bumped whenever a CTA scrolls to the order form → InlineCodForm focuses its
+  // first input + plays the highlight (same mechanism as the product page).
+  const [ctaFocus,    setCtaFocus]    = useState(0);
 
   const tracked = useRef(false);
 
@@ -1285,15 +1294,30 @@ function OfferContent({ initialLandingPage = null, initialProduct = null }) {
   // a configured custom URL redirects, else the existing Buy Now handler runs.
   const ctaBlock     = sections.find((b) => b.type === "cta" && b.visible !== false);
   const hasOrderForm = sections.some((b) => b.type === "orderForm" && b.visible !== false);
-  const handleStickyCTA = () => {
-    if (hasOrderForm) {
-      document.getElementById("lp-order-form")?.scrollIntoView({ behavior: "smooth", block: "start" });
-    } else if (ctaBlock?.config?.buttonUrl) {
-      window.location.href = ctaBlock.config.buttonUrl;
-    } else {
-      handleBuyNow();
+
+  // Scroll to the on-page order form, then focus its first input + play the
+  // highlight (via the bumped ctaFocus signal). Returns false if no form exists.
+  const scrollToOrderForm = () => {
+    if (typeof document === "undefined") return false;
+    const el = document.getElementById("lp-order-form");
+    if (!el) return false;
+    el.scrollIntoView({ behavior: "smooth", block: "start" });
+    setTimeout(() => setCtaFocus((n) => n + 1), 450); // after the scroll settles
+    return true;
+  };
+
+  // SINGLE source of truth for EVERY CTA surface (all in-page CTA blocks AND the
+  // sticky bar). An empty Custom URL + an order form → scroll+focus+highlight; a
+  // Custom URL → redirect; otherwise the Buy Now (checkout) flow. Every CTA block
+  // gets its own React onClick bound to this, so multiple instances all work.
+  const handleCta = (buttonUrl) => {
+    switch (resolveCtaAction({ hasOrderForm, buttonUrl })) {
+      case 'scroll':   scrollToOrderForm(); break;
+      case 'redirect': window.location.href = buttonUrl; break;
+      default:         handleBuyNow();
     }
   };
+  const handleStickyCTA = () => handleCta(ctaBlock?.config?.buttonUrl);
 
   // ════════════════════════════════════════════════════════════════════════════
   //  Empty by default — only renders what Builder explicitly added
@@ -1309,6 +1333,9 @@ function OfferContent({ initialLandingPage = null, initialProduct = null }) {
             product={product}
             landingPage={landingPage}
             onBuyNow={handleBuyNow}
+            onCta={handleCta}
+            hasOrderForm={hasOrderForm}
+            ctaFocus={ctaFocus}
             buying={buying}
           />
         ))}
