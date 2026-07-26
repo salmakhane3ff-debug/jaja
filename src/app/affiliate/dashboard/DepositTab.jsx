@@ -25,6 +25,9 @@ const STATUS = {
 const ACCEPT = "image/jpeg,image/png,image/webp,application/pdf";
 const ACCEPT_LIST = ["image/jpeg", "image/jpg", "image/png", "image/webp", "application/pdf"];
 const MAX = 8 * 1024 * 1024;
+// Deposits are always a bank transfer — the payment method is fixed (the backend
+// still requires + stores one), so it is no longer a user-entered field.
+const DEPOSIT_METHOD = "Virement bancaire";
 const fmtMoney = (n) => `${Number(n || 0).toFixed(0)} MAD`;
 const fmtDate = (d) => (d ? new Date(d).toLocaleDateString("fr-FR", { dateStyle: "medium" }) : "—");
 
@@ -44,9 +47,6 @@ export default function DepositTab({ token, onChanged }) {
   const [loading, setLoading] = useState(true);
 
   const [amount, setAmount]           = useState("");
-  const [paymentMethod, setMethod]    = useState("");
-  const [transferReference, setRef]   = useState("");
-  const [affiliateNote, setNote]      = useState("");
   const [file, setFile]               = useState(null);
   const [preview, setPreview]         = useState(null);
   const [previewIsPdf, setPreviewPdf] = useState(false);
@@ -93,15 +93,12 @@ export default function DepositTab({ token, onChanged }) {
   const submit = () => {
     if (submitting || hasPending) return;
     if (!amount || parseFloat(amount) <= 0) { setMsg({ type: "err", text: "Montant invalide." }); return; }
-    if (!paymentMethod.trim()) { setMsg({ type: "err", text: "Méthode de paiement requise." }); return; }
     if (!file) { setMsg({ type: "err", text: "La preuve du virement est requise." }); return; }
 
     setSubmitting(true); setMsg(null);
     const fd = new FormData();
     fd.append("amount", amount);
-    fd.append("paymentMethod", paymentMethod);
-    fd.append("transferReference", transferReference);
-    fd.append("affiliateNote", affiliateNote);
+    fd.append("paymentMethod", DEPOSIT_METHOD);
     fd.append("proof", file);
 
     const xhr = new XMLHttpRequest();
@@ -110,7 +107,7 @@ export default function DepositTab({ token, onChanged }) {
     xhr.onload = () => {
       setSubmitting(false);
       if (xhr.status >= 200 && xhr.status < 300) {
-        setAmount(""); setMethod(""); setRef(""); setNote(""); removeFile();
+        setAmount(""); removeFile();
         setMsg({ type: "ok", text: "Demande envoyée. Elle sera validée par l'administrateur." });
         load();
         onChanged?.();
@@ -123,8 +120,6 @@ export default function DepositTab({ token, onChanged }) {
     xhr.onerror = () => { setSubmitting(false); setMsg({ type: "err", text: "Erreur réseau." }); };
     xhr.send(fd);
   };
-
-  const inputCls = "w-full text-sm border border-gray-200 rounded-xl px-4 py-3 bg-gray-50 focus:outline-none focus:border-gray-400";
 
   return (
     <div className="max-w-lg mx-auto space-y-4">
@@ -188,21 +183,6 @@ export default function DepositTab({ token, onChanged }) {
           {/* ── Bank details card (reused) — from Bank Settings ── */}
           <BankDetailsCard bankInfo={bankInfo} labels={BANK_LABELS} />
 
-          {/* ── Transfer details (deposit-specific business fields) ── */}
-          <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
-            <div className="px-5 py-3.5 border-b border-gray-50 flex items-center gap-2">
-              <div className="w-7 h-7 rounded-full bg-gray-100 flex items-center justify-center">
-                <CreditCard className="w-3.5 h-3.5 text-gray-700" />
-              </div>
-              <h2 className="font-bold text-gray-900 text-sm">Détails du virement</h2>
-            </div>
-            <div className="p-5 space-y-3">
-              <input value={paymentMethod} onChange={(e) => setMethod(e.target.value)} placeholder="Méthode de paiement *" className={inputCls} />
-              <input value={transferReference} onChange={(e) => setRef(e.target.value)} placeholder="Référence du virement (optionnel)" className={inputCls} />
-              <textarea value={affiliateNote} onChange={(e) => setNote(e.target.value)} placeholder="Commentaire (optionnel)" className={`${inputCls} h-20`} />
-            </div>
-          </div>
-
           {/* ── Proof upload (reused) — PRIVATE deposit storage on submit ── */}
           <ProofUploadCard
             preview={preview}
@@ -217,7 +197,7 @@ export default function DepositTab({ token, onChanged }) {
           {/* ── Submit button (identical style) ── */}
           <button
             onClick={submit}
-            disabled={submitting || !amount || !paymentMethod.trim() || !file}
+            disabled={submitting || !amount || !file}
             className="w-full bg-gray-900 hover:bg-gray-800 active:scale-[0.99] disabled:opacity-50 disabled:cursor-not-allowed text-white py-4 rounded-2xl font-black text-base flex items-center justify-center gap-2 transition-all shadow-lg">
             {submitting ? (
               <><span className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" /> Envoi…</>
