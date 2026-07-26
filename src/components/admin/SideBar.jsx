@@ -88,6 +88,7 @@ const SideBar = ({ onItemClick }) => {
     { href: "/admin/affiliate-orders", icon: <ShoppingCart size={16} />, label: "Affiliate Orders" },
     { href: "/admin/affiliate-payouts",    icon: <CreditCard size={16} />,        label: "Affiliate Payouts" },
     { href: "/admin/identity",             icon: <ShieldCheck size={16} />,       label: "Identity Verification" },
+    { href: "/admin/deposits",             icon: <CreditCard size={16} />,        label: "Dépôts de garantie" },
     { href: "/admin/ugc-videos",           icon: <Film size={16} />,              label: "UGC Videos" },
     { href: "/admin/ugc-settings",         icon: <Settings size={16} />,          label: "UGC Settings" },
     { href: "/admin/shipping-companies",   icon: <Truck size={16} />,             label: "Shipping Companies" },

@@ -54,6 +54,7 @@ export default function StickyAddToCart({
   onBuyNow,
   isLoading = false,
   actionsRef,
+  hideAddToCart = false, // inline-COD products: never show an Add-to-Cart action
 }) {
   // ═══════════════════════════════════════════════════════════════════════════
   // ALL HOOKS — unconditional, no early returns above any of these
@@ -324,6 +325,13 @@ export default function StickyAddToCart({
               <button disabled
                 className={`shrink-0 ${btnH} px-4 rounded-xl bg-gray-200 text-gray-400 text-xs font-semibold cursor-not-allowed`}>
                 {t("sticky_out_of_stock")}
+              </button>
+            ) : hideAddToCart ? (
+              /* Inline-COD product: only Buy Now (scrolls to the on-page COD form). */
+              <button onClick={handleBuyClick}
+                className={`shrink-0 ${btnH} px-4 sm:px-6 rounded-xl ${buyBtnCls} active:scale-95 text-xs font-bold flex items-center justify-center gap-1.5 transition-all duration-150 shadow-sm`}>
+                <Zap className="w-3.5 h-3.5 shrink-0" />
+                <span>{t("sticky_buy_now")}</span>
               </button>
             ) : isInCart ? (
               <button onClick={handleAddClick}

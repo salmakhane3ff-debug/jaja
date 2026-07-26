@@ -658,6 +658,7 @@ export async function getAffiliateDashboardStats(affiliateId) {
     balance,
     payouts,
     teamMembers,
+    ugcValidated,
   ] = await Promise.all([
     prisma.affiliate.findUnique({ where: { id: affiliateId }, select: { totalClicks: true, totalOrders: true } }),
     prisma.affiliateOrder.findMany({
@@ -673,6 +674,8 @@ export async function getAffiliateDashboardStats(affiliateId) {
     getAffiliateBalance(affiliateId),
     getAffiliatePayouts(affiliateId),
     prisma.affiliate.findMany({ where: { parentId: affiliateId }, select: { id: true } }),
+    // Validated UGC = strictly APPROVED. RUNNING / PENDING / REJECTED are excluded.
+    prisma.ugcVideoSubmission.count({ where: { affiliateId, status: 'APPROVED' } }),
   ]);
 
   // Total commission from all team members' delivered orders
@@ -733,6 +736,7 @@ export async function getAffiliateDashboardStats(affiliateId) {
     totalOrders,
     conversionRate,
     teamCommission,
+    ugcValidated,
   };
 }
 
@@ -758,6 +762,7 @@ export function computeGamification(validReferrals, teamSize, explicitTarget) {
 const DEFAULT_BONUS_CONFIG = {
   requiredActiveAffiliates: 10,
   bonusAmount: 2000,
+  ugcGoal: 5, // "Objectif UGC" — target validated UGC videos (admin-configurable)
   commissionTiers: [
     { minDelivered: 0, maxDelivered: 2,    commissionPct: 5  },
     { minDelivered: 3, maxDelivered: 5,    commissionPct: 7  },
@@ -769,9 +774,11 @@ export async function getTeamBonusConfig() {
   const setting = await prisma.setting.findUnique({ where: { id: 'team-bonus-config' } });
   if (!setting?.data) return DEFAULT_BONUS_CONFIG;
   const d = setting.data;
+  const ugcGoal = parseInt(d.ugcGoal, 10);
   return {
     requiredActiveAffiliates: d.requiredActiveAffiliates ?? DEFAULT_BONUS_CONFIG.requiredActiveAffiliates,
     bonusAmount:               d.bonusAmount              ?? DEFAULT_BONUS_CONFIG.bonusAmount,
+    ugcGoal:                   Number.isFinite(ugcGoal) && ugcGoal > 0 ? ugcGoal : DEFAULT_BONUS_CONFIG.ugcGoal,
     commissionTiers:           Array.isArray(d.commissionTiers) && d.commissionTiers.length > 0
       ? d.commissionTiers
       : DEFAULT_BONUS_CONFIG.commissionTiers,

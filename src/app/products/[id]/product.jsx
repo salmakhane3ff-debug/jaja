@@ -6,6 +6,7 @@ import React, { useState, useEffect, useRef, useCallback, lazy, Suspense, useMem
 import StickyAddToCart from "@/components/Product/StickyAddToCart";
 import ProductGallery from "@/components/ProductGallery";
 import InlineCodForm from "@/components/Product/InlineCodForm";
+import { isInlineCod } from "@/lib/purchaseMode";
 import { BadgeCheck, ShieldCheck, ShoppingCart } from "lucide-react";
 import SectionRenderer from "@/components/SectionRenderer";
 import { ShoppingBag, Heart, Star, Truck, Shield, Share2, Plus, Minus, Award, Box, Tag, Check } from "lucide-react";
@@ -638,7 +639,8 @@ export default function Product({ data }) {
                 </Button>
               ) : (
                 <>
-                  {ui.showAddToCartButton && (
+                  {/* Inline COD mode submits on-page → hide every Add-to-Cart action. */}
+                  {ui.showAddToCartButton && !isInlineCod(data.purchaseFlow) && (
                     <Button
                       size="sm"
                       isLoading={isAddingToCart(data._id)}
@@ -651,7 +653,7 @@ export default function Product({ data }) {
                       {isAddingToCart(data._id) ? t("product_adding") : t("product_add_to_cart")}
                     </Button>
                   )}
-                  {ui.showBuyNowButton && (
+                  {(ui.showBuyNowButton || isInlineCod(data.purchaseFlow)) && (
                     <Button
                       size="sm"
                       onPress={handleBuyNow}
@@ -735,6 +737,7 @@ export default function Product({ data }) {
         onBuyNow={handleBuyNow}
         isLoading={isAddingToCart(data._id)}
         actionsRef={actionsRef}
+        hideAddToCart={isInlineCod(data.purchaseFlow)}
       />
 
       <div className="h-20" />

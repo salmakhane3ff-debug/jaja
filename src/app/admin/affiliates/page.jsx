@@ -183,7 +183,7 @@ function TeamBonusConfigPanel() {
       const d = await r.json();
       setCfg(d);
     } catch {
-      setCfg({ requiredActiveAffiliates: 10, bonusAmount: 2000, commissionTiers: DEFAULT_TIERS });
+      setCfg({ requiredActiveAffiliates: 10, bonusAmount: 2000, ugcGoal: 5, commissionTiers: DEFAULT_TIERS });
     } finally {
       setLoadingCfg(false);
     }
@@ -259,7 +259,7 @@ function TeamBonusConfigPanel() {
       <form onSubmit={handleSaveCfg} className="p-5 space-y-6">
 
         {/* Bonus unlock conditions */}
-        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
           <div>
             <label className="block text-xs font-semibold text-gray-600 mb-1.5">
               Affiliés actifs requis
@@ -285,6 +285,19 @@ function TeamBonusConfigPanel() {
               className="w-full px-3 py-2.5 text-sm border border-gray-200 rounded-xl bg-gray-50 focus:outline-none focus:border-gray-400"
             />
             <p className="text-xs text-gray-400 mt-1">Crédité sur le solde de l'affilié</p>
+          </div>
+          <div>
+            <label className="block text-xs font-semibold text-gray-600 mb-1.5">
+              Objectif UGC
+            </label>
+            <input
+              type="number"
+              min={1}
+              value={cfg.ugcGoal ?? 5}
+              onChange={(e) => setField("ugcGoal", e.target.value)}
+              className="w-full px-3 py-2.5 text-sm border border-gray-200 rounded-xl bg-gray-50 focus:outline-none focus:border-gray-400"
+            />
+            <p className="text-xs text-gray-400 mt-1">Vidéos UGC validées visées (progression affilié)</p>
           </div>
         </div>
 

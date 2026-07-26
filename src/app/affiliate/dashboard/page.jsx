@@ -11,6 +11,7 @@ import {
   ShieldCheck, ShieldAlert, MessageCircle, Upload, Trash2,
 } from "lucide-react";
 import UgcTab from "./UgcTab";
+import DepositTab from "./DepositTab";
 import { diffNewItems, shouldPlaySaleSound } from "@/lib/liveFeed";
 import { createSaleSound } from "./saleSound";
 import { resolveSupportLink } from "@/lib/whatsappSupport";
@@ -66,7 +67,14 @@ function StatusBadge({ status }) {
 
 // ── Stat card ─────────────────────────────────────────────────────────────────
 
-function StatCard({ icon: Icon, label, value, sub, color = "gray" }) {
+// `ar` is an OPTIONAL small Arabic helper label shown under the French one. It is
+// hardcoded (NOT wired to the public site translation system) so the dashboard
+// always stays French-primary and never flips its whole layout to RTL.
+function ArHelper({ children }) {
+  return children ? <span dir="rtl" className="block text-[10px] font-normal text-gray-300 leading-tight mt-0.5">{children}</span> : null;
+}
+
+function StatCard({ icon: Icon, label, value, sub, color = "gray", ar }) {
   const colors = {
     gray:   "bg-gray-100   text-gray-700",
     blue:   "bg-blue-50    text-blue-600",
@@ -83,7 +91,7 @@ function StatCard({ icon: Icon, label, value, sub, color = "gray" }) {
       </div>
       <div>
         <p className="text-xl font-bold text-gray-900 leading-none">{value}</p>
-        <p className="text-xs text-gray-500 mt-1">{label}</p>
+        <p className="text-xs text-gray-500 mt-1">{label}<ArHelper>{ar}</ArHelper></p>
         {sub && <p className="text-xs text-gray-400 mt-0.5">{sub}</p>}
       </div>
     </div>
@@ -92,12 +100,12 @@ function StatCard({ icon: Icon, label, value, sub, color = "gray" }) {
 
 // ── Section card ──────────────────────────────────────────────────────────────
 
-function Section({ title, children, icon: Icon }) {
+function Section({ title, children, icon: Icon, ar }) {
   return (
     <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden">
       <div className="px-5 py-3.5 border-b border-gray-50 bg-gray-50/60 flex items-center gap-2">
         {Icon && <Icon className="w-4 h-4 text-gray-500" />}
-        <h2 className="text-sm font-bold text-gray-700">{title}</h2>
+        <h2 className="text-sm font-bold text-gray-700 leading-tight">{title}<ArHelper>{ar}</ArHelper></h2>
       </div>
       <div className="p-5">{children}</div>
     </div>
@@ -1455,6 +1463,16 @@ export default function AffiliateDashboard() {
   const goToIdentity = () => { setActiveTab("settings"); setTimeout(() => {
     if (typeof document !== "undefined") document.getElementById("identity-card")?.scrollIntoView({ behavior: "smooth", block: "start" });
   }, 60); };
+  const goToUgc = () => setActiveTab("ugc");
+  const goToDeposit = () => setActiveTab("deposit");
+
+  // Security deposit — SEPARATE from Solde disponible (never withdrawable).
+  const deposit = data?.deposit || { approvedBalance: 0, pendingTotal: 0 };
+
+  // UGC progression (validated = admin-approved). Target from admin config (not
+  // hardcoded); refreshed by the live poll like every other progression value.
+  const ugcValidated = stats?.ugcValidated ?? 0;
+  const ugcGoal      = bonusConfig?.ugcGoal || 5;
 
   // WhatsApp support link (null when disabled / no number → button hidden).
   const supportLink = resolveSupportLink(supportCfg, {
@@ -1478,6 +1496,7 @@ export default function AffiliateDashboard() {
     { id: "orders",        label: `Commandes (${orders.length})` },
     { id: "bank",          label: "Coordonnées" },
     { id: "payout",        label: "Retraits" },
+    { id: "deposit",       label: "Dépôt de garantie" },
     { id: "ugc",           label: "💰 Video UGC" },
     { id: "notifications", label: `Notifs ${unread > 0 ? `(${unread})` : ""}` },
     { id: "team",          label: `Équipe (${team.length})` },
@@ -1655,6 +1674,19 @@ export default function AffiliateDashboard() {
                     </div>
                   </div>
 
+                  {/* UGC validated videos — click → UGC page. Only admin-approved
+                      (APPROVED/RUNNING) videos count; pending/rejected excluded. */}
+                  <button onClick={goToUgc} title="Vidéos UGC validées" className="block w-full text-left">
+                    <p className="mb-1.5 text-xs font-bold flex items-center justify-between gap-2">
+                      <span>🎬 {ugcValidated} / {ugcGoal} vidéos UGC validées</span>
+                      <svg className="w-3.5 h-3.5 opacity-80" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 18l6-6-6-6"/></svg>
+                    </p>
+                    <div className="w-full overflow-hidden rounded-full h-2" style={{ background: "rgba(255,255,255,0.25)" }}>
+                      <div className="h-full rounded-full bg-white transition-all duration-700"
+                        style={{ width: `${Math.min(100, (ugcValidated / Math.max(1, ugcGoal)) * 100)}%` }} />
+                    </div>
+                  </button>
+
                   {/* Identity verification condition — click → Paramètres → Vérification */}
                   <button
                     onClick={goToIdentity}
@@ -1686,7 +1718,7 @@ export default function AffiliateDashboard() {
               <StatCard icon={TrendingUp}  label="Chiffre d'affaires boutique" value={fmtMoney(stats?.totalRevenue)} color="amber" />
               <StatCard icon={DollarSign}  label="Gains boutique total" value={fmtMoney(stats?.totalCommission)} color="green"
                 sub={`Taux : ${((affiliate?.commissionRate || 0) * 100).toFixed(0)}%`} />
-              <StatCard icon={CreditCard}  label="Solde disponible"     value={fmtMoney(balance)}                color="blue"   />
+              <StatCard icon={CreditCard}  label="Solde disponible"     value={fmtMoney(balance)}                color="blue"   ar="الرصيد المتاح" />
               {/* Tracking stats */}
               <StatCard icon={Eye}         label="Total clics"          value={stats?.totalClicks ?? affiliate?.totalClicks ?? "—"} color="blue"   />
               <StatCard icon={ShoppingBag} label="Ventes boutique total" value={orders.length > 0 ? totalItemsAll : (stats?.totalOrders ?? affiliate?.totalOrders ?? "—")} color="teal" sub="articles commandés" />
@@ -1695,6 +1727,26 @@ export default function AffiliateDashboard() {
               <StatCard icon={Users}       label="Commission Équipe"    value={fmtMoney(stats?.teamCommission)} color="teal"
                 sub={`${team.length} membre${team.length !== 1 ? "s" : ""}`} />
             </div>
+
+            {/* ── Dépôt de garantie — SEPARATE from Solde disponible / earnings ── */}
+            <button onClick={goToDeposit} className="w-full text-left">
+              <div className="rounded-2xl border border-indigo-100 bg-indigo-50/60 p-4 flex items-center justify-between gap-3 hover:bg-indigo-50 transition-colors">
+                <div>
+                  <div className="flex items-center gap-2 text-indigo-700 text-xs font-semibold">
+                    <Wallet className="w-4 h-4" /> Dépôt de garantie
+                    <span dir="rtl" className="text-[10px] font-normal text-indigo-300">وديعة الضمان</span>
+                  </div>
+                  <p className="text-2xl font-black text-gray-900 mt-1">{fmtMoney(deposit.approvedBalance)}</p>
+                  {deposit.pendingTotal > 0 && (
+                    <p className="text-[11px] font-semibold text-amber-600 mt-0.5">
+                      En attente de validation : {fmtMoney(deposit.pendingTotal)}
+                    </p>
+                  )}
+                  <p className="text-[10px] text-gray-400 mt-0.5">Séparé du solde disponible · non retirable</p>
+                </div>
+                <svg className="w-4 h-4 text-indigo-400 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 18l6-6-6-6"/></svg>
+              </div>
+            </button>
 
             {/* ── UGC (simulated video sales) — separate source, never mixed ── */}
             <div className="flex items-center gap-2 px-0.5 pt-1">
@@ -1781,7 +1833,7 @@ export default function AffiliateDashboard() {
 
         {/* ══ ORDERS ════════════════════════════════════════════════════════ */}
         {activeTab === "orders" && (
-          <Section title="Mes commandes" icon={ShoppingBag}>
+          <Section title="Mes commandes" icon={ShoppingBag} ar="الطلبات">
             {orders.length === 0 ? (
               <div className="text-center py-10">
                 <Package className="w-10 h-10 text-gray-200 mx-auto mb-3" />
@@ -1932,7 +1984,7 @@ export default function AffiliateDashboard() {
             </div>
 
             {/* Request form */}
-            <Section title="Demande de retrait" icon={CreditCard}>
+            <Section title="Demande de retrait" icon={CreditCard} ar="السحب">
               <form onSubmit={handlePayout} className="space-y-4 max-w-sm">
                 {payoutMsg && (
                   <div className={`flex items-center gap-2 rounded-xl px-4 py-3 text-sm font-medium
@@ -2056,7 +2108,7 @@ export default function AffiliateDashboard() {
 
         {/* ══ NOTIFICATIONS ═════════════════════════════════════════════════ */}
         {activeTab === "notifications" && (
-          <Section title="Notifications" icon={Bell}>
+          <Section title="Notifications" icon={Bell} ar="الإشعارات">
             {notifs.length === 0 ? (
               <div className="text-center py-10">
                 <Bell className="w-10 h-10 text-gray-200 mx-auto mb-3" />
@@ -2653,6 +2705,10 @@ export default function AffiliateDashboard() {
         })()}
 
         {/* ══ COMPETITION ═══════════════════════════════════════════════════ */}
+        {activeTab === "deposit" && (
+          <DepositTab token={token} onChanged={() => fetchAll(token, { silent: true })} />
+        )}
+
         {activeTab === "ugc" && <UgcTab />}
 
         {/* Competition now lives inline on the overview (no standalone tab). */}

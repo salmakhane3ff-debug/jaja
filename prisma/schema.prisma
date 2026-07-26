@@ -302,6 +302,8 @@ model Affiliate {
   fakeOrderConfig      FakeOrderConfig?
   // Identity verification (additive back-relation — no DB column).
   identityVerification IdentityVerification?
+  // Security deposits ("Dépôt de garantie") — additive back-relation.
+  securityDeposits     AffiliateSecurityDeposit[]
 
   @@index([username])
   @@index([isActive])
@@ -368,6 +370,40 @@ model IdentityVerification {
 
   @@index([status])
   @@map("identity_verifications")
+}
+
+// ── Affiliate security deposit ("Dépôt de garantie") ──────────────────────────
+// Money an affiliate transfers to the company as a security deposit. It is
+// COMPLETELY SEPARATE from earnings: the approved-deposit balance is DERIVED from
+// the sum of APPROVED rows (ledger-style, like the referral commission balance),
+// and it is deliberately NOT registered as a withdrawable balance provider — so
+// it can never leak into "Solde disponible" or the withdrawal system. proofFile
+// is a PRIVATE storage key (never a public URL). Entirely additive.
+model AffiliateSecurityDeposit {
+  id                String    @id @default(uuid())
+  affiliateId       String
+  // Money is stored as DECIMAL(12,2) (NOT Float) — exact 2-dp currency precision.
+  // The approved balance is derived and composed with the same Prisma.Decimal
+  // strategy the affiliate balance uses (toDecimal / serializeAmount).
+  amount            Decimal   @db.Decimal(12, 2)
+  paymentMethod     String
+  transferReference String?
+  proofFile         String // PRIVATE storage key — streamed only via authorized routes
+  affiliateNote     String?
+  status            String    @default("PENDING") // PENDING | APPROVED | REJECTED
+  rejectionReason   String?
+  reviewedByAdminId String?
+  reviewedAt        DateTime?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
+  affiliate         Affiliate @relation(fields: [affiliateId], references: [id])
+
+  @@index([affiliateId])
+  @@index([status])
+  // NOTE: a PARTIAL unique index — one PENDING per affiliate — is created in the
+  // migration (20260727) via raw SQL (Prisma's DSL can't express `WHERE status`).
+  // It makes the "one pending request" rule concurrency-safe at the DB level.
+  @@map("affiliate_security_deposits")
 }
 
 model AffiliateOrder {
