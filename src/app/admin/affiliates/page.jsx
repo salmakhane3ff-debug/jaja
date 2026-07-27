@@ -1146,6 +1146,149 @@ function SupportSettingsPanel() {
   );
 }
 
+// ── 📝 Recruitment landing (/tsajlim3ana) settings ─────────────────────────────
+function RecruitmentLandingPanel() {
+  const [cfg, setCfg]       = useState({ enabled: false, videos: [], testimonials: [] });
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving]   = useState(false);
+  const [msg, setMsg]         = useState(null);
+  const [copied, setCopied]   = useState(false);
+  const url = typeof window !== "undefined" ? `${window.location.origin}/tsajlim3ana` : "/tsajlim3ana";
+
+  useEffect(() => {
+    fetch("/api/setting?type=recruitment-landing")
+      .then((r) => r.json())
+      .then((d) => setCfg({
+        enabled: d?.enabled === true,
+        videos: Array.isArray(d?.videos) ? d.videos : [],
+        testimonials: Array.isArray(d?.testimonials) ? d.testimonials : [],
+        stats: d?.stats,
+      }))
+      .catch(() => {})
+      .finally(() => setLoading(false));
+  }, []);
+
+  const save = async () => {
+    setSaving(true); setMsg(null);
+    try {
+      const res = await fetch("/api/setting?type=recruitment-landing", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          enabled: cfg.enabled,
+          videos: cfg.videos,
+          testimonials: cfg.testimonials,
+          ...(cfg.stats ? { stats: cfg.stats } : {}),
+        }),
+      });
+      setMsg(res.ok ? { ok: true, t: "Enregistré." } : { ok: false, t: "Échec." });
+    } catch { setMsg({ ok: false, t: "Échec." }); }
+    finally { setSaving(false); }
+  };
+
+  const addVideo = () => setCfg((c) => ({ ...c, videos: [...c.videos, { id: `v${Date.now()}`, url: "", title: "", thumbnail: "", order: c.videos.length, active: true }] }));
+  const setVideo = (i, k, v) => setCfg((c) => ({ ...c, videos: c.videos.map((x, j) => j === i ? { ...x, [k]: v } : x) }));
+  const delVideo = (i) => setCfg((c) => ({ ...c, videos: c.videos.filter((_, j) => j !== i) }));
+
+  const addTesti = () => setCfg((c) => ({ ...c, testimonials: [...c.testimonials, { id: `t${Date.now()}`, name: "", text: "", rating: 5, active: true }] }));
+  const setTesti = (i, k, v) => setCfg((c) => ({ ...c, testimonials: c.testimonials.map((x, j) => j === i ? { ...x, [k]: v } : x) }));
+  const delTesti = (i) => setCfg((c) => ({ ...c, testimonials: c.testimonials.filter((_, j) => j !== i) }));
+
+  const fieldCls = "w-full text-sm border border-gray-200 rounded-lg px-2.5 py-1.5 bg-gray-50 focus:outline-none focus:border-gray-400";
+
+  return (
+    <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden mt-6">
+      <div className="flex items-center gap-3 px-5 py-4 border-b border-gray-100 bg-rose-50">
+        <span className="text-lg">📝</span>
+        <div>
+          <h2 className="text-sm font-bold text-gray-900">صفحة التسجيل معانا</h2>
+          <p className="text-[11px] text-gray-500">Landing de recrutement des affiliées · vidéos & témoignages gérés ici.</p>
+        </div>
+      </div>
+      <div className="p-5 space-y-5">
+        {loading ? (
+          <div className="flex justify-center py-6"><Loader2 className="w-5 h-5 animate-spin text-gray-400" /></div>
+        ) : (
+          <>
+            {msg && <div className={`text-xs px-3 py-2 rounded-lg ${msg.ok ? "bg-green-50 text-green-700" : "bg-red-50 text-red-700"}`}>{msg.t}</div>}
+
+            {/* Enabled + URL */}
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <label className="flex items-center gap-2 text-sm text-gray-700">
+                <input type="checkbox" checked={cfg.enabled} onChange={(e) => setCfg({ ...cfg, enabled: e.target.checked })} />
+                Page activée (accessible publiquement)
+              </label>
+              <div className="flex items-center gap-2">
+                <code className="text-xs bg-gray-100 rounded-lg px-2 py-1 text-gray-600">/tsajlim3ana</code>
+                <button type="button" onClick={() => { navigator.clipboard.writeText(url).then(() => { setCopied(true); setTimeout(() => setCopied(false), 2000); }); }}
+                  className="text-xs font-semibold px-2.5 py-1.5 rounded-lg bg-gray-100 hover:bg-gray-200 text-gray-700">
+                  {copied ? "Copié ✓" : "Copier le lien"}
+                </button>
+                <a href="/tsajlim3ana" target="_blank" rel="noopener noreferrer"
+                  className="text-xs font-semibold px-2.5 py-1.5 rounded-lg bg-gray-900 text-white hover:bg-black">Aperçu</a>
+              </div>
+            </div>
+
+            {/* Videos */}
+            <div>
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-xs font-bold text-gray-700 uppercase tracking-wide">Vidéos (TikTok 9:16)</span>
+                <button type="button" onClick={addVideo} className="flex items-center gap-1 text-xs font-medium bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg px-2.5 py-1"><Plus className="w-3 h-3" /> Ajouter</button>
+              </div>
+              {cfg.videos.length === 0 ? <p className="text-xs text-gray-400">Aucune vidéo.</p> : (
+                <div className="space-y-2">
+                  {cfg.videos.map((v, i) => (
+                    <div key={v.id || i} className="border border-gray-100 rounded-xl p-3 grid grid-cols-1 sm:grid-cols-12 gap-2 items-center">
+                      <input className={`${fieldCls} sm:col-span-4`} placeholder="URL vidéo (mp4/webm)" value={v.url || ""} onChange={(e) => setVideo(i, "url", e.target.value)} />
+                      <input className={`${fieldCls} sm:col-span-3`} placeholder="Titre" value={v.title || ""} onChange={(e) => setVideo(i, "title", e.target.value)} />
+                      <input className={`${fieldCls} sm:col-span-3`} placeholder="Miniature (URL)" value={v.thumbnail || ""} onChange={(e) => setVideo(i, "thumbnail", e.target.value)} />
+                      <input type="number" className={`${fieldCls} sm:col-span-1`} placeholder="#" value={v.order ?? i} onChange={(e) => setVideo(i, "order", parseInt(e.target.value, 10) || 0)} />
+                      <div className="sm:col-span-1 flex items-center justify-between gap-1">
+                        <label className="flex items-center gap-1 text-[11px] text-gray-500"><input type="checkbox" checked={v.active !== false} onChange={(e) => setVideo(i, "active", e.target.checked)} />actif</label>
+                        <button type="button" onClick={() => delVideo(i)} className="text-gray-400 hover:text-red-600"><Trash2 className="w-4 h-4" /></button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* Testimonials */}
+            <div>
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-xs font-bold text-gray-700 uppercase tracking-wide">Témoignages (réels uniquement)</span>
+                <button type="button" onClick={addTesti} className="flex items-center gap-1 text-xs font-medium bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg px-2.5 py-1"><Plus className="w-3 h-3" /> Ajouter</button>
+              </div>
+              {cfg.testimonials.length === 0 ? <p className="text-xs text-gray-400">Aucun témoignage.</p> : (
+                <div className="space-y-2">
+                  {cfg.testimonials.map((t, i) => (
+                    <div key={t.id || i} className="border border-gray-100 rounded-xl p-3 grid grid-cols-1 sm:grid-cols-12 gap-2 items-center">
+                      <input className={`${fieldCls} sm:col-span-3`} placeholder="Nom" value={t.name || ""} onChange={(e) => setTesti(i, "name", e.target.value)} />
+                      <input className={`${fieldCls} sm:col-span-6`} placeholder="Texte du témoignage" value={t.text || ""} onChange={(e) => setTesti(i, "text", e.target.value)} />
+                      <select className={`${fieldCls} sm:col-span-2`} value={t.rating ?? 5} onChange={(e) => setTesti(i, "rating", parseInt(e.target.value, 10))}>
+                        {[5, 4, 3, 2, 1].map((n) => <option key={n} value={n}>{n} ★</option>)}
+                      </select>
+                      <div className="sm:col-span-1 flex items-center justify-between gap-1">
+                        <label className="flex items-center gap-1 text-[11px] text-gray-500"><input type="checkbox" checked={t.active !== false} onChange={(e) => setTesti(i, "active", e.target.checked)} />actif</label>
+                        <button type="button" onClick={() => delTesti(i)} className="text-gray-400 hover:text-red-600"><Trash2 className="w-4 h-4" /></button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div className="flex justify-end">
+              <button onClick={save} disabled={saving} className="flex items-center gap-1.5 text-xs font-semibold px-4 py-2 rounded-xl bg-gray-900 text-white hover:bg-black disabled:opacity-50">
+                {saving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <CheckCircle className="w-3.5 h-3.5" />} Enregistrer
+              </button>
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export default function AdminAffiliatesPage() {
   const [affiliates, setAffiliates] = useState([]);
   const [loading,    setLoading]    = useState(true);
@@ -1347,6 +1490,8 @@ export default function AdminAffiliatesPage() {
       <FakeOrdersPanel />
 
       <SupportSettingsPanel />
+
+      <RecruitmentLandingPanel />
     </div>
   );
 }

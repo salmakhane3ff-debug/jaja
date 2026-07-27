@@ -1,0 +1,52 @@
+/**
+ * /tsajlim3ana — public affiliate-recruitment landing page (Moroccan Darija, RTL).
+ *
+ * The enabled/disabled flag is enforced SERVER-SIDE here (not just in the UI):
+ *   • disabled → render a simple RTL "unavailable" page + robots noindex, and the
+ *     landing content is never sent to the client.
+ *   • enabled  → render the landing; indexable.
+ * The WhatsApp CTA link is resolved from the existing support settings on the
+ * server so the client shows the correct enabled/disabled CTA immediately.
+ */
+import { getSettings } from "@/lib/services/settingsService";
+import { normalizeRecruitmentConfig, buildRecruitmentWhatsappLink } from "@/lib/recruitmentCta";
+import RecruitmentLanding from "./RecruitmentLanding";
+
+export const dynamic = "force-dynamic";
+
+async function loadConfig() {
+  const raw = await getSettings("recruitment-landing").catch(() => null);
+  return normalizeRecruitmentConfig(raw);
+}
+
+export async function generateMetadata() {
+  const config = await loadConfig();
+  return {
+    title: "سجلي معانا — ربحي فلوس وأنتِ فالدار",
+    description: "برنامج الأفلييت: ربحي من الدار عبر تأكيد الطلبات وفيديوهات UGC. بدون رأس مال، بدون شراء المنتجات، بدون توصيل.",
+    // Never index the recruitment page while it is disabled.
+    robots: config.enabled ? { index: true, follow: true } : { index: false, follow: false },
+  };
+}
+
+export default async function TsajlimPage() {
+  const [config, support] = await Promise.all([
+    loadConfig(),
+    getSettings("affiliate-support").catch(() => null),
+  ]);
+
+  // Server-side gate — disabled means the content is never rendered/sent.
+  if (!config.enabled) {
+    return (
+      <div dir="rtl" lang="ar" className="min-h-screen flex items-center justify-center bg-gray-50 px-6 text-center">
+        <div>
+          <div className="text-4xl mb-3">🌸</div>
+          <p className="text-lg font-bold text-gray-700">التسجيل متوقف مؤقتاً، رجعي قريباً.</p>
+        </div>
+      </div>
+    );
+  }
+
+  const whatsappLink = buildRecruitmentWhatsappLink(support);
+  return <RecruitmentLanding config={config} whatsappLink={whatsappLink} />;
+}

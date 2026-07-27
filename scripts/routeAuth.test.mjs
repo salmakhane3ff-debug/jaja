@@ -71,6 +71,8 @@ const INTENTIONALLY_PUBLIC_WRITES = new Set([
   "POST /api/landing/track-click",
   "POST /api/landing/track-order",
   "POST /api/landing/track-view",
+  // Recruitment landing (/tsajlim3ana) CTA beacon — increments no-PII counters.
+  "POST /api/tsajlim3ana/track",
   "POST /api/landing-page/[slug]",
   "POST /api/affiliate/track-click",
   "POST /api/facebook/capi",
@@ -315,7 +317,7 @@ console.log("9) counts:");
   console.log(`     writes=${writes.length}  protected=${writes.length - publicWrites.length}  public=${publicWrites.length}`);
   ok("public writes == allowlist + temporary exceptions",
      publicWrites.length === INTENTIONALLY_PUBLIC_WRITES.size + TEMPORARY_PUBLIC_SECURITY_EXCEPTIONS.size);
-  ok("intentionally-public list is exactly 32", INTENTIONALLY_PUBLIC_WRITES.size === 32);
+  ok("intentionally-public list is exactly 33", INTENTIONALLY_PUBLIC_WRITES.size === 33);
 }
 
 console.log(`\nRESULT: ${pass} passed, ${fail} failed`);

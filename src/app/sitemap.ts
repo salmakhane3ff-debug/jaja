@@ -61,7 +61,21 @@ export default async function sitemap(): Promise<MetadataRoute.Sitemap> {
     console.error("[sitemap] failed to fetch blog posts:", err);
   }
 
+  // ── Recruitment landing — only listed when the admin has enabled it ─────────
+  let recruitmentEntries: MetadataRoute.Sitemap = [];
+  try {
+    const row = await prisma.setting.findUnique({ where: { id: "recruitment-landing" } });
+    const data = row?.data as { enabled?: boolean } | null;
+    if (data?.enabled === true) {
+      recruitmentEntries = [
+        { url: `${BASE_URL}/tsajlim3ana`, lastModified: new Date(), changeFrequency: "weekly", priority: 0.6 },
+      ];
+    }
+  } catch (err) {
+    console.error("[sitemap] failed to read recruitment landing setting:", err);
+  }
+
   await prisma.$disconnect();
 
-  return [...staticPages, ...productEntries, ...blogEntries];
+  return [...staticPages, ...productEntries, ...blogEntries, ...recruitmentEntries];
 }
