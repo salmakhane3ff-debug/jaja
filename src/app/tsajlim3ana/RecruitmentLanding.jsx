@@ -68,6 +68,34 @@ function useCountUp(target) {
   return [val, ref];
 }
 
+// Tween a number smoothly from its PREVIOUS displayed value to the latest value
+// received (used by the live competition board). No random/independent motion —
+// it only ever animates between the old value and the new API value.
+function CountUpNumber({ value }) {
+  const [display, setDisplay] = useState(value);
+  const fromRef = useRef(value);
+  const rafRef = useRef(0);
+  useEffect(() => {
+    const from = fromRef.current;
+    const to = Number(value) || 0;
+    if (from === to) return;
+    const reduce = typeof window !== "undefined" && window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+    if (reduce) { setDisplay(to); fromRef.current = to; return; }
+    const dur = 800, t0 = performance.now();
+    cancelAnimationFrame(rafRef.current);
+    const tick = (t) => {
+      const p = Math.min(1, (t - t0) / dur);
+      const eased = 1 - Math.pow(1 - p, 3);
+      setDisplay(Math.round(from + (to - from) * eased));
+      if (p < 1) rafRef.current = requestAnimationFrame(tick);
+      else fromRef.current = to;
+    };
+    rafRef.current = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(rafRef.current);
+  }, [value]);
+  return <>{display.toLocaleString("en-US")}</>;
+}
+
 const CTA_PRIMARY =
   "inline-flex items-center justify-center gap-2 px-8 py-4 bg-rose-500 hover:bg-rose-600 active:scale-[0.98] text-white rounded-2xl font-black text-base shadow-lg shadow-rose-200 transition-all";
 
@@ -142,16 +170,66 @@ function VideoSlider({ videos }) {
   );
 }
 
-// ── Competition (reuses the public dashboard leaderboard source) ───────────────
+// ── Competition ────────────────────────────────────────────────────────────────
+// Reuses the EXACT same source as the dashboard / admin demo competition
+// (/api/demo/leaderboard → demoService). When the admin "Simuler activité" runs,
+// that source is updated + its cache invalidated, so polling here reflects the
+// growing simulated totals automatically — no separate/random client-side data.
+// Polling runs only while the section is on screen AND the tab is visible, with
+// an in-flight guard so requests never overlap.
+const COMPETITION_POLL_MS = 7000;
+
 function CompetitionSection({ whatsappLink }) {
   const ref = useSectionView("competition_section_view");
   const [state, setState] = useState({ loading: true, rows: [], error: false });
-  useEffect(() => {
-    fetch("/api/demo/leaderboard?limit=10")
-      .then((r) => r.json())
-      .then((d) => setState({ loading: false, rows: Array.isArray(d?.leaderboard) ? d.leaderboard : [], error: false }))
-      .catch(() => setState({ loading: false, rows: [], error: true }));
+  const inViewRef  = useRef(false);
+  const inFlightRef = useRef(false);
+  const timerRef   = useRef(null);
+
+  const fetchBoard = useCallback(async () => {
+    if (inFlightRef.current) return;            // avoid duplicate/overlapping polls
+    inFlightRef.current = true;
+    try {
+      const r = await fetch("/api/demo/leaderboard?limit=10", { cache: "no-store" });
+      const d = await r.json();
+      const rows = Array.isArray(d?.leaderboard) ? d.leaderboard : [];
+      setState({ loading: false, rows, error: false });
+    } catch {
+      setState((s) => ({ loading: false, rows: s.rows, error: true }));
+    } finally {
+      inFlightRef.current = false;
+    }
   }, []);
+
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+
+    const start = () => {
+      if (timerRef.current) return;
+      fetchBoard();                             // immediate refresh on (re)activation
+      timerRef.current = setInterval(fetchBoard, COMPETITION_POLL_MS);
+    };
+    const stop = () => { clearInterval(timerRef.current); timerRef.current = null; };
+    const evaluate = () => {
+      const active = inViewRef.current && document.visibilityState === "visible";
+      if (active) start(); else stop();         // pause off-screen or when tab hidden
+    };
+
+    const io = new IntersectionObserver((entries) => {
+      inViewRef.current = entries.some((e) => e.isIntersecting);
+      evaluate();
+    }, { threshold: 0.15 });
+    io.observe(el);
+    document.addEventListener("visibilitychange", evaluate);
+
+    return () => {
+      io.disconnect();
+      document.removeEventListener("visibilitychange", evaluate);
+      stop();
+    };
+  }, [fetchBoard, ref]);
+
   return (
     <section ref={ref} id="competition" className="bg-rose-50/50">
       <div className="max-w-5xl mx-auto px-4 py-10">
@@ -163,17 +241,20 @@ function CompetitionSection({ whatsappLink }) {
           <p className="text-center text-sm text-gray-400">المنافسة الشهرية مفتوحة دابا.</p>
         ) : (
           <div className="max-w-md mx-auto space-y-2">
-            {state.rows.slice(0, 10).map((m, i) => (
-              <div key={m.id || i} className="flex items-center gap-3 bg-white rounded-2xl border border-gray-100 px-4 py-2.5">
-                <span className={`w-6 text-center font-black ${i < 3 ? "text-rose-500" : "text-gray-400"}`}>{m.rank || i + 1}</span>
-                {m.avatarUrl
-                  // eslint-disable-next-line @next/next/no-img-element
-                  ? <img src={m.avatarUrl} alt="" className="w-9 h-9 rounded-full object-cover" loading="lazy" />
-                  : <span className="w-9 h-9 rounded-full flex items-center justify-center text-white text-sm font-bold" style={{ background: m.avatarColor || "#f43f5e" }}>{(m.name || "?")[0]}</span>}
-                <span className="flex-1 text-sm font-semibold text-gray-800 truncate">{maskSurname(m.name)}</span>
-                <span className="text-xs text-gray-500 shrink-0">{m.totalOrders ?? 0} طلب</span>
-              </div>
-            ))}
+            {state.rows.slice(0, 10).map((m, i) => {
+              const rank = m.rank || i + 1;
+              return (
+                <div key={m.id || i} className="flex items-center gap-3 bg-white rounded-2xl border border-gray-100 px-4 py-2.5 transition-all duration-500">
+                  <span className={`w-6 text-center font-black ${rank <= 3 ? "text-rose-500" : "text-gray-400"}`}>{rank}</span>
+                  {m.avatarUrl
+                    // eslint-disable-next-line @next/next/no-img-element
+                    ? <img src={m.avatarUrl} alt="" className="w-9 h-9 rounded-full object-cover" loading="lazy" />
+                    : <span className="w-9 h-9 rounded-full flex items-center justify-center text-white text-sm font-bold" style={{ background: m.avatarColor || "#f43f5e" }}>{(m.name || "?")[0]}</span>}
+                  <span className="flex-1 text-sm font-semibold text-gray-800 truncate">{maskSurname(m.name)}</span>
+                  <span className="text-xs text-gray-500 shrink-0 tabular-nums"><CountUpNumber value={m.totalOrders ?? 0} /> طلب</span>
+                </div>
+              );
+            })}
           </div>
         )}
         <div className="text-center mt-6">
