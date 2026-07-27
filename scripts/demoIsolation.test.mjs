@@ -36,6 +36,8 @@ import {
   clampSimInterval,
   runAutoSimTick,
   DEMO_SIM_DEFAULT_INTERVAL,
+  pickTickOrderCount,
+  pickWeightedRecipient,
 } from "../src/lib/services/demoService.js";
 
 let pass = 0, fail = 0;
@@ -439,6 +441,55 @@ async function main() {
     const r2 = await runAutoSimTick({ lock: lockOk });
     ok("lock held → ticked", r2.ticked === true);
     ok("lock acquired then released", acquired && released);
+  }
+
+  console.log("14) Realistic tick volume — weighted 1–4 orders, never more:");
+  {
+    const counts = { 1: 0, 2: 0, 3: 0, 4: 0 };
+    let outOfRange = 0;
+    for (let i = 0; i < 20000; i++) {
+      const n = pickTickOrderCount();
+      if (n < 1 || n > 4 || !Number.isInteger(n)) outOfRange++;
+      else counts[n]++;
+    }
+    ok("never below 1 or above 4 (integer only)", outOfRange === 0);
+    ok("1 order is the most common (~70%)", counts[1] / 20000 > 0.6 && counts[1] / 20000 < 0.8);
+    ok("2 orders roughly ~20%", counts[2] / 20000 > 0.13 && counts[2] / 20000 < 0.27);
+    ok("3 orders is uncommon (~8%)", counts[3] / 20000 > 0.03 && counts[3] / 20000 < 0.13);
+    ok("4 orders is rare (~2%)", counts[4] / 20000 > 0.005 && counts[4] / 20000 < 0.05);
+  }
+
+  console.log("15) Recipient weighting — favors the top, but stays dynamic:");
+  {
+    const sorted = Array.from({ length: 10 }, (_, i) => ({ id: `a${i}` })); // index 0 = leader
+    const hits = Object.fromEntries(sorted.map((a) => [a.id, 0]));
+    for (let i = 0; i < 20000; i++) hits[pickWeightedRecipient(sorted).id]++;
+    ok("leader picked more often than the last place", hits.a0 > hits.a9);
+    ok("lowest-ranked still scores sometimes (dynamic)", hits.a9 > 0);
+    ok("every affiliate can be chosen", Object.values(hits).every((h) => h > 0));
+    ok("single-affiliate list returns that affiliate", pickWeightedRecipient([{ id: "solo" }]).id === "solo");
+  }
+
+  console.log("16) One simulateTick adds only 1–4 orders in TOTAL (not per-affiliate):");
+  {
+    const sumOrders = async () => (await getLeaderboard(100)).reduce((a, r) => a + (r.totalOrders || 0), 0);
+    let minDelta = Infinity, maxDelta = -Infinity;
+    for (let run = 0; run < 25; run++) {
+      const { db, store } = makeFakeDb();
+      __setDemoDb(db);
+      seedAvatars(store, 5, 5);
+      await saveDemoSettings({ isEnabled: true, simulationSpeed: "fast" });
+      await generateDemoAffiliates(20, "mixed");
+      const before = await sumOrders();
+      const r = await simulateTick();
+      const after = await sumOrders();
+      const delta = after - before;
+      minDelta = Math.min(minDelta, delta);
+      maxDelta = Math.max(maxDelta, delta);
+      ok(`run#${run + 1}: total delta == reported orders (${delta})`, delta === r.orders);
+    }
+    ok("smallest total delta across runs ≥ 1", minDelta >= 1);
+    ok("largest total delta across runs ≤ 4 (even on 'fast')", maxDelta <= 4);
   }
 
   console.log(`\nRESULT: ${pass} passed, ${fail} failed`);

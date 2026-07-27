@@ -252,6 +252,38 @@ async function recomputeRanks() {
   }
 }
 
+// ── Realistic order allocation ────────────────────────────────────────────────
+// A tick adds only a handful of orders (never more than 4), not one batch per
+// affiliate — so the competition grows believably instead of jumping 30–50/tick.
+
+/** Orders created by a single tick: 70% → 1, 20% → 2, 8% → 3, 2% → 4. */
+export function pickTickOrderCount() {
+  const r = Math.random();
+  if (r < 0.70) return 1;
+  if (r < 0.90) return 2; // 0.70–0.90 → 20%
+  if (r < 0.98) return 3; // 0.90–0.98 → 8%
+  return 4;               // 0.98–1.00 → 2%
+}
+
+/**
+ * Pick which affiliate gets an order. Favors the top of the board (linear
+ * decreasing weight), but ~25% of the time picks a fully random affiliate so
+ * lower-ranked members still occasionally score — keeping the ranking dynamic.
+ * @param {Array} sorted affiliates ordered by totalOrders desc (index 0 = leader)
+ */
+export function pickWeightedRecipient(sorted) {
+  const n = sorted.length;
+  if (n <= 1) return sorted[0];
+  if (Math.random() < 0.25) return sorted[Math.floor(Math.random() * n)];
+  let r = Math.random() * (n * (n + 1) / 2);
+  for (let i = 0; i < n; i++) {
+    const w = n - i; // leader = n, runner-up = n-1, …, last = 1
+    if (r < w) return sorted[i];
+    r -= w;
+  }
+  return sorted[0];
+}
+
 // ── Simulate one tick ─────────────────────────────────────────────────────────
 
 export async function simulateTick() {
@@ -269,7 +301,6 @@ export async function simulateTick() {
     });
   }
 
-  const mult      = SPEED_MULT[settings.simulationSpeed] ?? 1;
   const affiliates = await _db.demoAffiliate.findMany({
     where:   { isActive: true },
     include: { stats: true },
@@ -278,60 +309,82 @@ export async function simulateTick() {
   const today = new Date();
   today.setHours(0, 0, 0, 0);
 
-  for (const aff of affiliates) {
-    if (!aff.stats) continue;
-    const g       = GROWTH[aff.growthType];
-    const orders  = Math.round(rand(...g.ordersRange) * mult);
-    const revenue = orders > 0 ? +(orders * randF(...g.revenuePerOrder)).toFixed(2) : 0;
-    const cancelled = Math.round(orders * g.cancelRate);
-    const confirmed = orders - cancelled;
+  const eligible = affiliates.filter((a) => a.stats);
+  let ordersThisTick = 0;
+  const assigned = new Map(); // affiliateId → orders received this tick
 
-    // Team growth (probabilistic)
-    const teamDelta = Math.random() < g.teamGrowthChance * mult ? rand(0, 2) : 0;
-    const teamOrdersDelta = Math.round(orders * 0.3);
-    const teamRevenueDelta = +(teamOrdersDelta * randF(100, 300)).toFixed(2);
+  if (eligible.length) {
+    // 1) How many orders does THIS tick create? Weighted + capped at 4.
+    ordersThisTick = pickTickOrderCount();
 
-    // Demo UGC growth (presentation-only — never writes to ugc_earnings/targets).
-    const ugcSalesDelta = Math.round(rand(0, 8) * mult);
-    const ugcEarnDelta  = +(ugcSalesDelta * DEMO_UGC_COMMISSION).toFixed(2);
+    // 2) Assign each order to a weighted-random affiliate (top-favored, but the
+    //    ranking stays dynamic). Current standing = totalOrders desc.
+    const sorted = [...eligible].sort((a, b) => (b.stats.totalOrders || 0) - (a.stats.totalOrders || 0));
+    for (let i = 0; i < ordersThisTick; i++) {
+      const aff = pickWeightedRecipient(sorted);
+      assigned.set(aff.id, (assigned.get(aff.id) || 0) + 1);
+    }
 
-    await _db.demoStats.update({
-      where: { demoAffiliateId: aff.id },
-      data: {
-        totalOrders:     { increment: orders },
-        totalRevenue:    { increment: revenue },
-        confirmedOrders: { increment: confirmed },
-        cancelledOrders: { increment: cancelled },
-        todayOrders:     { increment: orders },
-        todayRevenue:    { increment: revenue },
-        teamSize:        { increment: teamDelta },
-        teamOrders:      { increment: teamOrdersDelta },
-        teamRevenue:     { increment: teamRevenueDelta },
-        ugcTodaySales:    { increment: ugcSalesDelta },
-        ugcTotalSales:    { increment: ugcSalesDelta },
-        ugcTodayEarnings: { increment: ugcEarnDelta },
-        ugcTotalEarnings: { increment: ugcEarnDelta },
-      },
-    });
+    // 3) Apply growth ONLY to the chosen affiliates. Earnings calculation is
+    //    preserved exactly: revenue = orders × per-order price (by growthType),
+    //    commission = revenue × 5%. Team/UGC deltas are scoped to recipients and
+    //    the small order counts, so nothing balloons.
+    for (const aff of eligible) {
+      const orders = assigned.get(aff.id) || 0;
+      if (!orders) continue;
 
-    // Upsert today's history row
-    const existing = await _db.demoEarningsHistory.findFirst({
-      where: { demoAffiliateId: aff.id, date: today },
-    });
-    const commission = +(revenue * COMMISSION_RATE).toFixed(2);
-    if (existing) {
-      await _db.demoEarningsHistory.update({
-        where: { id: existing.id },
+      const g         = GROWTH[aff.growthType];
+      const revenue   = +(orders * randF(...g.revenuePerOrder)).toFixed(2);
+      const cancelled = Math.round(orders * g.cancelRate);
+      const confirmed = orders - cancelled;
+
+      // Team growth (probabilistic, modest).
+      const teamDelta        = Math.random() < g.teamGrowthChance ? rand(0, 1) : 0;
+      const teamOrdersDelta  = Math.round(orders * 0.3);
+      const teamRevenueDelta = +(teamOrdersDelta * randF(100, 300)).toFixed(2);
+
+      // Demo UGC growth (presentation-only — never writes to ugc_earnings/targets).
+      const ugcSalesDelta = Math.random() < 0.3 ? rand(0, orders) : 0;
+      const ugcEarnDelta  = +(ugcSalesDelta * DEMO_UGC_COMMISSION).toFixed(2);
+
+      await _db.demoStats.update({
+        where: { demoAffiliateId: aff.id },
         data: {
-          orders:     { increment: orders },
-          revenue:    { increment: revenue },
-          commission: { increment: commission },
+          totalOrders:     { increment: orders },
+          totalRevenue:    { increment: revenue },
+          confirmedOrders: { increment: confirmed },
+          cancelledOrders: { increment: cancelled },
+          todayOrders:     { increment: orders },
+          todayRevenue:    { increment: revenue },
+          teamSize:        { increment: teamDelta },
+          teamOrders:      { increment: teamOrdersDelta },
+          teamRevenue:     { increment: teamRevenueDelta },
+          ugcTodaySales:    { increment: ugcSalesDelta },
+          ugcTotalSales:    { increment: ugcSalesDelta },
+          ugcTodayEarnings: { increment: ugcEarnDelta },
+          ugcTotalEarnings: { increment: ugcEarnDelta },
         },
       });
-    } else {
-      await _db.demoEarningsHistory.create({
-        data: { demoAffiliateId: aff.id, date: today, orders, revenue, commission },
+
+      // Upsert today's history row
+      const existing = await _db.demoEarningsHistory.findFirst({
+        where: { demoAffiliateId: aff.id, date: today },
       });
+      const commission = +(revenue * COMMISSION_RATE).toFixed(2);
+      if (existing) {
+        await _db.demoEarningsHistory.update({
+          where: { id: existing.id },
+          data: {
+            orders:     { increment: orders },
+            revenue:    { increment: revenue },
+            commission: { increment: commission },
+          },
+        });
+      } else {
+        await _db.demoEarningsHistory.create({
+          data: { demoAffiliateId: aff.id, date: today, orders, revenue, commission },
+        });
+      }
     }
   }
 
@@ -350,7 +403,7 @@ export async function simulateTick() {
   }
 
   invalidateDemoCache();
-  return { simulated: affiliates.length };
+  return { simulated: assigned.size, orders: ordersThisTick };
 }
 
 // ── Background auto-simulation ────────────────────────────────────────────────

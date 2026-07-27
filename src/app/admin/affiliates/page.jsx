@@ -457,7 +457,7 @@ function DemoManagementPanel() {
       const d = await r.json();
       if (!r.ok) { setMsg({ type: 'err', text: d.error || 'Erreur' }); return; }
       setMsg({ type: 'ok', text: busyKey === 'generate' ? `${d.generated} affiliés générés ✓`
-                                : busyKey === 'simulate' ? `Simulation effectuée (${d.simulated} affiliés) ✓`
+                                : busyKey === 'simulate' ? `Tick effectué : +${d.orders ?? 0} commande(s) ✓`
                                 : 'Compétition réinitialisée ✓' });
       await fetchInfo();
     } catch { setMsg({ type: 'err', text: 'Erreur réseau' }); }
