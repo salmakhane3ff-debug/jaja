@@ -26,6 +26,21 @@ import {
 export const DEPOSIT_STATUS = { PENDING: 'PENDING', APPROVED: 'APPROVED', REJECTED: 'REJECTED' };
 const MAX_DEPOSIT_AMOUNT = 10_000_000;
 
+// The deposit amount is FIXED by the admin (stored in the team-bonus-config
+// settings row). It is read server-side on every submission — the client can
+// display it but can NEVER set or manipulate it.
+export const DEFAULT_DEPOSIT_AMOUNT = 500;
+
+export async function getConfiguredDepositAmount(db = prisma) {
+  try {
+    const row = await db.setting.findUnique({ where: { id: 'team-bonus-config' } });
+    const v = Number(row?.data?.securityDepositAmount);
+    return Number.isFinite(v) && v > 0 ? v : DEFAULT_DEPOSIT_AMOUNT;
+  } catch {
+    return DEFAULT_DEPOSIT_AMOUNT;
+  }
+}
+
 function sumAmounts(rows) {
   let sum = toDecimal(0);
   for (const r of rows) sum = sum.plus(toDecimal(r.amount || 0));
@@ -90,7 +105,9 @@ export async function submitDeposit(affiliateId, input, db = prisma, storage = {
     throw Object.assign(new Error('Vous avez déjà une demande en attente de validation.'), { code: 'DEPOSIT_PENDING_EXISTS' });
   }
 
-  const amount = Number.parseFloat(input?.amount);
+  // SERVER-AUTHORITATIVE amount — read the admin-configured value; NEVER trust
+  // any amount sent by the client (prevents amount manipulation).
+  const amount = await getConfiguredDepositAmount(db);
   if (!Number.isFinite(amount) || amount <= 0 || amount > MAX_DEPOSIT_AMOUNT) {
     throw Object.assign(new Error('Montant invalide.'), { code: 'DEPOSIT_INVALID_AMOUNT' });
   }

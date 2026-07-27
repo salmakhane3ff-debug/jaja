@@ -763,6 +763,7 @@ const DEFAULT_BONUS_CONFIG = {
   requiredActiveAffiliates: 10,
   bonusAmount: 2000,
   ugcGoal: 5, // "Objectif UGC" — target validated UGC videos (admin-configurable)
+  securityDepositAmount: 500, // "Montant du dépôt de garantie" (MAD) — admin-fixed
   commissionTiers: [
     { minDelivered: 0, maxDelivered: 2,    commissionPct: 5  },
     { minDelivered: 3, maxDelivered: 5,    commissionPct: 7  },
@@ -775,10 +776,12 @@ export async function getTeamBonusConfig() {
   if (!setting?.data) return DEFAULT_BONUS_CONFIG;
   const d = setting.data;
   const ugcGoal = parseInt(d.ugcGoal, 10);
+  const depositAmount = Number(d.securityDepositAmount);
   return {
     requiredActiveAffiliates: d.requiredActiveAffiliates ?? DEFAULT_BONUS_CONFIG.requiredActiveAffiliates,
     bonusAmount:               d.bonusAmount              ?? DEFAULT_BONUS_CONFIG.bonusAmount,
     ugcGoal:                   Number.isFinite(ugcGoal) && ugcGoal > 0 ? ugcGoal : DEFAULT_BONUS_CONFIG.ugcGoal,
+    securityDepositAmount:     Number.isFinite(depositAmount) && depositAmount > 0 ? depositAmount : DEFAULT_BONUS_CONFIG.securityDepositAmount,
     commissionTiers:           Array.isArray(d.commissionTiers) && d.commissionTiers.length > 0
       ? d.commissionTiers
       : DEFAULT_BONUS_CONFIG.commissionTiers,

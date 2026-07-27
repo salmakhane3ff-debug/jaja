@@ -8,18 +8,21 @@
  */
 import { withAffiliateAuth } from '@/lib/middleware/withAffiliateAuth';
 import { rateLimit } from '@/lib/rateLimit';
-import { getDepositSummary, getAffiliateDeposits, submitDeposit } from '@/lib/services/depositService';
+import { getDepositSummary, getAffiliateDeposits, submitDeposit, getConfiguredDepositAmount } from '@/lib/services/depositService';
 import { DEPOSIT_MAX_BYTES } from '@/lib/depositStorage';
 
 export const dynamic = 'force-dynamic';
 
 async function getHandler(req, _ctx, decoded) {
   try {
-    const [summary, deposits] = await Promise.all([
+    const [summary, deposits, depositAmount] = await Promise.all([
       getDepositSummary(decoded.affiliateId),
       getAffiliateDeposits(decoded.affiliateId),
+      getConfiguredDepositAmount(),
     ]);
-    return Response.json({ summary, deposits });
+    // depositAmount is the admin-fixed amount — display only; the server re-reads
+    // it on submit and never trusts a client-sent value.
+    return Response.json({ summary, deposits, depositAmount });
   } catch (err) {
     console.error('affiliate/deposits GET error:', err);
     return Response.json({ error: 'Erreur serveur' }, { status: 500 });

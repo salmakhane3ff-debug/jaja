@@ -16,7 +16,7 @@ import {
 import {
   getDepositBalance, getPendingDepositTotal, submitDeposit,
   adminApproveDeposit, adminRejectDeposit,
-  getDepositProofForAffiliate,
+  getDepositProofForAffiliate, getConfiguredDepositAmount, DEFAULT_DEPOSIT_AMOUNT,
 } from '../src/lib/services/depositService.js';
 import { requestPayout } from '../src/lib/services/affiliateSystemService.js';
 
@@ -25,7 +25,7 @@ const ok = (n, c) => { if (c) { pass++; console.log('  PASS ', n); } else { fail
 const codeOf = async (fn) => { try { await fn(); return null; } catch (e) { return e.code || 'ERR'; } };
 
 // ── Fake db (deposits + notifications) ────────────────────────────────────────
-function makeDb(initial = []) {
+function makeDb(initial = [], configuredAmount = 500) {
   const rows = initial.map((r, i) => ({ id: r.id || `d${i + 1}`, createdAt: new Date(), reviewedAt: null, proofFile: 'p.jpg', ...r }));
   const notifs = [];
   const match = (r, where = {}) => Object.entries(where).every(([k, v]) => r[k] === v);
@@ -39,6 +39,8 @@ function makeDb(initial = []) {
       updateMany: async ({ where, data }) => { let count = 0; for (const r of rows) if (match(r, where)) { Object.assign(r, data); count++; } return { count }; },
     },
     affiliateNotification: { create: async ({ data }) => { notifs.push(data); return data; } },
+    // Admin-configured fixed deposit amount lives in the team-bonus-config row.
+    setting: { findUnique: async ({ where }) => (where.id === 'team-bonus-config' ? { data: { securityDepositAmount: configuredAmount } } : null) },
   };
 }
 const storage = { process: async () => `proof_${Math.random().toString(36).slice(2)}.jpg` };
@@ -59,21 +61,23 @@ console.log('1) Upload validation + magic bytes + path safety:');
   ok('safe key resolves', typeof resolveDepositPath('abc.jpg') === 'string');
 }
 
-console.log('2) Submission creates PENDING and does NOT change the approved balance:');
+console.log('2) Submission uses the ADMIN-FIXED amount (client amount ignored):');
 {
-  const db = makeDb();
+  const db = makeDb([], 750); // admin-configured deposit amount = 750
   ok('balance starts at 0', (await getDepositBalance('a', db)) === 0);
-  const r = await submitDeposit('a', { amount: '500', paymentMethod: 'Virement', proof }, db, storage);
-  ok('created PENDING', r.status === 'PENDING' && r.amount === 500);
+  // Client sends a bogus amount of 5 — the server MUST ignore it and use 750.
+  const r = await submitDeposit('a', { amount: '5', paymentMethod: 'Virement', proof }, db, storage);
+  ok('created PENDING with the CONFIGURED amount (750, not client 5)', r.status === 'PENDING' && r.amount === 750);
   ok('approved balance still 0 after submit', (await getDepositBalance('a', db)) === 0);
-  ok('pending total reflects it', (await getPendingDepositTotal('a', db)) === 500);
+  ok('pending total = configured amount', (await getPendingDepositTotal('a', db)) === 750);
   ok('proof key stored on row, NOT returned to affiliate', db._rows[0].proofFile && !('proofFile' in r) && r.hasProof === true);
+  ok('getConfiguredDepositAmount reads the settings row', (await getConfiguredDepositAmount(db)) === 750);
+  ok('getConfiguredDepositAmount falls back to default when unset', (await getConfiguredDepositAmount({ setting: { findUnique: async () => null } })) === DEFAULT_DEPOSIT_AMOUNT);
 
-  // Fresh dbs (no PENDING) so each hits its own validation rule, not the pending guard.
-  ok('invalid amount rejected', (await codeOf(() => submitDeposit('a', { amount: '0', paymentMethod: 'x', proof }, makeDb(), storage))) === 'DEPOSIT_INVALID_AMOUNT');
-  ok('missing method rejected', (await codeOf(() => submitDeposit('a', { amount: '10', paymentMethod: '', proof }, makeDb(), storage))) === 'DEPOSIT_NO_METHOD');
-  ok('missing proof rejected', (await codeOf(() => submitDeposit('a', { amount: '10', paymentMethod: 'x' }, makeDb(), storage))) === 'DEPOSIT_NO_PROOF');
-  ok('bad file type rejected', (await codeOf(() => submitDeposit('a', { amount: '10', paymentMethod: 'x', proof: { buffer: Buffer.from('x'), mime: 'application/x-msdownload', size: 10 } }, makeDb(), storage))) === 'DEPOSIT_INVALID_FILE');
+  // Server-side field guards still apply (fresh, no-PENDING dbs).
+  ok('missing method rejected', (await codeOf(() => submitDeposit('a', { paymentMethod: '', proof }, makeDb(), storage))) === 'DEPOSIT_NO_METHOD');
+  ok('missing proof rejected', (await codeOf(() => submitDeposit('a', { paymentMethod: 'x' }, makeDb(), storage))) === 'DEPOSIT_NO_PROOF');
+  ok('bad file type rejected', (await codeOf(() => submitDeposit('a', { paymentMethod: 'x', proof: { buffer: Buffer.from('x'), mime: 'application/x-msdownload', size: 10 } }, makeDb(), storage))) === 'DEPOSIT_INVALID_FILE');
 }
 
 console.log('2b) Only ONE pending request at a time:');

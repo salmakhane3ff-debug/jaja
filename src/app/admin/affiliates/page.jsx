@@ -183,7 +183,7 @@ function TeamBonusConfigPanel() {
       const d = await r.json();
       setCfg(d);
     } catch {
-      setCfg({ requiredActiveAffiliates: 10, bonusAmount: 2000, ugcGoal: 5, commissionTiers: DEFAULT_TIERS });
+      setCfg({ requiredActiveAffiliates: 10, bonusAmount: 2000, ugcGoal: 5, securityDepositAmount: 500, commissionTiers: DEFAULT_TIERS });
     } finally {
       setLoadingCfg(false);
     }
@@ -298,6 +298,19 @@ function TeamBonusConfigPanel() {
               className="w-full px-3 py-2.5 text-sm border border-gray-200 rounded-xl bg-gray-50 focus:outline-none focus:border-gray-400"
             />
             <p className="text-xs text-gray-400 mt-1">Vidéos UGC validées visées (progression affilié)</p>
+          </div>
+          <div>
+            <label className="block text-xs font-semibold text-gray-600 mb-1.5">
+              Montant du dépôt de garantie (MAD)
+            </label>
+            <input
+              type="number"
+              min={1}
+              value={cfg.securityDepositAmount ?? 500}
+              onChange={(e) => setField("securityDepositAmount", e.target.value)}
+              className="w-full px-3 py-2.5 text-sm border border-gray-200 rounded-xl bg-gray-50 focus:outline-none focus:border-gray-400"
+            />
+            <p className="text-xs text-gray-400 mt-1">Montant fixe demandé aux affiliés (non modifiable côté affilié)</p>
           </div>
         </div>
 

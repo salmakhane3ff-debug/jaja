@@ -3,16 +3,15 @@
 /**
  * src/app/affiliate/dashboard/DepositTab.jsx
  * ─────────────────────────────────────────────────────────────────────────────
- * Affiliate "Dépôt de garantie" — visually identical to /checkout/confirm by
- * REUSING the same extracted UI components (amount banner, bank details card
- * with copy buttons, proof upload card, submit button). Only the business logic
- * + labels differ: the amount is the security-deposit amount, bank info comes
- * from Bank Settings, the proof uploads to PRIVATE deposit storage, and Submit
- * creates an affiliate deposit request (status: En attente / Approuvé / Refusé).
+ * Affiliate "Dépôt de garantie" — reuses the extracted checkout UI (amount
+ * banner, bank details card + copy, proof upload). The deposit amount is FIXED
+ * by the admin (read-only here; the server re-reads it on submit — the client
+ * can never set it). "Voir la preuve" opens the proof in an in-page modal via
+ * the protected API route (never exposing the private storage URL).
  * ─────────────────────────────────────────────────────────────────────────────
  */
 import { useState, useEffect } from "react";
-import { Wallet, CreditCard, Loader2, CheckCircle, AlertCircle } from "lucide-react";
+import { Wallet, CreditCard, Loader2, CheckCircle, AlertCircle, X } from "lucide-react";
 import BankTransferAmountBanner from "@/components/checkout/BankTransferAmountBanner";
 import BankDetailsCard from "@/components/checkout/BankDetailsCard";
 import ProofUploadCard from "@/components/checkout/ProofUploadCard";
@@ -42,16 +41,16 @@ const UPLOAD_LABELS = {
 };
 
 export default function DepositTab({ token, onChanged }) {
-  const [data, setData]       = useState({ summary: { approvedBalance: 0, pendingTotal: 0 }, deposits: [] });
+  const [data, setData]       = useState({ summary: { approvedBalance: 0, pendingTotal: 0 }, deposits: [], depositAmount: 0 });
   const [bankInfo, setBankInfo] = useState(null);
   const [loading, setLoading] = useState(true);
 
-  const [amount, setAmount]           = useState("");
   const [file, setFile]               = useState(null);
   const [preview, setPreview]         = useState(null);
   const [previewIsPdf, setPreviewPdf] = useState(false);
   const [submitting, setSubmitting]   = useState(false);
   const [msg, setMsg]                 = useState(null);
+  const [proof, setProof]             = useState(null); // { id, loading, url, contentType, error }
 
   const authHeaders = () => (token ? { Authorization: `Bearer ${token}` } : {});
 
@@ -59,7 +58,11 @@ export default function DepositTab({ token, onChanged }) {
     setLoading(true);
     fetch("/api/affiliate/deposits", { headers: authHeaders() })
       .then((r) => r.json())
-      .then((d) => setData({ summary: d.summary || { approvedBalance: 0, pendingTotal: 0 }, deposits: d.deposits || [] }))
+      .then((d) => setData({
+        summary: d.summary || { approvedBalance: 0, pendingTotal: 0 },
+        deposits: d.deposits || [],
+        depositAmount: d.depositAmount || 0,
+      }))
       .catch(() => {})
       .finally(() => setLoading(false));
   };
@@ -92,12 +95,11 @@ export default function DepositTab({ token, onChanged }) {
 
   const submit = () => {
     if (submitting || hasPending) return;
-    if (!amount || parseFloat(amount) <= 0) { setMsg({ type: "err", text: "Montant invalide." }); return; }
     if (!file) { setMsg({ type: "err", text: "La preuve du virement est requise." }); return; }
 
+    // NOTE: the amount is NOT sent — the server reads the admin-fixed amount.
     setSubmitting(true); setMsg(null);
     const fd = new FormData();
-    fd.append("amount", amount);
     fd.append("paymentMethod", DEPOSIT_METHOD);
     fd.append("proof", file);
 
@@ -107,7 +109,7 @@ export default function DepositTab({ token, onChanged }) {
     xhr.onload = () => {
       setSubmitting(false);
       if (xhr.status >= 200 && xhr.status < 300) {
-        setAmount(""); removeFile();
+        removeFile();
         setMsg({ type: "ok", text: "Demande envoyée. Elle sera validée par l'administrateur." });
         load();
         onChanged?.();
@@ -120,6 +122,29 @@ export default function DepositTab({ token, onChanged }) {
     xhr.onerror = () => { setSubmitting(false); setMsg({ type: "err", text: "Erreur réseau." }); };
     xhr.send(fd);
   };
+
+  // ── Proof preview modal (in-page; uses the protected route via fetch+blob) ──
+  const openProof = async (id) => {
+    setProof({ id, loading: true, url: null, contentType: null, error: null });
+    try {
+      const res = await fetch(`/api/affiliate/deposits/${id}/proof`, { headers: authHeaders() });
+      if (!res.ok) {
+        const err =
+          res.status === 401 ? "Session expirée. Veuillez vous reconnecter."
+          : res.status === 403 ? "Accès non autorisé à cette preuve."
+          : res.status === 404 ? "Preuve introuvable."
+          : "Impossible de charger la preuve.";
+        setProof({ id, loading: false, url: null, contentType: null, error: err });
+        return;
+      }
+      const contentType = res.headers.get("Content-Type") || "";
+      const url = URL.createObjectURL(await res.blob());
+      setProof({ id, loading: false, url, contentType, error: null });
+    } catch {
+      setProof({ id, loading: false, url: null, contentType: null, error: "Erreur réseau. Réessayez." });
+    }
+  };
+  const closeProof = () => setProof((p) => { if (p?.url) URL.revokeObjectURL(p.url); return null; });
 
   return (
     <div className="max-w-lg mx-auto space-y-4">
@@ -165,19 +190,11 @@ export default function DepositTab({ token, onChanged }) {
         </div>
       ) : (
         <>
-          {/* ── Amount banner (reused) — editable deposit amount ── */}
+          {/* ── Amount banner (reused) — FIXED, read-only, set by admin ── */}
           <BankTransferAmountBanner
             label="Montant du dépôt de garantie"
-            value={
-              <div className="flex items-center justify-center gap-2">
-                <input
-                  type="number" min="1" step="0.01" value={amount} onChange={(e) => setAmount(e.target.value)}
-                  placeholder="0" inputMode="decimal"
-                  className="bg-transparent text-white text-4xl font-black text-center outline-none w-44 placeholder-white/30"
-                />
-                <span className="text-lg font-bold opacity-60">MAD</span>
-              </div>
-            }
+            value={fmtMoney(data.depositAmount)}
+            footer={<p className="text-xs mt-2 opacity-60">Ce montant est fixé par l'administration.</p>}
           />
 
           {/* ── Bank details card (reused) — from Bank Settings ── */}
@@ -197,7 +214,7 @@ export default function DepositTab({ token, onChanged }) {
           {/* ── Submit button (identical style) ── */}
           <button
             onClick={submit}
-            disabled={submitting || !amount || !file}
+            disabled={submitting || !file}
             className="w-full bg-gray-900 hover:bg-gray-800 active:scale-[0.99] disabled:opacity-50 disabled:cursor-not-allowed text-white py-4 rounded-2xl font-black text-base flex items-center justify-center gap-2 transition-all shadow-lg">
             {submitting ? (
               <><span className="w-5 h-5 border-2 border-white border-t-transparent rounded-full animate-spin" /> Envoi…</>
@@ -232,8 +249,8 @@ export default function DepositTab({ token, onChanged }) {
                     )}
                   </div>
                   {d.hasProof && (
-                    <a href={`/api/affiliate/deposits/${d.id}/proof`} target="_blank" rel="noopener noreferrer"
-                      className="text-xs text-indigo-600 hover:underline shrink-0">Voir la preuve</a>
+                    <button onClick={() => openProof(d.id)}
+                      className="text-xs text-indigo-600 hover:underline shrink-0">Voir la preuve</button>
                   )}
                 </div>
               );
@@ -241,6 +258,37 @@ export default function DepositTab({ token, onChanged }) {
           </div>
         )}
       </div>
+
+      {/* ── Proof preview modal ── */}
+      {proof && (
+        <div className="fixed inset-0 z-50 bg-black/70 flex items-center justify-center p-4" onClick={closeProof}>
+          <div className="bg-white rounded-2xl w-full max-w-lg max-h-[90vh] flex flex-col overflow-hidden" onClick={(e) => e.stopPropagation()}>
+            <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between">
+              <h3 className="text-sm font-bold text-gray-900">Preuve du virement</h3>
+              <button onClick={closeProof} className="text-gray-400 hover:text-gray-700"><X className="w-5 h-5" /></button>
+            </div>
+            <div className="flex-1 overflow-auto bg-gray-50 flex items-center justify-center min-h-[240px]">
+              {proof.loading ? (
+                <Loader2 className="w-7 h-7 animate-spin text-gray-400" />
+              ) : proof.error ? (
+                <div className="p-6 text-center text-sm text-red-600 flex items-center gap-2"><AlertCircle className="w-4 h-4 shrink-0" />{proof.error}</div>
+              ) : proof.contentType.includes("pdf") ? (
+                <iframe src={proof.url} title="Preuve du virement" className="w-full h-[70vh]" />
+              ) : (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={proof.url} alt="Preuve du virement" className="max-w-full max-h-[70vh] object-contain" />
+              )}
+            </div>
+            <div className="px-4 py-3 border-t border-gray-100 flex justify-end gap-2">
+              <button onClick={closeProof} className="px-4 py-2 rounded-xl text-xs font-semibold bg-gray-100 text-gray-600 hover:bg-gray-200">Fermer</button>
+              {proof.url && !proof.error && (
+                <button onClick={() => window.open(proof.url, "_blank", "noopener")}
+                  className="px-4 py-2 rounded-xl text-xs font-semibold bg-gray-900 text-white hover:bg-black">Ouvrir dans un nouvel onglet</button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
