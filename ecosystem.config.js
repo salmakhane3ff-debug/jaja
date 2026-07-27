@@ -47,5 +47,14 @@ module.exports = {
       script: 'scripts/fake-orders-engine.mjs',
       ...engineDefaults,
     },
+    {
+      // Demo Competition auto-simulation. Keeps the fake competition growing on a
+      // configurable interval (admin: Auto Simulation ON + interval 5–30s) by
+      // running the same tick as "Simuler activité". Ships OFF; idle tick is a
+      // no-op. Same advisory-lock / instances:1 rule — never scale this worker.
+      name:   'demo-competition-engine',
+      script: 'scripts/demo-competition-engine.mjs',
+      ...engineDefaults,
+    },
   ],
 };

@@ -32,6 +32,10 @@ import {
   listDemoAvatars,
   deleteDemoAvatar,
   saveDemoSettings,
+  getDemoSettings,
+  clampSimInterval,
+  runAutoSimTick,
+  DEMO_SIM_DEFAULT_INTERVAL,
 } from "../src/lib/services/demoService.js";
 
 let pass = 0, fail = 0;
@@ -363,6 +367,80 @@ async function main() {
   }
 
   __setDemoDb(null); // restore real client for any later imports
+  console.log("10) Auto-simulation interval is clamped to the 5–30s window:");
+  {
+    ok("below 5 → 5", clampSimInterval(2) === 5);
+    ok("above 30 → 30", clampSimInterval(999) === 30);
+    ok("in range respected", clampSimInterval(12) === 12);
+    ok("non-numeric → default", clampSimInterval("abc") === DEMO_SIM_DEFAULT_INTERVAL);
+    ok("fractional rounded", clampSimInterval(7.6) === 8);
+  }
+
+  console.log("11) saveDemoSettings persists auto-sim fields (partial patch, no clobber):");
+  {
+    const { db } = makeFakeDb();
+    __setDemoDb(db);
+    await saveDemoSettings({ isEnabled: true, simulationSpeed: "fast" });
+    await saveDemoSettings({ autoSimEnabled: true, autoSimIntervalSec: 99 }); // partial patch + out-of-range
+    const s = await getDemoSettings();
+    ok("autoSimEnabled persisted", s.autoSimEnabled === true);
+    ok("interval clamped to 30 on save", s.autoSimIntervalSec === 30);
+    ok("earlier isEnabled not clobbered by partial patch", s.isEnabled === true);
+    ok("earlier simulationSpeed not clobbered", s.simulationSpeed === "fast");
+    ok("invalid simulationSpeed is ignored", (await saveDemoSettings({ simulationSpeed: "bogus" }), (await getDemoSettings()).simulationSpeed === "fast"));
+  }
+
+  console.log("12) runAutoSimTick only ticks when demo + auto-sim are BOTH on:");
+  {
+    const { db, store } = makeFakeDb();
+    __setDemoDb(db);
+    seedAvatars(store, 3, 3);
+    await saveDemoSettings({ isEnabled: true, simulationSpeed: "fast" });
+    await generateDemoAffiliates(6, "mixed");
+
+    // auto-sim OFF → skipped, no growth
+    await saveDemoSettings({ autoSimEnabled: false, autoSimIntervalSec: 7 });
+    const before = (await getLeaderboard(50)).reduce((a, r) => a + (r.totalOrders || 0), 0);
+    const off = await runAutoSimTick();
+    const afterOff = (await getLeaderboard(50)).reduce((a, r) => a + (r.totalOrders || 0), 0);
+    ok("auto OFF → skipped 'disabled'", off.ticked === false && off.skipped === "disabled");
+    ok("auto OFF → interval reflects config (7s)", off.intervalMs === 7000);
+    ok("auto OFF → totals unchanged", afterOff === before);
+
+    // both ON → ticks, totals grow
+    await saveDemoSettings({ autoSimEnabled: true });
+    const on = await runAutoSimTick();
+    const afterOn = (await getLeaderboard(50)).reduce((a, r) => a + (r.totalOrders || 0), 0);
+    ok("both ON → ticked", on.ticked === true);
+    ok("both ON → totals increased", afterOn >= before);
+
+    // demo system OFF (but auto ON) → skipped
+    await saveDemoSettings({ isEnabled: false });
+    const sysOff = await runAutoSimTick();
+    ok("demo system OFF → skipped even with auto ON", sysOff.ticked === false && sysOff.skipped === "disabled");
+  }
+
+  console.log("13) runAutoSimTick honours the advisory lock (skips when not held):");
+  {
+    const { db, store } = makeFakeDb();
+    __setDemoDb(db);
+    seedAvatars(store, 2, 2);
+    await saveDemoSettings({ isEnabled: true, simulationSpeed: "fast", autoSimEnabled: true });
+    await generateDemoAffiliates(4, "mixed");
+    const before = (await getLeaderboard(50)).reduce((a, r) => a + (r.totalOrders || 0), 0);
+    const lockDenied = { acquire: async () => false, release: async () => {} };
+    const r = await runAutoSimTick({ lock: lockDenied });
+    const after = (await getLeaderboard(50)).reduce((a, r2) => a + (r2.totalOrders || 0), 0);
+    ok("no lock → skipped 'no_lock'", r.ticked === false && r.skipped === "no_lock");
+    ok("no lock → no growth", after === before);
+
+    let acquired = false, released = false;
+    const lockOk = { acquire: async () => (acquired = true), release: async () => (released = true) };
+    const r2 = await runAutoSimTick({ lock: lockOk });
+    ok("lock held → ticked", r2.ticked === true);
+    ok("lock acquired then released", acquired && released);
+  }
+
   console.log(`\nRESULT: ${pass} passed, ${fail} failed`);
   process.exit(fail ? 1 : 0);
 }

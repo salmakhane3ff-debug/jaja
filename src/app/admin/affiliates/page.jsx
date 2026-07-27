@@ -472,7 +472,7 @@ function DemoManagementPanel() {
       const r = await fetch('/api/admin/demo', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ isEnabled: next.isEnabled, simulationSpeed: next.simulationSpeed }),
+        body: JSON.stringify(patch), // send only what changed (server applies partial patch)
       });
       if (r.ok) setInfo((prev) => ({ ...prev, settings: next }));
     } catch { } finally { setBusy(null); }
@@ -550,6 +550,51 @@ function DemoManagementPanel() {
                     </p>
                   </button>
                 ))}
+              </div>
+            </div>
+
+            {/* Auto simulation (background engine) */}
+            <div className="rounded-xl border border-indigo-100 bg-indigo-50/40 p-4 space-y-3">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <p className="text-xs font-bold text-gray-800">Simulation automatique</p>
+                  <p className="text-[10px] text-gray-500 mt-0.5">
+                    La compétition évolue toute seule en arrière-plan (même logique que « Simuler activité »).
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => saveSettings({ autoSimEnabled: !s?.autoSimEnabled })}
+                  disabled={busy === 'save' || !s?.isEnabled}
+                  className="flex items-center gap-1.5 text-xs font-bold disabled:opacity-40"
+                  title={!s?.isEnabled ? 'Activez d’abord le système démo' : undefined}
+                >
+                  {s?.autoSimEnabled
+                    ? <ToggleRight className="w-7 h-7 text-green-500" />
+                    : <ToggleLeft  className="w-7 h-7 text-gray-400"  />}
+                  <span className={s?.autoSimEnabled ? 'text-green-600' : 'text-gray-400'}>
+                    {s?.autoSimEnabled ? 'ON' : 'OFF'}
+                  </span>
+                </button>
+              </div>
+              <div className="flex items-center gap-2">
+                <label className="text-[11px] font-semibold text-gray-600">Intervalle</label>
+                <input
+                  type="number" min={5} max={30}
+                  value={s?.autoSimIntervalSec ?? 10}
+                  onChange={(e) => {
+                    const v = Math.min(30, Math.max(5, parseInt(e.target.value, 10) || 10));
+                    saveSettings({ autoSimIntervalSec: v });
+                  }}
+                  disabled={busy === 'save'}
+                  className="w-16 px-2 py-1.5 text-sm border border-gray-200 rounded-lg bg-white focus:outline-none focus:border-indigo-400 disabled:opacity-50"
+                />
+                <span className="text-[11px] text-gray-500">secondes (5–30)</span>
+                {s?.autoSimEnabled && s?.isEnabled && (
+                  <span className="ml-auto flex items-center gap-1 text-[11px] font-semibold text-green-600">
+                    <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse" /> en direct
+                  </span>
+                )}
               </div>
             </div>
 
