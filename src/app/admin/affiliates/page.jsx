@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useMemo, useRef } from "react";
 import { Plus, Search, Edit3, Trash2, Users, Loader2, CheckCircle, XCircle, X, Settings, Award, Percent, Trophy, Play, RefreshCw, ToggleLeft, ToggleRight, Zap, Upload, Image as ImageIcon } from "lucide-react";
+import { LIVE_FEED_EVENT_TYPES, formatLiveFeedEvent, DEFAULT_CONFIRMATION_BENEFITS } from "@/lib/recruitmentCta";
 
 const COMMISSION_OPTIONS = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8];
 
@@ -1147,23 +1148,97 @@ function SupportSettingsPanel() {
 }
 
 // ── 📝 Recruitment landing (/tsajlim3ana) settings ─────────────────────────────
+const RL_EVENT_LABELS = {
+  new_affiliate:  "Nouvelle affiliée",
+  first_order:    "1ère commande confirmée",
+  order_milestone:"Palier de commandes (jour)",
+  team_milestone: "Palier d'équipe",
+  ugc_uploaded:   "UGC uploadé",
+  ugc_approved:   "UGC approuvé",
+  rank_change:    "Changement de rang (pas de source réelle)",
+  badge_unlocked: "Badge débloqué (pas de source réelle)",
+};
+const RL_COUNTER_LABELS = {
+  members:          "Membres inscrits",
+  activeAffiliates: "Affiliées actives",
+  confirmedOrders:  "Commandes confirmées",
+  successfulOrders: "Commandes livrées",
+  ugcApproved:      "UGC approuvés",
+  activeTeams:      "Équipes actives",
+};
+
 function RecruitmentLandingPanel() {
-  const [cfg, setCfg]       = useState({ enabled: false, videos: [], testimonials: [] });
+  const emptyCfg = {
+    enabled: false,
+    hero: { image: "", title: "", subtitle: "" },
+    confirmation: { title: "", description: "", benefits: DEFAULT_CONFIRMATION_BENEFITS },
+    ugc: { enabled: true, minCommission: 4, maxCommission: 10, title: "", description: "" },
+    team: { enabled: true, title: "", description: "" },
+    competition: { enabled: true },
+    statistics: { enabled: true, counters: { members: true, activeAffiliates: true, confirmedOrders: true, successfulOrders: true, ugcApproved: true, activeTeams: true } },
+    liveFeed: { enabled: false, showOnLanding: true, minInterval: 30, maxInterval: 60, displayDuration: 5, order: "random", maxEvents: 20, eventTypes: LIVE_FEED_EVENT_TYPES.reduce((a, t) => (a[t] = true, a), {}) },
+    videos: [],
+    testimonials: [],
+  };
+
+  const [cfg, setCfg]         = useState(emptyCfg);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving]   = useState(false);
   const [msg, setMsg]         = useState(null);
   const [copied, setCopied]   = useState(false);
+  const [heroUp, setHeroUp]   = useState(false);
+  const [clearing, setClearing] = useState(false);
   const url = typeof window !== "undefined" ? `${window.location.origin}/tsajlim3ana` : "/tsajlim3ana";
+
+  const numOr = (v, d) => { const n = Number(v); return Number.isFinite(n) ? n : d; };
 
   useEffect(() => {
     fetch("/api/setting?type=recruitment-landing")
       .then((r) => r.json())
-      .then((d) => setCfg({
-        enabled: d?.enabled === true,
-        videos: Array.isArray(d?.videos) ? d.videos : [],
-        testimonials: Array.isArray(d?.testimonials) ? d.testimonials : [],
-        stats: d?.stats,
-      }))
+      .then((d) => {
+        const raw = d && typeof d === "object" ? d : {};
+        const et = raw.liveFeed?.eventTypes && typeof raw.liveFeed.eventTypes === "object" ? raw.liveFeed.eventTypes : {};
+        const ct = raw.statistics?.counters && typeof raw.statistics.counters === "object" ? raw.statistics.counters : {};
+        setCfg({
+          enabled: raw.enabled === true,
+          hero: { image: raw.hero?.image || "", title: raw.hero?.title || "", subtitle: raw.hero?.subtitle || "" },
+          confirmation: {
+            title: raw.confirmation?.title || "",
+            description: raw.confirmation?.description || "",
+            benefits: Array.isArray(raw.confirmation?.benefits) && raw.confirmation.benefits.length ? raw.confirmation.benefits.map(String) : DEFAULT_CONFIRMATION_BENEFITS,
+          },
+          ugc: {
+            enabled: raw.ugc?.enabled !== false,
+            minCommission: numOr(raw.ugc?.minCommission, 4),
+            maxCommission: numOr(raw.ugc?.maxCommission, 10),
+            title: raw.ugc?.title || "",
+            description: raw.ugc?.description || "",
+          },
+          team: { enabled: raw.team?.enabled !== false, title: raw.team?.title || "", description: raw.team?.description || "" },
+          competition: { enabled: raw.competition?.enabled !== false },
+          statistics: {
+            enabled: raw.statistics?.enabled !== false,
+            counters: {
+              members: ct.members !== false, activeAffiliates: ct.activeAffiliates !== false,
+              confirmedOrders: ct.confirmedOrders !== false, successfulOrders: ct.successfulOrders !== false,
+              ugcApproved: ct.ugcApproved !== false, activeTeams: ct.activeTeams !== false,
+            },
+          },
+          liveFeed: {
+            enabled: raw.liveFeed?.enabled === true,
+            showOnLanding: raw.liveFeed?.showOnLanding !== false,
+            minInterval: numOr(raw.liveFeed?.minInterval, 30),
+            maxInterval: numOr(raw.liveFeed?.maxInterval, 60),
+            displayDuration: numOr(raw.liveFeed?.displayDuration, 5),
+            order: raw.liveFeed?.order === "chronological" ? "chronological" : "random",
+            maxEvents: numOr(raw.liveFeed?.maxEvents, 20),
+            eventTypes: LIVE_FEED_EVENT_TYPES.reduce((a, t) => (a[t] = et[t] !== false, a), {}),
+          },
+          videos: Array.isArray(raw.videos) ? raw.videos : [],
+          testimonials: Array.isArray(raw.testimonials) ? raw.testimonials : [],
+          stats: raw.stats,
+        });
+      })
       .catch(() => {})
       .finally(() => setLoading(false));
   }, []);
@@ -1175,6 +1250,13 @@ function RecruitmentLandingPanel() {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           enabled: cfg.enabled,
+          hero: cfg.hero,
+          confirmation: { ...cfg.confirmation, benefits: (cfg.confirmation.benefits || []).map((b) => String(b).trim()).filter(Boolean) },
+          ugc: cfg.ugc,
+          team: cfg.team,
+          competition: cfg.competition,
+          statistics: cfg.statistics,
+          liveFeed: cfg.liveFeed,
           videos: cfg.videos,
           testimonials: cfg.testimonials,
           ...(cfg.stats ? { stats: cfg.stats } : {}),
@@ -1185,6 +1267,29 @@ function RecruitmentLandingPanel() {
     finally { setSaving(false); }
   };
 
+  const uploadHero = async (file) => {
+    if (!file) return;
+    setHeroUp(true); setMsg(null);
+    try {
+      const fd = new FormData(); fd.append("file", file);
+      const res = await fetch("/api/image", { method: "POST", body: fd });
+      const data = await res.json();
+      if (data?.url) setCfg((c) => ({ ...c, hero: { ...c.hero, image: data.url } }));
+      else setMsg({ ok: false, t: data?.error || "Échec de l'upload." });
+    } catch { setMsg({ ok: false, t: "Échec de l'upload." }); }
+    finally { setHeroUp(false); }
+  };
+
+  const clearFeedCache = async () => {
+    setClearing(true);
+    try { await fetch("/api/tsajlim3ana/live-feed?bust=" + Date.now(), { cache: "no-store" }); }
+    catch {}
+    finally { setClearing(false); }
+  };
+
+  const patch  = (k, v) => setCfg((c) => ({ ...c, [k]: v }));
+  const patchIn = (sec, k, v) => setCfg((c) => ({ ...c, [sec]: { ...c[sec], [k]: v } }));
+
   const addVideo = () => setCfg((c) => ({ ...c, videos: [...c.videos, { id: `v${Date.now()}`, url: "", title: "", thumbnail: "", order: c.videos.length, active: true }] }));
   const setVideo = (i, k, v) => setCfg((c) => ({ ...c, videos: c.videos.map((x, j) => j === i ? { ...x, [k]: v } : x) }));
   const delVideo = (i) => setCfg((c) => ({ ...c, videos: c.videos.filter((_, j) => j !== i) }));
@@ -1193,7 +1298,14 @@ function RecruitmentLandingPanel() {
   const setTesti = (i, k, v) => setCfg((c) => ({ ...c, testimonials: c.testimonials.map((x, j) => j === i ? { ...x, [k]: v } : x) }));
   const delTesti = (i) => setCfg((c) => ({ ...c, testimonials: c.testimonials.filter((_, j) => j !== i) }));
 
-  const fieldCls = "w-full text-sm border border-gray-200 rounded-lg px-2.5 py-1.5 bg-gray-50 focus:outline-none focus:border-gray-400";
+  const fieldCls   = "w-full text-sm border border-gray-200 rounded-lg px-2.5 py-1.5 bg-gray-50 focus:outline-none focus:border-gray-400";
+  const sectionCls = "border border-gray-100 rounded-xl p-4 space-y-3";
+  const headCls    = "text-xs font-bold text-gray-700 uppercase tracking-wide";
+
+  const feedPreview = [
+    { type: "new_affiliate", name: "ابتسام العلوي" },
+    { type: "order_milestone", name: "خديجة بنعلي", count: 12 },
+  ].map((e) => formatLiveFeedEvent(e));
 
   return (
     <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden mt-6">
@@ -1201,7 +1313,7 @@ function RecruitmentLandingPanel() {
         <span className="text-lg">📝</span>
         <div>
           <h2 className="text-sm font-bold text-gray-900">صفحة التسجيل معانا</h2>
-          <p className="text-[11px] text-gray-500">Landing de recrutement des affiliées · vidéos & témoignages gérés ici.</p>
+          <p className="text-[11px] text-gray-500">Landing de recrutement des affiliées · contenu, sections, statistiques & feed gérés ici.</p>
         </div>
       </div>
       <div className="p-5 space-y-5">
@@ -1214,7 +1326,7 @@ function RecruitmentLandingPanel() {
             {/* Enabled + URL */}
             <div className="flex flex-wrap items-center justify-between gap-3">
               <label className="flex items-center gap-2 text-sm text-gray-700">
-                <input type="checkbox" checked={cfg.enabled} onChange={(e) => setCfg({ ...cfg, enabled: e.target.checked })} />
+                <input type="checkbox" checked={cfg.enabled} onChange={(e) => patch("enabled", e.target.checked)} />
                 Page activée (accessible publiquement)
               </label>
               <div className="flex items-center gap-2">
@@ -1228,10 +1340,152 @@ function RecruitmentLandingPanel() {
               </div>
             </div>
 
+            {/* Hero */}
+            <div className={sectionCls}>
+              <span className={headCls}>Hero (image + titres)</span>
+              <div className="flex items-start gap-4">
+                <div className="w-28 h-28 rounded-xl border border-gray-200 bg-gray-50 overflow-hidden flex items-center justify-center shrink-0">
+                  {cfg.hero.image
+                    ? <img src={cfg.hero.image} alt="hero" className="w-full h-full object-cover" />
+                    : <ImageIcon className="w-6 h-6 text-gray-300" />}
+                </div>
+                <div className="flex-1 space-y-2">
+                  <div className="flex items-center gap-2">
+                    <label className="flex items-center gap-1.5 text-xs font-semibold px-3 py-2 rounded-lg bg-gray-100 hover:bg-gray-200 text-gray-700 cursor-pointer">
+                      {heroUp ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Upload className="w-3.5 h-3.5" />} Uploader l'image
+                      <input type="file" accept="image/*" className="hidden" onChange={(e) => uploadHero(e.target.files?.[0])} />
+                    </label>
+                    {cfg.hero.image && <button type="button" onClick={() => patchIn("hero", "image", "")} className="text-xs text-gray-400 hover:text-red-600">Retirer</button>}
+                  </div>
+                  <p className="text-[11px] text-gray-400">Femme au foyer avec smartphone & enfant · chaleureux, réaliste, sans luxe.</p>
+                  <input className={fieldCls} placeholder="Titre (défaut : ربحي دخل إضافي وأنتِ فالدار مع أولادك)" dir="rtl" value={cfg.hero.title} onChange={(e) => patchIn("hero", "title", e.target.value)} />
+                  <textarea className={fieldCls} rows={2} placeholder="Sous-titre (défaut : إحنا كنجيبو ليك الطلبات والزبناء...)" dir="rtl" value={cfg.hero.subtitle} onChange={(e) => patchIn("hero", "subtitle", e.target.value)} />
+                </div>
+              </div>
+            </div>
+
+            {/* Confirmation / role */}
+            <div className={sectionCls}>
+              <span className={headCls}>Clarification du rôle & bénéfices</span>
+              <input className={fieldCls} dir="rtl" placeholder="Titre (rôle)" value={cfg.confirmation.title} onChange={(e) => patchIn("confirmation", "title", e.target.value)} />
+              <textarea className={fieldCls} rows={2} dir="rtl" placeholder="Description (optionnelle)" value={cfg.confirmation.description} onChange={(e) => patchIn("confirmation", "description", e.target.value)} />
+              <div>
+                <p className="text-[11px] text-gray-500 mb-1">Bénéfices — une ligne par élément :</p>
+                <textarea className={fieldCls} rows={5} dir="rtl" value={(cfg.confirmation.benefits || []).join("\n")}
+                  onChange={(e) => patchIn("confirmation", "benefits", e.target.value.split("\n"))} />
+              </div>
+            </div>
+
+            {/* UGC */}
+            <div className={sectionCls}>
+              <div className="flex items-center justify-between">
+                <span className={headCls}>Section UGC (optionnelle)</span>
+                <label className="flex items-center gap-1.5 text-xs text-gray-600"><input type="checkbox" checked={cfg.ugc.enabled} onChange={(e) => patchIn("ugc", "enabled", e.target.checked)} /> Activée</label>
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <label className="text-xs text-gray-600">Commission min (DH)
+                  <input type="number" min={0} className={fieldCls} value={cfg.ugc.minCommission} onChange={(e) => patchIn("ugc", "minCommission", numOr(e.target.value, 0))} />
+                </label>
+                <label className="text-xs text-gray-600">Commission max (DH)
+                  <input type="number" min={0} className={fieldCls} value={cfg.ugc.maxCommission} onChange={(e) => patchIn("ugc", "maxCommission", numOr(e.target.value, 0))} />
+                </label>
+              </div>
+              <p className="text-[11px] text-gray-400">Affiché comme « من {cfg.ugc.minCommission} دراهم حتى {cfg.ugc.maxCommission} دراهم » (jamais codé en dur).</p>
+              <input className={fieldCls} dir="rtl" placeholder="Titre UGC" value={cfg.ugc.title} onChange={(e) => patchIn("ugc", "title", e.target.value)} />
+              <textarea className={fieldCls} rows={2} dir="rtl" placeholder="Description UGC" value={cfg.ugc.description} onChange={(e) => patchIn("ugc", "description", e.target.value)} />
+            </div>
+
+            {/* Team */}
+            <div className={sectionCls}>
+              <div className="flex items-center justify-between">
+                <span className={headCls}>Construction d'équipe</span>
+                <label className="flex items-center gap-1.5 text-xs text-gray-600"><input type="checkbox" checked={cfg.team.enabled} onChange={(e) => patchIn("team", "enabled", e.target.checked)} /> Activée</label>
+              </div>
+              <p className="text-[11px] text-gray-400">La fourchette de % d'équipe est reprise automatiquement des paliers de commission existants (team-bonus-config) — pas de doublon ici. Masquée si aucun palier.</p>
+              <input className={fieldCls} dir="rtl" placeholder="Titre équipe" value={cfg.team.title} onChange={(e) => patchIn("team", "title", e.target.value)} />
+              <textarea className={fieldCls} rows={2} dir="rtl" placeholder="Description équipe" value={cfg.team.description} onChange={(e) => patchIn("team", "description", e.target.value)} />
+            </div>
+
+            {/* Competition */}
+            <div className={sectionCls}>
+              <label className="flex items-center gap-2 text-sm text-gray-700">
+                <input type="checkbox" checked={cfg.competition.enabled} onChange={(e) => patchIn("competition", "enabled", e.target.checked)} />
+                Afficher « المنافسة ديال هاد الشهر »
+              </label>
+              <p className="text-[11px] text-gray-400">Réutilise exactement la source du dashboard (leaderboard) · noms de famille masqués, aucun téléphone/email.</p>
+            </div>
+
+            {/* Statistics */}
+            <div className={sectionCls}>
+              <div className="flex items-center justify-between">
+                <span className={headCls}>Statistiques réelles</span>
+                <label className="flex items-center gap-1.5 text-xs text-gray-600"><input type="checkbox" checked={cfg.statistics.enabled} onChange={(e) => patchIn("statistics", "enabled", e.target.checked)} /> Section activée</label>
+              </div>
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                {Object.keys(RL_COUNTER_LABELS).map((k) => (
+                  <label key={k} className="flex items-center gap-1.5 text-xs text-gray-600">
+                    <input type="checkbox" checked={cfg.statistics.counters[k]} onChange={(e) => setCfg((c) => ({ ...c, statistics: { ...c.statistics, counters: { ...c.statistics.counters, [k]: e.target.checked } } }))} />
+                    {RL_COUNTER_LABELS[k]}
+                  </label>
+                ))}
+              </div>
+              <p className="text-[11px] text-gray-400">Les compteurs à zéro / indisponibles restent masqués côté public.</p>
+            </div>
+
+            {/* Live feed */}
+            <div className={sectionCls}>
+              <div className="flex items-center justify-between">
+                <span className={headCls}>Feed d'activité en direct</span>
+                <label className="flex items-center gap-1.5 text-xs text-gray-600"><input type="checkbox" checked={cfg.liveFeed.enabled} onChange={(e) => patchIn("liveFeed", "enabled", e.target.checked)} /> Activé</label>
+              </div>
+              <label className="flex items-center gap-1.5 text-xs text-gray-600"><input type="checkbox" checked={cfg.liveFeed.showOnLanding} onChange={(e) => patchIn("liveFeed", "showOnLanding", e.target.checked)} /> Afficher sur le landing</label>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                <label className="text-xs text-gray-600">Intervalle min (s)
+                  <input type="number" min={15} max={120} className={fieldCls} value={cfg.liveFeed.minInterval} onChange={(e) => patchIn("liveFeed", "minInterval", numOr(e.target.value, 30))} />
+                </label>
+                <label className="text-xs text-gray-600">Intervalle max (s)
+                  <input type="number" min={15} max={120} className={fieldCls} value={cfg.liveFeed.maxInterval} onChange={(e) => patchIn("liveFeed", "maxInterval", numOr(e.target.value, 60))} />
+                </label>
+                <label className="text-xs text-gray-600">Durée d'affichage (s)
+                  <input type="number" min={2} max={30} className={fieldCls} value={cfg.liveFeed.displayDuration} onChange={(e) => patchIn("liveFeed", "displayDuration", numOr(e.target.value, 5))} />
+                </label>
+                <label className="text-xs text-gray-600">Max événements
+                  <input type="number" min={1} max={100} className={fieldCls} value={cfg.liveFeed.maxEvents} onChange={(e) => patchIn("liveFeed", "maxEvents", numOr(e.target.value, 20))} />
+                </label>
+              </div>
+              <label className="text-xs text-gray-600 block">Ordre
+                <select className={fieldCls} value={cfg.liveFeed.order} onChange={(e) => patchIn("liveFeed", "order", e.target.value)}>
+                  <option value="random">Aléatoire</option>
+                  <option value="chronological">Chronologique</option>
+                </select>
+              </label>
+              <div>
+                <p className="text-[11px] text-gray-500 mb-1">Types d'événements affichés :</p>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5">
+                  {LIVE_FEED_EVENT_TYPES.map((t) => (
+                    <label key={t} className="flex items-center gap-1.5 text-xs text-gray-600">
+                      <input type="checkbox" checked={cfg.liveFeed.eventTypes[t]} onChange={(e) => setCfg((c) => ({ ...c, liveFeed: { ...c.liveFeed, eventTypes: { ...c.liveFeed.eventTypes, [t]: e.target.checked } } }))} />
+                      {RL_EVENT_LABELS[t]}
+                    </label>
+                  ))}
+                </div>
+              </div>
+              <div className="bg-gray-50 rounded-lg p-3">
+                <p className="text-[11px] text-gray-500 mb-1">Aperçu (exemples masqués) :</p>
+                <ul className="space-y-1" dir="rtl">
+                  {feedPreview.map((t, i) => <li key={i} className="text-xs text-gray-700 bg-white border border-gray-100 rounded-lg px-2.5 py-1.5">{t}</li>)}
+                </ul>
+              </div>
+              <button type="button" onClick={clearFeedCache} disabled={clearing} className="flex items-center gap-1.5 text-xs font-medium bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg px-2.5 py-1.5 disabled:opacity-50">
+                {clearing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />} Rafraîchir le cache du feed
+              </button>
+              <p className="text-[11px] text-gray-400">Le feed n'utilise que des activités réelles & masquées (aucun paiement / virement / retrait fictif).</p>
+            </div>
+
             {/* Videos */}
             <div>
               <div className="flex items-center justify-between mb-2">
-                <span className="text-xs font-bold text-gray-700 uppercase tracking-wide">Vidéos (TikTok 9:16)</span>
+                <span className={headCls}>Vidéos (TikTok 9:16)</span>
                 <button type="button" onClick={addVideo} className="flex items-center gap-1 text-xs font-medium bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg px-2.5 py-1"><Plus className="w-3 h-3" /> Ajouter</button>
               </div>
               {cfg.videos.length === 0 ? <p className="text-xs text-gray-400">Aucune vidéo.</p> : (
@@ -1255,7 +1509,7 @@ function RecruitmentLandingPanel() {
             {/* Testimonials */}
             <div>
               <div className="flex items-center justify-between mb-2">
-                <span className="text-xs font-bold text-gray-700 uppercase tracking-wide">Témoignages (réels uniquement)</span>
+                <span className={headCls}>Témoignages (réels uniquement)</span>
                 <button type="button" onClick={addTesti} className="flex items-center gap-1 text-xs font-medium bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg px-2.5 py-1"><Plus className="w-3 h-3" /> Ajouter</button>
               </div>
               {cfg.testimonials.length === 0 ? <p className="text-xs text-gray-400">Aucun témoignage.</p> : (

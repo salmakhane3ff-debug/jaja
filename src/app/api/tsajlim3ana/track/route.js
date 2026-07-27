@@ -9,7 +9,13 @@ import { rateLimit } from "@/lib/rateLimit";
 
 export const dynamic = "force-dynamic";
 
-const ALLOWED = new Set(["whatsapp_cta", "login", "view"]);
+const ALLOWED = new Set([
+  "whatsapp_cta", "login", "view",
+  "hero_whatsapp_click", "header_login_click", "confirmation_section_view",
+  "ugc_section_view", "team_section_view", "competition_section_view",
+  "video_play", "testimonial_view", "faq_open", "final_whatsapp_click",
+  "live_feed_impression", "live_feed_close",
+]);
 
 export async function POST(req) {
   const limited = rateLimit(req, "tsajlim_track", { max: 60, windowMs: 60_000 });

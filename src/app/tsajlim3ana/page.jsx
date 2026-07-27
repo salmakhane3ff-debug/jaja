@@ -5,11 +5,14 @@
  *   • disabled → render a simple RTL "unavailable" page + robots noindex, and the
  *     landing content is never sent to the client.
  *   • enabled  → render the landing; indexable.
- * The WhatsApp CTA link is resolved from the existing support settings on the
- * server so the client shows the correct enabled/disabled CTA immediately.
+ * Statistics + team-% range are read server-side (cached / reused affiliate
+ * config); competition + live feed are fetched client-side from public cached
+ * endpoints. The WhatsApp CTA link is resolved from the existing support settings.
  */
 import { getSettings } from "@/lib/services/settingsService";
-import { normalizeRecruitmentConfig, buildRecruitmentWhatsappLink } from "@/lib/recruitmentCta";
+import { getTeamBonusConfig } from "@/lib/services/affiliateSystemService";
+import { getRecruitmentStats } from "@/lib/services/recruitmentData";
+import { normalizeRecruitmentConfig, buildRecruitmentWhatsappLink, teamRangeFromTiers } from "@/lib/recruitmentCta";
 import RecruitmentLanding from "./RecruitmentLanding";
 
 export const dynamic = "force-dynamic";
@@ -22,9 +25,8 @@ async function loadConfig() {
 export async function generateMetadata() {
   const config = await loadConfig();
   return {
-    title: "سجلي معانا — ربحي فلوس وأنتِ فالدار",
-    description: "برنامج الأفلييت: ربحي من الدار عبر تأكيد الطلبات وفيديوهات UGC. بدون رأس مال، بدون شراء المنتجات، بدون توصيل.",
-    // Never index the recruitment page while it is disabled.
+    title: "سجلي معانا — ربحي دخل إضافي وأنتِ فالدار",
+    description: "برنامج الأفلييت: ربحي من الدار عبر تأكيد الطلبات وفيديوهات UGC. إحنا كنجيبو الطلبات والزبناء وإنتِ غير كتأكدي.",
     robots: config.enabled ? { index: true, follow: true } : { index: false, follow: false },
   };
 }
@@ -47,6 +49,13 @@ export default async function TsajlimPage() {
     );
   }
 
+  // Real stats (cached) + team % range reused from the affiliate commission tiers.
+  const [stats, bonusCfg] = await Promise.all([
+    config.statistics.enabled ? getRecruitmentStats().catch(() => null) : Promise.resolve(null),
+    getTeamBonusConfig().catch(() => null),
+  ]);
+  const teamRange = teamRangeFromTiers(bonusCfg?.commissionTiers);
   const whatsappLink = buildRecruitmentWhatsappLink(support);
-  return <RecruitmentLanding config={config} whatsappLink={whatsappLink} />;
+
+  return <RecruitmentLanding config={config} whatsappLink={whatsappLink} stats={stats} teamRange={teamRange} />;
 }
