@@ -100,16 +100,9 @@ const CTA_PRIMARY =
   "inline-flex items-center justify-center gap-2 px-8 py-4 bg-rose-500 hover:bg-rose-600 active:scale-[0.98] text-white rounded-2xl font-black text-base shadow-lg shadow-rose-200 border-2 border-transparent transition-all";
 
 // Secondary CTA — white with a colored border, matching the primary's height.
+// Navigates directly to the public store homepage (same tab, same domain).
 const CTA_SECONDARY =
   "inline-flex items-center justify-center gap-2 px-8 py-4 bg-white hover:bg-rose-50 active:scale-[0.98] text-rose-600 rounded-2xl font-black text-base shadow-sm border-2 border-rose-500 transition-all";
-
-// Smoothly scroll to the on-page products/showcase section (falls back to the
-// referral explainer if the showcase isn't rendered). Presentation-only.
-function scrollToShowcase() {
-  if (typeof document === "undefined") return;
-  const el = document.getElementById("products") || document.getElementById("referral");
-  el?.scrollIntoView({ behavior: "smooth", block: "start" });
-}
 
 function JoinCta({ link, event = "hero_whatsapp_click", className = "", children }) {
   if (!link) {
@@ -490,9 +483,9 @@ export default function RecruitmentLanding({ config, whatsappLink, stats, teamRa
             </div>
             <div className="flex flex-wrap items-center gap-3">
               <JoinCta link={whatsappLink} className={CTA_PRIMARY}>تسجلي معانا</JoinCta>
-              <button type="button" onClick={scrollToShowcase} className={CTA_SECONDARY}>
+              <a href="/" className={CTA_SECONDARY}>
                 <span className="text-lg leading-none">📦</span> منتجاتنا
-              </button>
+              </a>
             </div>
             <p className="text-xs text-gray-400 mt-3 flex items-center gap-1.5"><CheckCircle className="w-3.5 h-3.5 text-green-500" /> التسجيل مجاني 100% وآمن</p>
           </div>
@@ -655,9 +648,9 @@ export default function RecruitmentLanding({ config, whatsappLink, stats, teamRa
       {/* 10. Statistics */}
       {statistics.enabled && stats && <StatisticsSection stats={stats} counters={statistics.counters} />}
 
-      {/* 11. Videos / products showcase */}
+      {/* 11. Videos */}
       {videos.length > 0 && (
-        <section id="products" className="max-w-5xl mx-auto px-4 py-10 scroll-mt-16">
+        <section className="max-w-5xl mx-auto px-4 py-10">
           <SectionTitle>شوفي كيفاش كيخدمو البنات معانا</SectionTitle>
           <VideoSlider videos={videos} />
         </section>
