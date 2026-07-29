@@ -97,7 +97,19 @@ function CountUpNumber({ value }) {
 }
 
 const CTA_PRIMARY =
-  "inline-flex items-center justify-center gap-2 px-8 py-4 bg-rose-500 hover:bg-rose-600 active:scale-[0.98] text-white rounded-2xl font-black text-base shadow-lg shadow-rose-200 transition-all";
+  "inline-flex items-center justify-center gap-2 px-8 py-4 bg-rose-500 hover:bg-rose-600 active:scale-[0.98] text-white rounded-2xl font-black text-base shadow-lg shadow-rose-200 border-2 border-transparent transition-all";
+
+// Secondary CTA — white with a colored border, matching the primary's height.
+const CTA_SECONDARY =
+  "inline-flex items-center justify-center gap-2 px-8 py-4 bg-white hover:bg-rose-50 active:scale-[0.98] text-rose-600 rounded-2xl font-black text-base shadow-sm border-2 border-rose-500 transition-all";
+
+// Smoothly scroll to the on-page products/showcase section (falls back to the
+// referral explainer if the showcase isn't rendered). Presentation-only.
+function scrollToShowcase() {
+  if (typeof document === "undefined") return;
+  const el = document.getElementById("products") || document.getElementById("referral");
+  el?.scrollIntoView({ behavior: "smooth", block: "start" });
+}
 
 function JoinCta({ link, event = "hero_whatsapp_click", className = "", children }) {
   if (!link) {
@@ -364,6 +376,67 @@ function LiveFeed() {
   );
 }
 
+// ── Referral link explainer (how the affiliate link works) ─────────────────────
+const REFERRAL_STEPS = [
+  { icon: "📋", title: "1. منين كتسجلي",                   text: "كتوصلي بحساب ديالك ورابط الإحالة الخاص بيك.",                              color: "bg-rose-50 border-rose-100" },
+  { icon: "📲", title: "2. شاركي الرابط",                  text: "صيفطي الرابط ديالك للعائلة، الصحابات، جروبات Facebook، WhatsApp، TikTok...", color: "bg-sky-50 border-sky-100" },
+  { icon: "🛒", title: "3. أي واحد كيطلب من الرابط ديالك", text: "إلى دخل من الرابط ديالك ودار الطلب، كيتسجل باسمك تلقائياً.",                 color: "bg-amber-50 border-amber-100" },
+  { icon: "📞", title: "4. كتأكدي الطلب",                  text: "الطلب كيوصل للوحة ديالك، كتعيطي للزبون غير باش تأكدي المعلومات.",             color: "bg-violet-50 border-violet-100" },
+  { icon: "💰", title: "5. كتربحي العمولة",                text: "منين الطلب كيتسلم بنجاح، العمولة كتزاد مباشرة فالرصيد ديالك.",                color: "bg-emerald-50 border-emerald-100" },
+];
+
+const REFERRAL_TIMELINE = [
+  { t: "تسجيل",           c: "bg-rose-500" },
+  { t: "رابط الإحالة",    c: "bg-sky-500" },
+  { t: "الزبون كيطلب",    c: "bg-amber-500" },
+  { t: "تأكيد الطلب",     c: "bg-violet-500" },
+  { t: "التوصيل",         c: "bg-indigo-500" },
+  { t: "العمولة كتزاد",   c: "bg-emerald-500" },
+];
+
+function ReferralHowItWorks() {
+  return (
+    <section id="referral" className="bg-white scroll-mt-16">
+      <div className="max-w-5xl mx-auto px-4 py-10">
+        <SectionTitle>🔗 كيفاش يخدم رابط الإحالة ديالك؟</SectionTitle>
+        <p className="text-center text-sm text-gray-500 -mt-3 mb-6 max-w-2xl mx-auto">
+          شرح بسيط وبالدارجة باش أي واحدة تقدر تفهم الخدمة فدقيقة.
+        </p>
+
+        {/* 5 illustrated cards */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+          {REFERRAL_STEPS.map((s) => (
+            <div key={s.title} className={`rounded-2xl border ${s.color} p-5 flex flex-col items-center text-center`}>
+              <div className="w-14 h-14 rounded-2xl bg-white shadow-sm flex items-center justify-center text-3xl mb-3">{s.icon}</div>
+              <p className="text-sm font-black text-gray-900 mb-1">{s.title}</p>
+              <p className="text-xs text-gray-600 leading-relaxed">{s.text}</p>
+            </div>
+          ))}
+        </div>
+
+        {/* Important note */}
+        <div className="mt-6 max-w-2xl mx-auto rounded-2xl bg-amber-50 border border-amber-200 px-5 py-4 text-center">
+          <p className="text-sm font-black text-amber-800 mb-1">💡 معلومة مهمة</p>
+          <p className="text-sm text-amber-800 leading-relaxed">
+            الرابط ديالك صالح مدى الحياة.<br />
+            أي زبون كيرجع يطلب مرة أخرى من نفس الرابط، الطلب كيبقى محسوب ليك.
+          </p>
+        </div>
+
+        {/* Visual flow timeline */}
+        <div className="mt-8 flex flex-col items-center">
+          {REFERRAL_TIMELINE.map((step, i) => (
+            <div key={step.t} className="flex flex-col items-center w-full max-w-xs">
+              <div className={`w-full text-center ${step.c} text-white rounded-2xl px-5 py-3 text-sm font-bold shadow-sm`}>{step.t}</div>
+              {i < REFERRAL_TIMELINE.length - 1 && <ChevronDown className="w-5 h-5 text-gray-300 my-1.5" />}
+            </div>
+          ))}
+        </div>
+      </div>
+    </section>
+  );
+}
+
 // ── Main ────────────────────────────────────────────────────────────────────────
 export default function RecruitmentLanding({ config, whatsappLink, stats, teamRange }) {
   const videos = publicVideos(config);
@@ -415,7 +488,12 @@ export default function RecruitmentLanding({ config, whatsappLink, stats, teamRa
                 </div>
               ))}
             </div>
-            <JoinCta link={whatsappLink} className={CTA_PRIMARY}>تسجلي معانا</JoinCta>
+            <div className="flex flex-wrap items-center gap-3">
+              <JoinCta link={whatsappLink} className={CTA_PRIMARY}>تسجلي معانا</JoinCta>
+              <button type="button" onClick={scrollToShowcase} className={CTA_SECONDARY}>
+                <span className="text-lg leading-none">📦</span> منتجاتنا
+              </button>
+            </div>
             <p className="text-xs text-gray-400 mt-3 flex items-center gap-1.5"><CheckCircle className="w-3.5 h-3.5 text-green-500" /> التسجيل مجاني 100% وآمن</p>
           </div>
           <div className="relative w-full aspect-[4/3] rounded-3xl overflow-hidden bg-rose-100/60">
@@ -478,6 +556,9 @@ export default function RecruitmentLanding({ config, whatsappLink, stats, teamRa
           </div>
         </div>
       </section>
+
+      {/* 5b. How the referral link works */}
+      <ReferralHowItWorks />
 
       {/* 6. Benefits */}
       <section className="max-w-5xl mx-auto px-4 py-10">
@@ -574,9 +655,9 @@ export default function RecruitmentLanding({ config, whatsappLink, stats, teamRa
       {/* 10. Statistics */}
       {statistics.enabled && stats && <StatisticsSection stats={stats} counters={statistics.counters} />}
 
-      {/* 11. Videos */}
+      {/* 11. Videos / products showcase */}
       {videos.length > 0 && (
-        <section className="max-w-5xl mx-auto px-4 py-10">
+        <section id="products" className="max-w-5xl mx-auto px-4 py-10 scroll-mt-16">
           <SectionTitle>شوفي كيفاش كيخدمو البنات معانا</SectionTitle>
           <VideoSlider videos={videos} />
         </section>
