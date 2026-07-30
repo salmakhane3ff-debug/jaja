@@ -81,7 +81,7 @@ function ActivityRow({ ev, animate }) {
   );
 }
 
-export default function LiveActivity({ pollMs = 4000, windowSize = 4, showViewAll = false, className = "" }) {
+export default function LiveActivity({ pollMs = 4000, windowSize = 3, showViewAll = false, className = "" }) {
   const [data, setData] = useState(null); // { enabled, counters, events }
   const [open, setOpen] = useState(false);
   const inFlight = useRef(false);
@@ -141,12 +141,17 @@ export default function LiveActivity({ pollMs = 4000, windowSize = 4, showViewAl
         ))}
       </div>
 
-      {/* Feed */}
+      {/* Feed — compact (≈3–4 rows); full history lives in "عرض الكل" */}
       <p className="text-xs text-gray-400 mb-2">أخر الأنشطة داخل المنصة لحظة بلحظة</p>
-      <div className="space-y-2.5 overflow-hidden" style={{ minHeight: windowSize * 76 }}>
+      <div className="space-y-2.5">
         {events.slice(0, windowSize).map((ev, i) => <ActivityRow key={ev.id || i} ev={ev} animate={i === 0} />)}
         {events.length === 0 && <p className="text-center text-sm text-gray-400 py-6">المنصة نشيطة، الأنشطة غادي تبان دابا…</p>}
       </div>
+      {showViewAll && events.length > windowSize && (
+        <button type="button" onClick={() => setOpen(true)} className="w-full mt-2.5 text-xs font-bold text-gray-500 hover:text-gray-800 py-1.5">
+          عرض الكل ({events.length}) ‹
+        </button>
+      )}
 
       {/* "عرض الكل" bottom sheet / modal */}
       {open && (

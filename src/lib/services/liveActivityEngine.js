@@ -74,6 +74,23 @@ function freshState(cfg, dayKey, now) {
   return { dayKey, resetToken: cfg.resetToken || '', counters: { ...cfg.stats }, events: [], lastTickAt: now };
 }
 
+const BOOTSTRAP_COUNT = 15; // events generated up-front so the feed is NEVER empty
+
+// Seed an initial batch of activities with staggered past timestamps so the very
+// first page load already shows a full, natural-looking feed.
+function bootstrapFeed(state, cfg, commissionPerSale, now, avgMs) {
+  const batch = [];
+  for (let i = 0; i < BOOTSTRAP_COUNT; i++) {
+    const type = pickActivityType(cfg.probabilities);
+    const at = now - (BOOTSTRAP_COUNT - i) * avgMs; // i=0 oldest … newest ≈ now-avgMs
+    const ev = buildEvent(type, cfg, at);
+    state.counters = applyActivityToStats(state.counters, type, counterAmount(ev, commissionPerSale));
+    if (Math.random() < 0.15) state.counters.affiliatesOnline = driftOnline(state.counters.affiliatesOnline);
+    batch.push(ev);
+  }
+  state.events = batch.reverse().slice(0, MAX_EVENTS); // newest first
+}
+
 /**
  * Return the current live-activity snapshot, advancing the shared server state.
  * @returns {Promise<{enabled:boolean, counters:object|null, events:Array, config:object|null}>}
@@ -98,6 +115,16 @@ export async function getLiveActivitySnapshot() {
     state = freshState(cfg, today, now);
   }
 
+  let dirty = false;
+
+  // Bootstrap: the feed must NEVER be empty. On a brand-new/rolled-over/reset
+  // state, seed an initial batch so the first page load shows several activities.
+  if (!state.events.length) {
+    bootstrapFeed(state, cfg, commissionPerSale, now, avgMs);
+    state.lastTickAt = now;
+    dirty = true;
+  }
+
   // Advance the shared feed by whole ticks since we last advanced (capped).
   const elapsedTicks = Math.floor((now - state.lastTickAt) / avgMs);
   if (elapsedTicks > 0) {
@@ -112,8 +139,10 @@ export async function getLiveActivitySnapshot() {
     state.events = state.events.slice(0, MAX_EVENTS);
     // Discard a large idle backlog (jump to now) so counters never leap.
     state.lastTickAt = elapsedTicks > MAX_CATCHUP ? now : state.lastTickAt + elapsedTicks * avgMs;
-    await upsertSettings(STATE_KEY, state).catch(() => {});
+    dirty = true;
   }
+
+  if (dirty) await upsertSettings(STATE_KEY, state).catch(() => {});
 
   // Serve: compute relative time + live UGC earnings (respects current commission).
   const events = state.events.map((e) => {

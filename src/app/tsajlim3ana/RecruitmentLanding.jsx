@@ -557,7 +557,7 @@ export default function RecruitmentLanding({ config, whatsappLink, stats, teamRa
       {/* 5c. Live activity (🔥 النشاط المباشر) — shared server-side engine */}
       {liveActivity?.enabled && (
         <section id="live-activity" className="max-w-5xl mx-auto px-4 py-10">
-          <LiveActivity windowSize={5} showViewAll />
+          <LiveActivity windowSize={4} showViewAll />
         </section>
       )}
 
