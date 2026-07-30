@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useMemo, useRef } from "react";
 import { Plus, Search, Edit3, Trash2, Users, Loader2, CheckCircle, XCircle, X, Settings, Award, Percent, Trophy, Play, RefreshCw, ToggleLeft, ToggleRight, Zap, Upload, Image as ImageIcon } from "lucide-react";
-import { LIVE_FEED_EVENT_TYPES, formatLiveFeedEvent, DEFAULT_CONFIRMATION_BENEFITS } from "@/lib/recruitmentCta";
+import { LIVE_FEED_EVENT_TYPES, formatLiveFeedEvent, DEFAULT_CONFIRMATION_BENEFITS, DEFAULT_LIVE_ACTIVITY_ITEMS, DEFAULT_LIVE_ACTIVITY_STATS, LIVE_ACTIVITY_DEFAULT_SPEED } from "@/lib/recruitmentCta";
 
 const COMMISSION_OPTIONS = [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8];
 
@@ -1222,6 +1222,7 @@ function RecruitmentLandingPanel() {
     competition: { enabled: true },
     statistics: { enabled: true, counters: { members: true, activeAffiliates: true, confirmedOrders: true, successfulOrders: true, ugcApproved: true, activeTeams: true } },
     liveFeed: { enabled: false, showOnLanding: true, minInterval: 30, maxInterval: 60, displayDuration: 5, order: "random", maxEvents: 20, eventTypes: LIVE_FEED_EVENT_TYPES.reduce((a, t) => (a[t] = true, a), {}) },
+    liveActivity: { enabled: true, speedMs: LIVE_ACTIVITY_DEFAULT_SPEED, stats: { ...DEFAULT_LIVE_ACTIVITY_STATS }, items: DEFAULT_LIVE_ACTIVITY_ITEMS.map((it) => ({ ...it })) },
     videos: [],
     testimonials: [],
   };
@@ -1279,6 +1280,19 @@ function RecruitmentLandingPanel() {
             maxEvents: numOr(raw.liveFeed?.maxEvents, 20),
             eventTypes: LIVE_FEED_EVENT_TYPES.reduce((a, t) => (a[t] = et[t] !== false, a), {}),
           },
+          liveActivity: {
+            enabled: raw.liveActivity?.enabled !== false,
+            speedMs: numOr(raw.liveActivity?.speedMs, LIVE_ACTIVITY_DEFAULT_SPEED),
+            stats: {
+              todayOrders:      numOr(raw.liveActivity?.stats?.todayOrders, DEFAULT_LIVE_ACTIVITY_STATS.todayOrders),
+              todayDelivered:   numOr(raw.liveActivity?.stats?.todayDelivered, DEFAULT_LIVE_ACTIVITY_STATS.todayDelivered),
+              todayCommissions: numOr(raw.liveActivity?.stats?.todayCommissions, DEFAULT_LIVE_ACTIVITY_STATS.todayCommissions),
+              affiliatesOnline: numOr(raw.liveActivity?.stats?.affiliatesOnline, DEFAULT_LIVE_ACTIVITY_STATS.affiliatesOnline),
+            },
+            items: Array.isArray(raw.liveActivity?.items) && raw.liveActivity.items.length
+              ? raw.liveActivity.items.map((it) => ({ icon: it?.icon || "🟢", name: it?.name || "", city: it?.city || "", activity: it?.activity || "", time: it?.time || "" }))
+              : DEFAULT_LIVE_ACTIVITY_ITEMS.map((it) => ({ ...it })),
+          },
           videos: Array.isArray(raw.videos) ? raw.videos : [],
           testimonials: Array.isArray(raw.testimonials) ? raw.testimonials : [],
           stats: raw.stats,
@@ -1302,6 +1316,7 @@ function RecruitmentLandingPanel() {
           competition: cfg.competition,
           statistics: cfg.statistics,
           liveFeed: cfg.liveFeed,
+          liveActivity: cfg.liveActivity,
           videos: cfg.videos,
           testimonials: cfg.testimonials,
           ...(cfg.stats ? { stats: cfg.stats } : {}),
@@ -1342,6 +1357,12 @@ function RecruitmentLandingPanel() {
   const addTesti = () => setCfg((c) => ({ ...c, testimonials: [...c.testimonials, { id: `t${Date.now()}`, name: "", text: "", rating: 5, active: true }] }));
   const setTesti = (i, k, v) => setCfg((c) => ({ ...c, testimonials: c.testimonials.map((x, j) => j === i ? { ...x, [k]: v } : x) }));
   const delTesti = (i) => setCfg((c) => ({ ...c, testimonials: c.testimonials.filter((_, j) => j !== i) }));
+
+  const patchLA     = (k, v) => setCfg((c) => ({ ...c, liveActivity: { ...c.liveActivity, [k]: v } }));
+  const patchLAStat = (k, v) => setCfg((c) => ({ ...c, liveActivity: { ...c.liveActivity, stats: { ...c.liveActivity.stats, [k]: v } } }));
+  const addLAItem   = () => setCfg((c) => ({ ...c, liveActivity: { ...c.liveActivity, items: [...c.liveActivity.items, { icon: "🟢", name: "", city: "", activity: "", time: "" }] } }));
+  const setLAItem   = (i, k, v) => setCfg((c) => ({ ...c, liveActivity: { ...c.liveActivity, items: c.liveActivity.items.map((x, j) => j === i ? { ...x, [k]: v } : x) } }));
+  const delLAItem   = (i) => setCfg((c) => ({ ...c, liveActivity: { ...c.liveActivity, items: c.liveActivity.items.filter((_, j) => j !== i) } }));
 
   const fieldCls   = "w-full text-sm border border-gray-200 rounded-lg px-2.5 py-1.5 bg-gray-50 focus:outline-none focus:border-gray-400";
   const sectionCls = "border border-gray-100 rounded-xl p-4 space-y-3";
@@ -1525,6 +1546,63 @@ function RecruitmentLandingPanel() {
                 {clearing ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <RefreshCw className="w-3.5 h-3.5" />} Rafraîchir le cache du feed
               </button>
               <p className="text-[11px] text-gray-400">Le feed n'utilise que des activités réelles & masquées (aucun paiement / virement / retrait fictif).</p>
+            </div>
+
+            {/* Live activity (🔥 النشاط المباشر) — inline, demo/curated */}
+            <div className={sectionCls}>
+              <div className="flex items-center justify-between">
+                <span className={headCls}>🔥 النشاط المباشر (section inline, démo)</span>
+                <label className="flex items-center gap-1.5 text-xs text-gray-600"><input type="checkbox" checked={cfg.liveActivity.enabled} onChange={(e) => patchLA("enabled", e.target.checked)} /> Activée</label>
+              </div>
+              <p className="text-[11px] text-gray-400">Section de démonstration entièrement éditable (aucune donnée réelle) : cartes qui défilent + 4 statistiques.</p>
+
+              <label className="text-xs text-gray-600 block">Vitesse — une activité chaque
+                <div className="flex items-center gap-2 mt-1">
+                  <input type="number" min={1} max={10} step={0.5} className={`${fieldCls} w-24`}
+                    value={(cfg.liveActivity.speedMs / 1000)}
+                    onChange={(e) => patchLA("speedMs", Math.min(10000, Math.max(1000, Math.round((parseFloat(e.target.value) || 2.5) * 1000))))} />
+                  <span className="text-[11px] text-gray-500">secondes (1–10)</span>
+                </div>
+              </label>
+
+              <div>
+                <p className="text-[11px] text-gray-500 mb-1">Statistiques (valeurs de démo, configurables) :</p>
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                  {[
+                    { k: "todayOrders", l: "Commandes auj." },
+                    { k: "todayDelivered", l: "Livrées auj." },
+                    { k: "todayCommissions", l: "Commissions auj." },
+                    { k: "affiliatesOnline", l: "Affiliées en ligne" },
+                  ].map(({ k, l }) => (
+                    <label key={k} className="text-[11px] text-gray-600">{l}
+                      <input type="number" min={0} className={fieldCls} value={cfg.liveActivity.stats[k]} onChange={(e) => patchLAStat(k, numOr(e.target.value, 0))} />
+                    </label>
+                  ))}
+                </div>
+              </div>
+
+              <div>
+                <div className="flex items-center justify-between mb-1">
+                  <p className="text-[11px] text-gray-500">Activités (icône · nom · ville · activité · temps) :</p>
+                  <button type="button" onClick={addLAItem} className="flex items-center gap-1 text-xs font-medium bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg px-2.5 py-1"><Plus className="w-3 h-3" /> Ajouter</button>
+                </div>
+                {cfg.liveActivity.items.length === 0 ? <p className="text-xs text-gray-400">Aucune activité.</p> : (
+                  <div className="space-y-2">
+                    {cfg.liveActivity.items.map((it, i) => (
+                      <div key={i} className="border border-gray-100 rounded-xl p-2.5 grid grid-cols-1 sm:grid-cols-12 gap-2 items-center" dir="rtl">
+                        <input className={`${fieldCls} sm:col-span-1 text-center`} placeholder="🟢" value={it.icon} onChange={(e) => setLAItem(i, "icon", e.target.value)} />
+                        <input className={`${fieldCls} sm:col-span-2`} placeholder="الاسم" value={it.name} onChange={(e) => setLAItem(i, "name", e.target.value)} />
+                        <input className={`${fieldCls} sm:col-span-2`} placeholder="المدينة" value={it.city} onChange={(e) => setLAItem(i, "city", e.target.value)} />
+                        <input className={`${fieldCls} sm:col-span-4`} placeholder="النشاط" value={it.activity} onChange={(e) => setLAItem(i, "activity", e.target.value)} />
+                        <input className={`${fieldCls} sm:col-span-2`} placeholder="قبل ..." value={it.time} onChange={(e) => setLAItem(i, "time", e.target.value)} />
+                        <div className="sm:col-span-1 flex justify-end">
+                          <button type="button" onClick={() => delLAItem(i)} className="text-gray-400 hover:text-red-600"><Trash2 className="w-4 h-4" /></button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
             </div>
 
             {/* Videos */}

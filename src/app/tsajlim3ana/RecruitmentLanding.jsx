@@ -430,11 +430,99 @@ function ReferralHowItWorks() {
   );
 }
 
+// ── Live activity (🔥 النشاط المباشر) — admin-curated demo feed, looped smoothly ─
+const LIVE_STAT_META = [
+  { key: "todayOrders",      icon: "📦", label: "طلبات اليوم" },
+  { key: "todayDelivered",   icon: "🚚", label: "مسلمة اليوم" },
+  { key: "todayCommissions", icon: "💰", label: "عمولات اليوم", suffix: " د.م" },
+  { key: "affiliatesOnline", icon: "🟢", label: "مسوقات متصلات" },
+];
+
+function LiveStat({ icon, label, value, suffix }) {
+  const [v, ref] = useCountUp(value);
+  return (
+    <div ref={ref} className="rounded-2xl bg-white border border-gray-100 shadow-sm px-3 py-4 text-center">
+      <div className="text-xl mb-1">{icon}</div>
+      <p className="text-lg font-black text-gray-900 tabular-nums">{v.toLocaleString("en-US")}{suffix || ""}</p>
+      <p className="text-[11px] text-gray-500 mt-0.5 leading-tight">{label}</p>
+    </div>
+  );
+}
+
+function ActivityRow({ item, animate }) {
+  const bold  = item.name ? (item.city ? `${item.name} من ${item.city}` : item.name) : item.activity;
+  const muted = item.name ? item.activity : item.city;
+  return (
+    <div className={`flex items-center gap-3 bg-white rounded-2xl border border-gray-100 px-3.5 py-3 ${animate ? "animate-[laSlideIn_0.5s_ease]" : ""}`}>
+      <div className="w-10 h-10 rounded-full bg-rose-50 flex items-center justify-center text-lg shrink-0">{item.icon}</div>
+      <div className="flex-1 min-w-0">
+        <p className="text-sm font-bold text-gray-800 truncate">{bold}</p>
+        {muted && <p className="text-xs text-gray-500 truncate">{muted}</p>}
+      </div>
+      <span className="text-[11px] text-gray-400 shrink-0 whitespace-nowrap">{item.time}</span>
+    </div>
+  );
+}
+
+const LIVE_WINDOW = 4;
+
+function LiveActivitySection({ activity }) {
+  const items = activity?.items || [];
+  const [feed, setFeed] = useState(() => items.slice(0, LIVE_WINDOW).map((it, i) => ({ ...it, _k: i })));
+  const nextRef = useRef(Math.min(LIVE_WINDOW, items.length));
+  const keyRef  = useRef(1000);
+
+  useEffect(() => {
+    if (items.length <= 1) return;
+    const reduce = typeof window !== "undefined" && window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+    if (reduce) return; // reduced-motion: keep the initial list static, never animate
+    const speed = activity.speedMs || 2500;
+    let stopped = false;
+    const id = setInterval(() => {
+      if (stopped || document.visibilityState === "hidden") return; // pause when tab hidden
+      const item = items[nextRef.current % items.length];
+      nextRef.current += 1;
+      setFeed((prev) => [{ ...item, _k: keyRef.current++ }, ...prev].slice(0, LIVE_WINDOW));
+    }, speed);
+    return () => { stopped = true; clearInterval(id); };
+  }, [items, activity.speedMs]);
+
+  if (!items.length) return null;
+
+  return (
+    <section id="live-activity" className="max-w-5xl mx-auto px-4 py-10">
+      <div className="rounded-3xl bg-white border border-gray-100 shadow-lg shadow-gray-100/70 p-5 sm:p-7">
+        {/* Header */}
+        <div className="flex items-center gap-2 mb-1 flex-wrap">
+          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-green-50 text-green-600 text-[11px] font-black">
+            <span className="w-2 h-2 rounded-full bg-green-500 animate-pulse" /> LIVE
+          </span>
+          <h2 className="text-lg sm:text-xl font-black text-gray-900">🔥 النشاط المباشر</h2>
+        </div>
+        <p className="text-sm text-gray-500 mb-5">شاهدي آخر الأنشطة داخل المنصة لحظة بلحظة</p>
+
+        {/* Desktop: 2 columns (stats | feed). Mobile: stacked, full width. */}
+        <div className="grid lg:grid-cols-2 gap-5 items-start">
+          <div className="grid grid-cols-2 gap-3">
+            {LIVE_STAT_META.map((m) => (
+              <LiveStat key={m.key} icon={m.icon} label={m.label} value={activity.stats?.[m.key] || 0} suffix={m.suffix} />
+            ))}
+          </div>
+          <div className="space-y-2.5 overflow-hidden" style={{ minHeight: LIVE_WINDOW * 70 }}>
+            {feed.map((it, i) => <ActivityRow key={it._k} item={it} animate={i === 0} />)}
+          </div>
+        </div>
+      </div>
+      <style>{`@keyframes laSlideIn{from{opacity:0;transform:translateY(-10px)}to{opacity:1;transform:translateY(0)}}`}</style>
+    </section>
+  );
+}
+
 // ── Main ────────────────────────────────────────────────────────────────────────
 export default function RecruitmentLanding({ config, whatsappLink, stats, teamRange }) {
   const videos = publicVideos(config);
   const testimonials = publicTestimonials(config);
-  const { hero, confirmation, ugc, team, competition, statistics } = config;
+  const { hero, confirmation, ugc, team, competition, statistics, liveActivity } = config;
 
   const confRef = useSectionView("confirmation_section_view");
   const ugcRef = useSectionView("ugc_section_view");
@@ -552,6 +640,9 @@ export default function RecruitmentLanding({ config, whatsappLink, stats, teamRa
 
       {/* 5b. How the referral link works */}
       <ReferralHowItWorks />
+
+      {/* 5c. Live activity (🔥 النشاط المباشر) */}
+      {liveActivity?.enabled && <LiveActivitySection activity={liveActivity} />}
 
       {/* 6. Benefits */}
       <section className="max-w-5xl mx-auto px-4 py-10">

@@ -12,6 +12,8 @@ import {
   normalizeUgc, teamRangeFromTiers, normalizeLiveFeedConfig,
   maskFirstName, maskSurname, formatLiveFeedEvent,
   LIVE_FEED_EVENT_TYPES,
+  normalizeLiveActivity, DEFAULT_LIVE_ACTIVITY_ITEMS,
+  LIVE_ACTIVITY_MIN_SPEED, LIVE_ACTIVITY_MAX_SPEED, LIVE_ACTIVITY_DEFAULT_SPEED,
 } from "../src/lib/recruitmentCta.js";
 
 let pass = 0, fail = 0;
@@ -134,6 +136,41 @@ console.log("9) Statistics + live-feed defaults in full config:");
   ok("live feed off by default (opt-in)", c.liveFeed.enabled === false);
   ok("competition on by default", c.competition.enabled === true);
   ok("hero/confirmation/ugc/team defaults present", !!c.hero.title && !!c.confirmation.title && !!c.ugc.title && !!c.team.title);
+}
+
+console.log("10) Live activity section (🔥 النشاط المباشر) — admin-editable demo config:");
+{
+  const d = normalizeLiveActivity({});
+  ok("enabled by default (visible out of the box)", d.enabled === true);
+  ok("respects explicit disable", normalizeLiveActivity({ enabled: false }).enabled === false);
+  ok("default speed = 2500ms", d.speedMs === LIVE_ACTIVITY_DEFAULT_SPEED && d.speedMs === 2500);
+  ok("speed clamped up to min", normalizeLiveActivity({ speedMs: 100 }).speedMs === LIVE_ACTIVITY_MIN_SPEED);
+  ok("speed clamped down to max", normalizeLiveActivity({ speedMs: 99999 }).speedMs === LIVE_ACTIVITY_MAX_SPEED);
+  ok("bad speed → default", normalizeLiveActivity({ speedMs: "x" }).speedMs === LIVE_ACTIVITY_DEFAULT_SPEED);
+
+  ok("has the 4 configurable stats", (() => {
+    const s = d.stats; return ["todayOrders", "todayDelivered", "todayCommissions", "affiliatesOnline"].every((k) => typeof s[k] === "number");
+  })());
+  ok("admin stat values are respected", normalizeLiveActivity({ stats: { todayOrders: 777 } }).stats.todayOrders === 777);
+  ok("negative stat floored to 0", normalizeLiveActivity({ stats: { todayOrders: -5 } }).stats.todayOrders === 0);
+  ok("non-numeric stat → default", normalizeLiveActivity({ stats: { affiliatesOnline: "abc" } }).stats.affiliatesOnline === 42);
+
+  ok("defaults to the 5 example items", d.items.length === DEFAULT_LIVE_ACTIVITY_ITEMS.length && d.items.length === 5);
+  ok("first default item matches the spec (أمينة / الدار البيضاء)", d.items[0].name === "أمينة" && d.items[0].city === "الدار البيضاء");
+  ok("every item exposes all editable fields", d.items.every((it) => ["icon", "name", "city", "activity", "time"].every((k) => k in it)));
+
+  const custom = normalizeLiveActivity({ items: [
+    { icon: "✅", name: "Test", city: "Fès", activity: "أكدت طلب", time: "قبل ثانية" },
+    { activity: "", name: "", city: "" }, // empty → dropped
+  ] });
+  ok("admin items respected + empty items dropped", custom.items.length === 1 && custom.items[0].city === "Fès");
+  ok("missing icon backfilled", normalizeLiveActivity({ items: [{ activity: "طلب" }] }).items[0].icon === "🟢");
+  ok("empty items array → falls back to defaults", normalizeLiveActivity({ items: [] }).items.length === 5);
+
+  ok("exposed via normalizeRecruitmentConfig", (() => {
+    const c = normalizeRecruitmentConfig({ liveActivity: { speedMs: 3000 } });
+    return c.liveActivity && c.liveActivity.speedMs === 3000 && Array.isArray(c.liveActivity.items);
+  })());
 }
 
 console.log(`\nRESULT: ${pass} passed, ${fail} failed`);

@@ -96,6 +96,7 @@ export function normalizeRecruitmentConfig(raw = {}) {
       },
     },
     liveFeed: normalizeLiveFeedConfig(c.liveFeed),
+    liveActivity: normalizeLiveActivity(c.liveActivity),
     videos,
     testimonials,
     ...(c.stats ? { stats: c.stats } : {}),
@@ -148,6 +149,53 @@ export function normalizeLiveFeedConfig(raw = {}) {
     order:           l.order === 'chronological' ? 'chronological' : 'random',
     maxEvents:       clamp(num(l.maxEvents, 20), 1, 100),
     eventTypes,
+  };
+}
+
+// ── Live activity (inline "🔥 النشاط المباشر" section) ─────────────────────────
+// Presentation-only, fully admin-editable, demo data. No DB, no real PII — the
+// admin curates the activity items, the 4 stat numbers, the loop speed, and the
+// on/off toggle. The client just cycles the items with a smooth fade+slide.
+export const LIVE_ACTIVITY_MIN_SPEED = 1000;   // ms
+export const LIVE_ACTIVITY_MAX_SPEED = 10000;  // ms
+export const LIVE_ACTIVITY_DEFAULT_SPEED = 2500;
+
+export const DEFAULT_LIVE_ACTIVITY_ITEMS = [
+  { icon: '🟢', name: 'أمينة',  city: 'الدار البيضاء', activity: 'أكدت طلب جديد',   time: 'قبل 18 ثانية' },
+  { icon: '💰', name: 'فاطمة',  city: 'مراكش',         activity: 'ربحت 84 درهم',    time: 'قبل دقيقة' },
+  { icon: '📦', name: '',       city: 'الرباط',        activity: 'طلب جديد',        time: 'قبل دقيقتين' },
+  { icon: '🚚', name: '',       city: 'طنجة',          activity: 'تم تسليم طلب',     time: 'قبل 3 دقائق' },
+  { icon: '🎉', name: 'خديجة',  city: '',              activity: 'انضمت للمنصة',    time: 'قبل 4 دقائق' },
+];
+
+export const DEFAULT_LIVE_ACTIVITY_STATS = {
+  todayOrders: 128, todayDelivered: 96, todayCommissions: 3420, affiliatesOnline: 42,
+};
+
+export function normalizeLiveActivity(raw = {}) {
+  const a = raw && typeof raw === 'object' ? raw : {};
+  const s = a.stats && typeof a.stats === 'object' ? a.stats : {};
+  const rawItems = Array.isArray(a.items) ? a.items : null;
+  const items = (rawItems && rawItems.length ? rawItems : DEFAULT_LIVE_ACTIVITY_ITEMS)
+    .filter((it) => it && typeof it === 'object')
+    .map((it) => ({
+      icon:     String(it.icon || '🟢'),
+      name:     String(it.name || ''),
+      city:     String(it.city || ''),
+      activity: String(it.activity || ''),
+      time:     String(it.time || ''),
+    }))
+    .filter((it) => it.activity || it.name || it.city);
+  return {
+    enabled: a.enabled !== false,
+    speedMs: clamp(num(a.speedMs, LIVE_ACTIVITY_DEFAULT_SPEED), LIVE_ACTIVITY_MIN_SPEED, LIVE_ACTIVITY_MAX_SPEED),
+    stats: {
+      todayOrders:      Math.max(0, num(s.todayOrders, DEFAULT_LIVE_ACTIVITY_STATS.todayOrders)),
+      todayDelivered:   Math.max(0, num(s.todayDelivered, DEFAULT_LIVE_ACTIVITY_STATS.todayDelivered)),
+      todayCommissions: Math.max(0, num(s.todayCommissions, DEFAULT_LIVE_ACTIVITY_STATS.todayCommissions)),
+      affiliatesOnline: Math.max(0, num(s.affiliatesOnline, DEFAULT_LIVE_ACTIVITY_STATS.affiliatesOnline)),
+    },
+    items: items.length ? items : DEFAULT_LIVE_ACTIVITY_ITEMS,
   };
 }
 
