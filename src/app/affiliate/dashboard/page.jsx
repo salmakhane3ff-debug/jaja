@@ -12,6 +12,7 @@ import {
 } from "lucide-react";
 import UgcTab from "./UgcTab";
 import DepositTab from "./DepositTab";
+import LiveActivity from "@/components/LiveActivity";
 import { diffNewItems, shouldPlaySaleSound } from "@/lib/liveFeed";
 import { createSaleSound } from "./saleSound";
 import { resolveSupportLink } from "@/lib/whatsappSupport";
@@ -1743,6 +1744,10 @@ export default function AffiliateDashboard() {
               <StatCard icon={DollarSign}  label="Gains UGC total"        value={fmtMoney(ugcStats?.totalEarnings)} color="purple" sub="UGC" />
               <StatCard icon={TrendingUp}  label="Ventes UGC total"       value={ugcStats?.totalSales ?? "—"}       color="purple" sub="UGC" />
             </div>
+
+            {/* 🔥 النشاط المباشر — same shared server-side Live Activity engine as
+                the landing page (GET /api/live-activity). Placed below the stats. */}
+            <LiveActivity windowSize={4} showViewAll />
 
             {/* 🏆 Compétition du mois — moved here (where the bonus block used to be).
                 Same component reused inline; the standalone tab has been removed. */}

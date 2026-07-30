@@ -12,7 +12,7 @@ import {
   normalizeUgc, teamRangeFromTiers, normalizeLiveFeedConfig,
   maskFirstName, maskSurname, formatLiveFeedEvent,
   LIVE_FEED_EVENT_TYPES,
-  normalizeLiveActivity, pickActivityType, applyActivityToStats,
+  normalizeLiveActivity, pickActivityType, applyActivityToStats, driftOnline, relTime,
   LIVE_ACTIVITY_TYPES, DEFAULT_LIVE_ACTIVITY_PROBABILITIES,
   DEFAULT_LIVE_ACTIVITY_STATS, LIVE_ACTIVITY_DEFAULTS,
 } from "../src/lib/recruitmentCta.js";
@@ -157,13 +157,15 @@ console.log("11) Live activity config — generator engine, admin-editable:");
   ok("default interval 2–6s", d.intervalMinSec === 2 && d.intervalMaxSec === 6);
   ok("interval clamped to 1..30", (() => { const x = normalizeLiveActivity({ intervalMinSec: 0, intervalMaxSec: 999 }); return x.intervalMinSec === 1 && x.intervalMaxSec === 30; })());
   ok("interval min>max swapped", (() => { const x = normalizeLiveActivity({ intervalMinSec: 8, intervalMaxSec: 3 }); return x.intervalMinSec === 3 && x.intervalMaxSec === 8; })());
-  ok("default probabilities 45/25/15/8/7", (() => { const p = d.probabilities; return p.newOrder === 45 && p.delivered === 25 && p.commission === 15 && p.newAffiliate === 8 && p.onlineChange === 7; })());
-  ok("admin probabilities respected", normalizeLiveActivity({ probabilities: { newOrder: 90 } }).probabilities.newOrder === 90);
-  ok("all-zero probabilities fall back to defaults", (() => { const p = normalizeLiveActivity({ probabilities: { newOrder: 0, delivered: 0, commission: 0, newAffiliate: 0, onlineChange: 0 } }).probabilities; return p.newOrder === 45; })());
+  ok("six activity types incl. ugc + competition", LIVE_ACTIVITY_TYPES.length === 6 && LIVE_ACTIVITY_TYPES.includes("ugc") && LIVE_ACTIVITY_TYPES.includes("competition") && !LIVE_ACTIVITY_TYPES.includes("onlineChange"));
+  ok("default probabilities 40/22/15/13/6/4", (() => { const p = d.probabilities; return p.newOrder === 40 && p.delivered === 22 && p.commission === 15 && p.ugc === 13 && p.newAffiliate === 6 && p.competition === 4; })());
+  ok("admin probabilities respected", normalizeLiveActivity({ probabilities: { ugc: 90 } }).probabilities.ugc === 90);
+  ok("all-zero probabilities fall back to defaults", (() => { const p = normalizeLiveActivity({ probabilities: { newOrder: 0, delivered: 0, commission: 0, ugc: 0, newAffiliate: 0, competition: 0 } }).probabilities; return p.newOrder === 40; })());
   ok("commission range default 15..120", d.commissionMin === 15 && d.commissionMax === 120);
   ok("commission min>max swapped", (() => { const x = normalizeLiveActivity({ commissionMin: 200, commissionMax: 50 }); return x.commissionMin === 50 && x.commissionMax === 200; })());
+  ok("ugc defaults (maxVideos 8, sales/video 3..12)", d.ugcMaxVideos === 8 && d.ugcSalesPerVideoMin === 3 && d.ugcSalesPerVideoMax === 12);
+  ok("ugc sales/video min>max swapped", (() => { const x = normalizeLiveActivity({ ugcSalesPerVideoMin: 20, ugcSalesPerVideoMax: 4 }); return x.ugcSalesPerVideoMin === 4 && x.ugcSalesPerVideoMax === 20; })());
   ok("starting stats respected + floored", normalizeLiveActivity({ stats: { todayOrders: 500, todayDelivered: -3 } }).stats.todayOrders === 500 && normalizeLiveActivity({ stats: { todayDelivered: -3 } }).stats.todayDelivered === 0);
-  ok("persistence default on, can disable", d.persistence === true && normalizeLiveActivity({ persistence: false }).persistence === false);
   ok("resetToken coerced to string", typeof normalizeLiveActivity({ resetToken: 123 }).resetToken === "string");
   ok("names default to the big pool", d.names.length === MOROCCAN_FEMALE_NAMES.length);
   ok("admin can override names dataset", (() => { const x = normalizeLiveActivity({ names: ["أ", "ب", "أ"] }); return x.names.length === 2; })());
@@ -176,10 +178,10 @@ console.log("12) pickActivityType — respects weights, always returns a valid t
   const seq = [0.0, 0.5, 0.99];
   ok("always returns a known type", [0, 0.2, 0.5, 0.7, 0.95].every((r) => LIVE_ACTIVITY_TYPES.includes(pickActivityType(DEFAULT_LIVE_ACTIVITY_PROBABILITIES, () => r))));
   ok("weight 0 for a type is never chosen", (() => {
-    const probs = { newOrder: 0, delivered: 100, commission: 0, newAffiliate: 0, onlineChange: 0 };
+    const probs = { newOrder: 0, delivered: 100, commission: 0, ugc: 0, newAffiliate: 0, competition: 0 };
     return Array.from({ length: 50 }, (_, i) => pickActivityType(probs, () => i / 50)).every((t) => t === "delivered");
   })());
-  ok("first bucket picked at r=0", pickActivityType({ newOrder: 45, delivered: 25, commission: 15, newAffiliate: 8, onlineChange: 7 }, () => 0) === "newOrder");
+  ok("first bucket picked at r=0", pickActivityType(DEFAULT_LIVE_ACTIVITY_PROBABILITIES, () => 0) === "newOrder");
 }
 
 console.log("13) applyActivityToStats — realistic evolution, delivered stays below orders:");
@@ -192,12 +194,22 @@ console.log("13) applyActivityToStats — realistic evolution, delivered stays b
     const s = applyActivityToStats({ todayOrders: 5, todayDelivered: 5, todayCommissions: 0, affiliatesOnline: 3 }, "delivered", 10);
     return s.todayDelivered === 6 && s.todayOrders === 7 && s.todayOrders > s.todayDelivered;
   })());
-  ok("onlineChange fluctuates by ±1/+2 only (never huge)", (() => {
-    return [0, 0.4, 0.9].map((r) => applyActivityToStats(base, "onlineChange", 0, () => r).affiliatesOnline - base.affiliatesOnline).every((d) => [1, -1, 2].includes(d));
-  })());
-  ok("online never drops below 1", applyActivityToStats({ todayOrders: 1, todayDelivered: 0, todayCommissions: 0, affiliatesOnline: 1 }, "onlineChange", 0, () => 0.4).affiliatesOnline >= 1);
+  ok("ugc → +earnings to commissions (sales × commission passed in)", (() => { const s = applyActivityToStats(base, "ugc", 90); return s.todayCommissions === 190 && s.todayOrders === 10; })());
+  ok("competition → no counter change", (() => { const s = applyActivityToStats(base, "competition", 50); return s.todayCommissions === 100 && s.todayOrders === 10 && s.todayDelivered === 5; })());
   ok("newAffiliate can add an online (deterministic rnd<0.6)", applyActivityToStats(base, "newAffiliate", 0, () => 0.1).affiliatesOnline === 21);
   ok("returns a fresh object (no mutation)", (() => { const s = applyActivityToStats(base, "newOrder"); return s !== base && base.todayOrders === 10; })());
+
+  // Online drift (extracted helper): ±1 / +2 only, never a huge jump, floored at 1.
+  ok("driftOnline fluctuates by ±1/+2 only", [0, 0.4, 0.9].map((r) => driftOnline(20, () => r) - 20).every((x) => [1, -1, 2].includes(x)));
+  ok("driftOnline never drops below 1", driftOnline(1, () => 0.4) >= 1);
+}
+
+console.log("14) relTime — compact Darija relative time:");
+{
+  ok("seconds", relTime(15000) === "قبل 15 ث");
+  ok("floors to at least 1s", relTime(0) === "قبل 1 ث");
+  ok("minutes", relTime(60000) === "قبل 1 د");
+  ok("hours", relTime(3600000) === "قبل 1 س");
 }
 
 console.log(`\nRESULT: ${pass} passed, ${fail} failed`);

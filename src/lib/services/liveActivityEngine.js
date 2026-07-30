@@ -1,0 +1,133 @@
+/**
+ * src/lib/services/liveActivityEngine.js
+ * ─────────────────────────────────────────────────────────────────────────────
+ * The single, SERVER-SIDE Live Activity engine shared by BOTH the landing page
+ * (/tsajlim3ana) and the affiliate dashboard. There is exactly one source of
+ * truth: a stored rolling feed + four running counters advanced over time on the
+ * server. All clients poll /api/live-activity and therefore see the SAME events —
+ * no localStorage, no client-generated feed, no duplicated engine.
+ *
+ * Demo/presentation only — never real users or PII. Activities are generated from
+ * the large seeded name/city pool. UGC earnings are ALWAYS computed as
+ *   generatedSales × commissionPerSale   (the real UGC admin setting)
+ * at serve time, so changing the commission instantly updates every UGC activity.
+ *
+ * State is kept in the `live-activity-state` settings row (durable across
+ * restarts) plus a short in-memory cache to bound reads/writes. Counters reset at
+ * the business-day boundary and whenever the admin bumps the reset token.
+ * ─────────────────────────────────────────────────────────────────────────────
+ */
+import { getSettings, upsertSettings } from './settingsService.js';
+import { normalizeUgcSettings } from '../ugcSettings.js';
+import { businessDateKey } from '../ugcTime.js';
+import {
+  normalizeLiveActivity, pickActivityType, applyActivityToStats, driftOnline, relTime,
+} from '../recruitmentCta.js';
+import { LIVE_AVATAR_COLORS } from '../recruitmentLiveData.js';
+
+const STATE_KEY   = 'live-activity-state';
+const CACHE_MS    = 3000;   // serve the same snapshot for up to 3s
+const MAX_EVENTS  = 40;     // rolling feed length kept in state
+const MAX_CATCHUP = 3;      // never add more than this per advance → no huge jumps
+
+let _cache = { at: 0, data: null };
+
+const randInt = (min, max) => Math.floor(Math.random() * (max - min + 1)) + min;
+const pick = (arr) => arr[Math.floor(Math.random() * arr.length)];
+
+async function getUgcCommissionPerSale() {
+  try {
+    const s = normalizeUgcSettings(await getSettings('ugc'));
+    const v = Number(s.commissionPerSale);
+    return Number.isFinite(v) && v >= 0 ? v : 4;
+  } catch { return 4; }
+}
+
+// Build ONE stored event (public-safe, no PII beyond a first name). UGC events
+// store videos+sales only — earnings are computed live at serve time.
+function buildEvent(type, cfg, now) {
+  const name = pick(cfg.names) || 'مسوقة';
+  const city = pick(cfg.cities) || '';
+  const color = pick(LIVE_AVATAR_COLORS);
+  const base = { id: `${now}-${Math.random().toString(36).slice(2, 8)}`, type, name, color, at: now };
+
+  if (type === 'ugc') {
+    const videos = randInt(1, cfg.ugcMaxVideos);
+    const sales  = videos * randInt(cfg.ugcSalesPerVideoMin, cfg.ugcSalesPerVideoMax);
+    return { ...base, icon: '🎥', videos, sales };           // NO city, NO views, NO product
+  }
+  if (type === 'delivered')  return { ...base, icon: '🚚', city, activity: 'تم تسليم طلب', amount: randInt(cfg.commissionMin, cfg.commissionMax) };
+  if (type === 'commission') return { ...base, icon: '💰', activity: 'عمولة جديدة',        amount: randInt(cfg.commissionMin, cfg.commissionMax) };
+  if (type === 'newOrder')   return { ...base, icon: '📦', city, activity: 'طلب جديد' };
+  if (type === 'newAffiliate') return { ...base, icon: '👤', city, activity: 'انضمت للمنصة' };
+  return { ...base, icon: '🏆', activity: 'دخلات المنافسة ديال هاد الشهر' }; // competition
+}
+
+// Counter delta for an event (UGC earnings depend on the CURRENT commission).
+function counterAmount(ev, commissionPerSale) {
+  if (ev.type === 'ugc') return Math.round(ev.sales * commissionPerSale);
+  if (ev.type === 'delivered' || ev.type === 'commission') return ev.amount || 0;
+  return 0;
+}
+
+function freshState(cfg, dayKey, now) {
+  return { dayKey, resetToken: cfg.resetToken || '', counters: { ...cfg.stats }, events: [], lastTickAt: now };
+}
+
+/**
+ * Return the current live-activity snapshot, advancing the shared server state.
+ * @returns {Promise<{enabled:boolean, counters:object|null, events:Array, config:object|null}>}
+ */
+export async function getLiveActivitySnapshot() {
+  if (_cache.data && Date.now() - _cache.at < CACHE_MS) return _cache.data;
+
+  const cfg = normalizeLiveActivity((await getSettings('recruitment-landing').catch(() => null))?.liveActivity);
+  if (!cfg.enabled) {
+    const out = { enabled: false, counters: null, events: [], config: null };
+    _cache = { at: Date.now(), data: out };
+    return out;
+  }
+
+  const commissionPerSale = await getUgcCommissionPerSale();
+  const now = Date.now();
+  const today = businessDateKey(new Date());
+  const avgMs = ((cfg.intervalMinSec + cfg.intervalMaxSec) / 2) * 1000;
+
+  let state = await getSettings(STATE_KEY).catch(() => null);
+  if (!state || !Array.isArray(state.events) || state.dayKey !== today || state.resetToken !== (cfg.resetToken || '')) {
+    state = freshState(cfg, today, now);
+  }
+
+  // Advance the shared feed by whole ticks since we last advanced (capped).
+  const elapsedTicks = Math.floor((now - state.lastTickAt) / avgMs);
+  if (elapsedTicks > 0) {
+    const add = Math.min(elapsedTicks, MAX_CATCHUP);
+    for (let k = 0; k < add; k++) {
+      const type = pickActivityType(cfg.probabilities);
+      const ev = buildEvent(type, cfg, now);
+      state.counters = applyActivityToStats(state.counters, type, counterAmount(ev, commissionPerSale));
+      if (Math.random() < 0.15) state.counters.affiliatesOnline = driftOnline(state.counters.affiliatesOnline); // slow fluctuation
+      state.events.unshift(ev);
+    }
+    state.events = state.events.slice(0, MAX_EVENTS);
+    // Discard a large idle backlog (jump to now) so counters never leap.
+    state.lastTickAt = elapsedTicks > MAX_CATCHUP ? now : state.lastTickAt + elapsedTicks * avgMs;
+    await upsertSettings(STATE_KEY, state).catch(() => {});
+  }
+
+  // Serve: compute relative time + live UGC earnings (respects current commission).
+  const events = state.events.map((e) => {
+    const time = relTime(now - (e.at || now));
+    if (e.type === 'ugc') return { ...e, time, earnings: Math.round(e.sales * commissionPerSale) };
+    return { ...e, time };
+  });
+
+  const out = {
+    enabled: true,
+    counters: state.counters,
+    events,
+    config: { intervalMinSec: cfg.intervalMinSec, intervalMaxSec: cfg.intervalMaxSec },
+  };
+  _cache = { at: now, data: out };
+  return out;
+}

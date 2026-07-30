@@ -159,16 +159,17 @@ export function normalizeLiveFeedConfig(raw = {}) {
 // counters realistically (delivered stays below orders, online fluctuates by
 // ±1/±2, commissions grow). Everything below is admin-editable; the datasets
 // fall back to the built-in pools (≥300 names / ≥150 cities) when not overridden.
-export const LIVE_ACTIVITY_TYPES = ['newOrder', 'delivered', 'commission', 'newAffiliate', 'onlineChange'];
+export const LIVE_ACTIVITY_TYPES = ['newOrder', 'delivered', 'commission', 'ugc', 'newAffiliate', 'competition'];
 
 export const DEFAULT_LIVE_ACTIVITY_STATS = {
   todayOrders: 128, todayDelivered: 96, todayCommissions: 3420, affiliatesOnline: 42,
 };
 export const DEFAULT_LIVE_ACTIVITY_PROBABILITIES = {
-  newOrder: 45, delivered: 25, commission: 15, newAffiliate: 8, onlineChange: 7,
+  newOrder: 40, delivered: 22, commission: 15, ugc: 13, newAffiliate: 6, competition: 4,
 };
 export const LIVE_ACTIVITY_DEFAULTS = {
   intervalMinSec: 2, intervalMaxSec: 6, commissionMin: 15, commissionMax: 120,
+  ugcMaxVideos: 8, ugcSalesPerVideoMin: 3, ugcSalesPerVideoMax: 12,
 };
 
 export function normalizeLiveActivity(raw = {}) {
@@ -183,6 +184,10 @@ export function normalizeLiveActivity(raw = {}) {
   let cMin = Math.max(0, num(a.commissionMin, LIVE_ACTIVITY_DEFAULTS.commissionMin));
   let cMax = Math.max(0, num(a.commissionMax, LIVE_ACTIVITY_DEFAULTS.commissionMax));
   if (cMin > cMax) [cMin, cMax] = [cMax, cMin];
+
+  let sMin = Math.max(1, num(a.ugcSalesPerVideoMin, LIVE_ACTIVITY_DEFAULTS.ugcSalesPerVideoMin));
+  let sMax = Math.max(1, num(a.ugcSalesPerVideoMax, LIVE_ACTIVITY_DEFAULTS.ugcSalesPerVideoMax));
+  if (sMin > sMax) [sMin, sMax] = [sMax, sMin];
 
   const probabilities = {};
   for (const t of LIVE_ACTIVITY_TYPES) probabilities[t] = Math.max(0, num(p[t], DEFAULT_LIVE_ACTIVITY_PROBABILITIES[t]));
@@ -207,7 +212,9 @@ export function normalizeLiveActivity(raw = {}) {
     probabilities,
     commissionMin: cMin,
     commissionMax: cMax,
-    persistence: a.persistence !== false,
+    ugcMaxVideos: clamp(num(a.ugcMaxVideos, LIVE_ACTIVITY_DEFAULTS.ugcMaxVideos), 1, 50),
+    ugcSalesPerVideoMin: sMin,
+    ugcSalesPerVideoMax: sMax,
     resetToken: String(a.resetToken || ''),
     names: cleanList(a.names, MOROCCAN_FEMALE_NAMES),
     cities: cleanList(a.cities, MOROCCAN_CITIES),
@@ -248,20 +255,33 @@ export function applyActivityToStats(stats, type, commission = 0, rnd = Math.ran
       s.todayCommissions += comm;
       break;
     case 'commission':
+    case 'ugc': // comm = UGC earnings (sales × commissionPerSale)
       s.todayCommissions += comm;
       break;
     case 'newAffiliate':
       if (rnd() < 0.6) s.affiliatesOnline += 1; // increase online "randomly if needed"
       break;
-    case 'onlineChange': {
-      const delta = [1, -1, 2][Math.floor(rnd() * 3)]; // slow fluctuation, never huge
-      s.affiliatesOnline = Math.max(1, s.affiliatesOnline + delta);
-      break;
-    }
+    case 'competition':
+      break; // no counter change
     default:
       break;
   }
   return s;
+}
+
+/** Slow online-affiliates drift (±1 / +2), never a huge jump. Pure. */
+export function driftOnline(affiliatesOnline, rnd = Math.random) {
+  const delta = [1, -1, 2][Math.floor(rnd() * 3)];
+  return Math.max(1, Math.round(Number(affiliatesOnline) || 0) + delta);
+}
+
+/** Relative Darija time, compact style ("قبل 15 ث", "قبل 1 د", "قبل 2 س"). Pure. */
+export function relTime(ageMs) {
+  const s = Math.max(1, Math.round((Number(ageMs) || 0) / 1000));
+  if (s < 60) return `قبل ${s} ث`;
+  const m = Math.round(s / 60);
+  if (m < 60) return `قبل ${m} د`;
+  return `قبل ${Math.round(m / 60)} س`;
 }
 
 /** First name only (privacy). "Sara Alaoui" → "Sara". */

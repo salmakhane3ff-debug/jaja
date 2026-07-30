@@ -1228,7 +1228,8 @@ function RecruitmentLandingPanel() {
       stats: { ...DEFAULT_LIVE_ACTIVITY_STATS },
       probabilities: { ...DEFAULT_LIVE_ACTIVITY_PROBABILITIES },
       commissionMin: LIVE_ACTIVITY_DEFAULTS.commissionMin, commissionMax: LIVE_ACTIVITY_DEFAULTS.commissionMax,
-      persistence: true, resetToken: "", namesText: "", citiesText: "",
+      ugcMaxVideos: LIVE_ACTIVITY_DEFAULTS.ugcMaxVideos, ugcSalesPerVideoMin: LIVE_ACTIVITY_DEFAULTS.ugcSalesPerVideoMin, ugcSalesPerVideoMax: LIVE_ACTIVITY_DEFAULTS.ugcSalesPerVideoMax,
+      resetToken: "", namesText: "", citiesText: "",
     },
     videos: [],
     testimonials: [],
@@ -1300,7 +1301,9 @@ function RecruitmentLandingPanel() {
             probabilities: LIVE_ACTIVITY_TYPES.reduce((a, t) => (a[t] = numOr(raw.liveActivity?.probabilities?.[t], DEFAULT_LIVE_ACTIVITY_PROBABILITIES[t]), a), {}),
             commissionMin: numOr(raw.liveActivity?.commissionMin, LIVE_ACTIVITY_DEFAULTS.commissionMin),
             commissionMax: numOr(raw.liveActivity?.commissionMax, LIVE_ACTIVITY_DEFAULTS.commissionMax),
-            persistence: raw.liveActivity?.persistence !== false,
+            ugcMaxVideos: numOr(raw.liveActivity?.ugcMaxVideos, LIVE_ACTIVITY_DEFAULTS.ugcMaxVideos),
+            ugcSalesPerVideoMin: numOr(raw.liveActivity?.ugcSalesPerVideoMin, LIVE_ACTIVITY_DEFAULTS.ugcSalesPerVideoMin),
+            ugcSalesPerVideoMax: numOr(raw.liveActivity?.ugcSalesPerVideoMax, LIVE_ACTIVITY_DEFAULTS.ugcSalesPerVideoMax),
             resetToken: String(raw.liveActivity?.resetToken || ""),
             namesText: Array.isArray(raw.liveActivity?.names) ? raw.liveActivity.names.join("\n") : "",
             citiesText: Array.isArray(raw.liveActivity?.cities) ? raw.liveActivity.cities.join("\n") : "",
@@ -1336,7 +1339,8 @@ function RecruitmentLandingPanel() {
               enabled: la.enabled, intervalMinSec: la.intervalMinSec, intervalMaxSec: la.intervalMaxSec,
               stats: la.stats, probabilities: la.probabilities,
               commissionMin: la.commissionMin, commissionMax: la.commissionMax,
-              persistence: la.persistence, resetToken: la.resetToken,
+              ugcMaxVideos: la.ugcMaxVideos, ugcSalesPerVideoMin: la.ugcSalesPerVideoMin, ugcSalesPerVideoMax: la.ugcSalesPerVideoMax,
+              resetToken: la.resetToken,
               ...(names.length ? { names } : {}), ...(cities.length ? { cities } : {}),
             };
           })(),
@@ -1604,16 +1608,17 @@ function RecruitmentLandingPanel() {
                 </div>
               </div>
 
-              {/* Probabilities + commission range */}
+              {/* Probabilities (6 types) */}
               <div>
                 <p className="text-[11px] text-gray-500 mb-1">Probabilités des activités (poids) :</p>
-                <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
                   {[
-                    { k: "newOrder", l: "Nouv. commande" },
-                    { k: "delivered", l: "Livrée" },
-                    { k: "commission", l: "Commission" },
-                    { k: "newAffiliate", l: "Nouv. affiliée" },
-                    { k: "onlineChange", l: "Statut en ligne" },
+                    { k: "newOrder", l: "📦 Nouv. commande" },
+                    { k: "delivered", l: "🚚 Livrée" },
+                    { k: "commission", l: "💰 Commission" },
+                    { k: "ugc", l: "🎥 UGC" },
+                    { k: "newAffiliate", l: "👤 Nouv. affiliée" },
+                    { k: "competition", l: "🏆 Compétition" },
                   ].map(({ k, l }) => (
                     <label key={k} className="text-[11px] text-gray-600">{l}
                       <input type="number" min={0} className={fieldCls} value={cfg.liveActivity.probabilities[k]} onChange={(e) => patchLAProb(k, numOr(e.target.value, 0))} />
@@ -1622,12 +1627,29 @@ function RecruitmentLandingPanel() {
                 </div>
               </div>
               <div className="grid grid-cols-2 gap-2">
-                <label className="text-[11px] text-gray-600">Commission min (DH)
+                <label className="text-[11px] text-gray-600">Commission min (DH) — commande/livraison
                   <input type="number" min={0} className={fieldCls} value={cfg.liveActivity.commissionMin} onChange={(e) => patchLA("commissionMin", numOr(e.target.value, 0))} />
                 </label>
                 <label className="text-[11px] text-gray-600">Commission max (DH)
                   <input type="number" min={0} className={fieldCls} value={cfg.liveActivity.commissionMax} onChange={(e) => patchLA("commissionMax", numOr(e.target.value, 0))} />
                 </label>
+              </div>
+
+              {/* UGC generation params */}
+              <div>
+                <p className="text-[11px] text-gray-500 mb-1">UGC — vidéos & ventes générées :</p>
+                <div className="grid grid-cols-3 gap-2">
+                  <label className="text-[11px] text-gray-600">Max vidéos
+                    <input type="number" min={1} max={50} className={fieldCls} value={cfg.liveActivity.ugcMaxVideos} onChange={(e) => patchLA("ugcMaxVideos", numOr(e.target.value, 8))} />
+                  </label>
+                  <label className="text-[11px] text-gray-600">Ventes/vidéo min
+                    <input type="number" min={1} className={fieldCls} value={cfg.liveActivity.ugcSalesPerVideoMin} onChange={(e) => patchLA("ugcSalesPerVideoMin", numOr(e.target.value, 3))} />
+                  </label>
+                  <label className="text-[11px] text-gray-600">Ventes/vidéo max
+                    <input type="number" min={1} className={fieldCls} value={cfg.liveActivity.ugcSalesPerVideoMax} onChange={(e) => patchLA("ugcSalesPerVideoMax", numOr(e.target.value, 12))} />
+                  </label>
+                </div>
+                <p className="text-[11px] text-gray-400 mt-1">Gains UGC = ventes × commission par vente (réglée dans <strong>UGC → commissionPerSale</strong>). Non codé en dur : si vous la changez, toutes les activités UGC se recalculent.</p>
               </div>
 
               {/* Datasets */}
@@ -1640,18 +1662,15 @@ function RecruitmentLandingPanel() {
                 </label>
               </div>
 
-              {/* Persistence + reset */}
+              {/* Reset (server-side shared state) */}
               <div className="flex flex-wrap items-center justify-between gap-2">
-                <label className="flex items-center gap-1.5 text-xs text-gray-600">
-                  <input type="checkbox" checked={cfg.liveActivity.persistence} onChange={(e) => patchLA("persistence", e.target.checked)} />
-                  Persistance (localStorage) — l'actualisation ne remet pas à zéro
-                </label>
+                <p className="text-[11px] text-gray-500">Moteur serveur partagé (landing + dashboard) — aucune donnée locale.</p>
                 <button type="button" onClick={() => patchLA("resetToken", String(Date.now()))}
                   className="flex items-center gap-1.5 text-xs font-medium bg-red-50 hover:bg-red-100 text-red-600 rounded-lg px-2.5 py-1.5">
                   <RefreshCw className="w-3.5 h-3.5" /> Réinitialiser la démo {cfg.liveActivity.resetToken ? "(en attente d'enregistrement)" : ""}
                 </button>
               </div>
-              <p className="text-[11px] text-gray-400">« Réinitialiser » force tous les visiteurs à repartir des valeurs de départ au prochain chargement (après enregistrement).</p>
+              <p className="text-[11px] text-gray-400">« Réinitialiser » remet le flux et les compteurs partagés aux valeurs de départ (après enregistrement). Les compteurs se réinitialisent aussi chaque jour.</p>
             </div>
 
             {/* Videos */}
