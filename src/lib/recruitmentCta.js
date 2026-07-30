@@ -8,6 +8,7 @@
  * ─────────────────────────────────────────────────────────────────────────────
  */
 import { normalizeSupportSettings, buildWhatsappUrl } from './whatsappSupport.js';
+import { MOROCCAN_FEMALE_NAMES, MOROCCAN_CITIES } from './recruitmentLiveData.js';
 
 // Fixed Darija message opened when a visitor taps a "join us" CTA.
 export const RECRUITMENT_WA_MESSAGE =
@@ -152,51 +153,115 @@ export function normalizeLiveFeedConfig(raw = {}) {
   };
 }
 
-// ── Live activity (inline "🔥 النشاط المباشر" section) ─────────────────────────
-// Presentation-only, fully admin-editable, demo data. No DB, no real PII — the
-// admin curates the activity items, the 4 stat numbers, the loop speed, and the
-// on/off toggle. The client just cycles the items with a smooth fade+slide.
-export const LIVE_ACTIVITY_MIN_SPEED = 1000;   // ms
-export const LIVE_ACTIVITY_MAX_SPEED = 10000;  // ms
-export const LIVE_ACTIVITY_DEFAULT_SPEED = 2500;
-
-export const DEFAULT_LIVE_ACTIVITY_ITEMS = [
-  { icon: '🟢', name: 'أمينة',  city: 'الدار البيضاء', activity: 'أكدت طلب جديد',   time: 'قبل 18 ثانية' },
-  { icon: '💰', name: 'فاطمة',  city: 'مراكش',         activity: 'ربحت 84 درهم',    time: 'قبل دقيقة' },
-  { icon: '📦', name: '',       city: 'الرباط',        activity: 'طلب جديد',        time: 'قبل دقيقتين' },
-  { icon: '🚚', name: '',       city: 'طنجة',          activity: 'تم تسليم طلب',     time: 'قبل 3 دقائق' },
-  { icon: '🎉', name: 'خديجة',  city: '',              activity: 'انضمت للمنصة',    time: 'قبل 4 دقائق' },
-];
+// ── Live activity (inline "🔥 النشاط المباشر" live dashboard) ──────────────────
+// Presentation-only demo. No DB, no real PII. A client-side engine GENERATES
+// activities continuously from a large seeded name/city pool, evolving the four
+// counters realistically (delivered stays below orders, online fluctuates by
+// ±1/±2, commissions grow). Everything below is admin-editable; the datasets
+// fall back to the built-in pools (≥300 names / ≥150 cities) when not overridden.
+export const LIVE_ACTIVITY_TYPES = ['newOrder', 'delivered', 'commission', 'newAffiliate', 'onlineChange'];
 
 export const DEFAULT_LIVE_ACTIVITY_STATS = {
   todayOrders: 128, todayDelivered: 96, todayCommissions: 3420, affiliatesOnline: 42,
+};
+export const DEFAULT_LIVE_ACTIVITY_PROBABILITIES = {
+  newOrder: 45, delivered: 25, commission: 15, newAffiliate: 8, onlineChange: 7,
+};
+export const LIVE_ACTIVITY_DEFAULTS = {
+  intervalMinSec: 2, intervalMaxSec: 6, commissionMin: 15, commissionMax: 120,
 };
 
 export function normalizeLiveActivity(raw = {}) {
   const a = raw && typeof raw === 'object' ? raw : {};
   const s = a.stats && typeof a.stats === 'object' ? a.stats : {};
-  const rawItems = Array.isArray(a.items) ? a.items : null;
-  const items = (rawItems && rawItems.length ? rawItems : DEFAULT_LIVE_ACTIVITY_ITEMS)
-    .filter((it) => it && typeof it === 'object')
-    .map((it) => ({
-      icon:     String(it.icon || '🟢'),
-      name:     String(it.name || ''),
-      city:     String(it.city || ''),
-      activity: String(it.activity || ''),
-      time:     String(it.time || ''),
-    }))
-    .filter((it) => it.activity || it.name || it.city);
+  const p = a.probabilities && typeof a.probabilities === 'object' ? a.probabilities : {};
+
+  let minI = clamp(num(a.intervalMinSec, LIVE_ACTIVITY_DEFAULTS.intervalMinSec), 1, 30);
+  let maxI = clamp(num(a.intervalMaxSec, LIVE_ACTIVITY_DEFAULTS.intervalMaxSec), 1, 30);
+  if (minI > maxI) [minI, maxI] = [maxI, minI];
+
+  let cMin = Math.max(0, num(a.commissionMin, LIVE_ACTIVITY_DEFAULTS.commissionMin));
+  let cMax = Math.max(0, num(a.commissionMax, LIVE_ACTIVITY_DEFAULTS.commissionMax));
+  if (cMin > cMax) [cMin, cMax] = [cMax, cMin];
+
+  const probabilities = {};
+  for (const t of LIVE_ACTIVITY_TYPES) probabilities[t] = Math.max(0, num(p[t], DEFAULT_LIVE_ACTIVITY_PROBABILITIES[t]));
+  // Guard against an all-zero probability set (would stall the engine).
+  if (LIVE_ACTIVITY_TYPES.every((t) => probabilities[t] === 0)) Object.assign(probabilities, DEFAULT_LIVE_ACTIVITY_PROBABILITIES);
+
+  const cleanList = (v, fallback) => {
+    const arr = Array.isArray(v) ? v.map((x) => String(x).trim()).filter(Boolean) : [];
+    return arr.length ? [...new Set(arr)] : fallback;
+  };
+
   return {
     enabled: a.enabled !== false,
-    speedMs: clamp(num(a.speedMs, LIVE_ACTIVITY_DEFAULT_SPEED), LIVE_ACTIVITY_MIN_SPEED, LIVE_ACTIVITY_MAX_SPEED),
+    intervalMinSec: minI,
+    intervalMaxSec: maxI,
     stats: {
-      todayOrders:      Math.max(0, num(s.todayOrders, DEFAULT_LIVE_ACTIVITY_STATS.todayOrders)),
-      todayDelivered:   Math.max(0, num(s.todayDelivered, DEFAULT_LIVE_ACTIVITY_STATS.todayDelivered)),
-      todayCommissions: Math.max(0, num(s.todayCommissions, DEFAULT_LIVE_ACTIVITY_STATS.todayCommissions)),
-      affiliatesOnline: Math.max(0, num(s.affiliatesOnline, DEFAULT_LIVE_ACTIVITY_STATS.affiliatesOnline)),
+      todayOrders:      Math.max(0, Math.round(num(s.todayOrders, DEFAULT_LIVE_ACTIVITY_STATS.todayOrders))),
+      todayDelivered:   Math.max(0, Math.round(num(s.todayDelivered, DEFAULT_LIVE_ACTIVITY_STATS.todayDelivered))),
+      todayCommissions: Math.max(0, Math.round(num(s.todayCommissions, DEFAULT_LIVE_ACTIVITY_STATS.todayCommissions))),
+      affiliatesOnline: Math.max(0, Math.round(num(s.affiliatesOnline, DEFAULT_LIVE_ACTIVITY_STATS.affiliatesOnline))),
     },
-    items: items.length ? items : DEFAULT_LIVE_ACTIVITY_ITEMS,
+    probabilities,
+    commissionMin: cMin,
+    commissionMax: cMax,
+    persistence: a.persistence !== false,
+    resetToken: String(a.resetToken || ''),
+    names: cleanList(a.names, MOROCCAN_FEMALE_NAMES),
+    cities: cleanList(a.cities, MOROCCAN_CITIES),
   };
+}
+
+/** Pick an activity type by weight. Returns a key from LIVE_ACTIVITY_TYPES. */
+export function pickActivityType(probabilities, rnd = Math.random) {
+  const entries = LIVE_ACTIVITY_TYPES.map((t) => [t, Math.max(0, Number(probabilities?.[t]) || 0)]);
+  const total = entries.reduce((a, [, w]) => a + w, 0);
+  if (total <= 0) return 'newOrder';
+  let r = rnd() * total;
+  for (const [t, w] of entries) { if (r < w) return t; r -= w; }
+  return entries[entries.length - 1][0];
+}
+
+/**
+ * Apply one generated activity of `type` to the running counters, enforcing the
+ * realism rules (delivered < orders, online fluctuates slowly, values only grow
+ * except online). Pure: returns a NEW stats object. `commission` is the amount to
+ * add for delivered/commission events.
+ */
+export function applyActivityToStats(stats, type, commission = 0, rnd = Math.random) {
+  const s = {
+    todayOrders:      Math.max(0, Math.round(num(stats?.todayOrders, 0))),
+    todayDelivered:   Math.max(0, Math.round(num(stats?.todayDelivered, 0))),
+    todayCommissions: Math.max(0, Math.round(num(stats?.todayCommissions, 0))),
+    affiliatesOnline: Math.max(0, Math.round(num(stats?.affiliatesOnline, 0))),
+  };
+  const comm = Math.max(0, Math.round(num(commission, 0)));
+  switch (type) {
+    case 'newOrder':
+      s.todayOrders += 1;
+      break;
+    case 'delivered':
+      s.todayDelivered += 1;
+      if (s.todayDelivered >= s.todayOrders) s.todayOrders = s.todayDelivered + 1; // delivered stays below orders
+      s.todayCommissions += comm;
+      break;
+    case 'commission':
+      s.todayCommissions += comm;
+      break;
+    case 'newAffiliate':
+      if (rnd() < 0.6) s.affiliatesOnline += 1; // increase online "randomly if needed"
+      break;
+    case 'onlineChange': {
+      const delta = [1, -1, 2][Math.floor(rnd() * 3)]; // slow fluctuation, never huge
+      s.affiliatesOnline = Math.max(1, s.affiliatesOnline + delta);
+      break;
+    }
+    default:
+      break;
+  }
+  return s;
 }
 
 /** First name only (privacy). "Sara Alaoui" → "Sara". */

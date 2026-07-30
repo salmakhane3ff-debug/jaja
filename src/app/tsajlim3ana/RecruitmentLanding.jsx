@@ -16,7 +16,8 @@ import {
   CheckCircle, LayoutDashboard, LineChart, Headphones, ChevronLeft, ChevronRight,
   Star, ChevronDown, MessageCircle, Users, Trophy, PackageCheck, X,
 } from "lucide-react";
-import { publicVideos, publicTestimonials, maskSurname } from "@/lib/recruitmentCta";
+import { publicVideos, publicTestimonials, maskSurname, pickActivityType, applyActivityToStats } from "@/lib/recruitmentCta";
+import { LIVE_AVATAR_COLORS } from "@/lib/recruitmentLiveData";
 
 function track(event) {
   try {
@@ -430,64 +431,119 @@ function ReferralHowItWorks() {
   );
 }
 
-// ── Live activity (🔥 النشاط المباشر) — admin-curated demo feed, looped smoothly ─
+// ── Live activity (🔥 النشاط المباشر) — client-side demo "live dashboard" ───────
+// A generator engine: every 2–6s (configurable) it emits one activity from a
+// large seeded name/city pool, evolves the four counters realistically (CountUp),
+// persists them to localStorage, and never repeats the same person. No backend.
 const LIVE_STAT_META = [
   { key: "todayOrders",      icon: "📦", label: "طلبات اليوم" },
   { key: "todayDelivered",   icon: "🚚", label: "مسلمة اليوم" },
   { key: "todayCommissions", icon: "💰", label: "عمولات اليوم", suffix: " د.م" },
   { key: "affiliatesOnline", icon: "🟢", label: "مسوقات متصلات" },
 ];
+const LIVE_WINDOW = 5;
+const LIVE_STORE_KEY = "tsajlim_live_activity_v1";
+const randInt = (min, max) => Math.floor(Math.random() * (max - min + 1)) + min;
+const pickOne = (arr) => arr[Math.floor(Math.random() * arr.length)];
+
+function randomLiveTime() {
+  const r = Math.random();
+  if (r < 0.6) return `قبل ${randInt(2, 40)} ثانية`;
+  if (r < 0.85) return "قبل دقيقة";
+  return `قبل ${randInt(2, 9)} دقائق`;
+}
+
+// Build one display event (also computes the commission amount to apply).
+function makeLiveEvent(cfg, keyRef, forcedType) {
+  const type = forcedType || pickActivityType(cfg.probabilities);
+  const name = pickOne(cfg.names) || "مسوقة";
+  const city = pickOne(cfg.cities) || "";
+  const color = pickOne(LIVE_AVATAR_COLORS);
+  let icon = "🟢", activity = "", commission = 0;
+  if (type === "newOrder")           { icon = "📦"; activity = "دارت طلب جديد"; }
+  else if (type === "delivered")     { icon = "🚚"; commission = randInt(cfg.commissionMin, cfg.commissionMax); activity = "تسلم طلب بنجاح"; }
+  else if (type === "commission")    { icon = "💰"; commission = randInt(cfg.commissionMin, cfg.commissionMax); activity = `ربحت ${commission} درهم`; }
+  else if (type === "newAffiliate")  { icon = "🎉"; activity = "انضمت للمنصة"; }
+  else if (type === "onlineChange")  { icon = "🟢"; activity = "ولات متصلة دابا"; }
+  return { _k: keyRef.current++, type, icon, name, city, activity, time: randomLiveTime(), color, commission };
+}
 
 function LiveStat({ icon, label, value, suffix }) {
-  const [v, ref] = useCountUp(value);
   return (
-    <div ref={ref} className="rounded-2xl bg-white border border-gray-100 shadow-sm px-3 py-4 text-center">
+    <div className="rounded-2xl bg-white border border-gray-100 shadow-sm px-3 py-4 text-center">
       <div className="text-xl mb-1">{icon}</div>
-      <p className="text-lg font-black text-gray-900 tabular-nums">{v.toLocaleString("en-US")}{suffix || ""}</p>
+      <p className="text-lg font-black text-gray-900 tabular-nums"><CountUpNumber value={value} />{suffix || ""}</p>
       <p className="text-[11px] text-gray-500 mt-0.5 leading-tight">{label}</p>
     </div>
   );
 }
 
 function ActivityRow({ item, animate }) {
-  const bold  = item.name ? (item.city ? `${item.name} من ${item.city}` : item.name) : item.activity;
-  const muted = item.name ? item.activity : item.city;
+  const bold = item.city ? `${item.name} من ${item.city}` : item.name;
   return (
-    <div className={`flex items-center gap-3 bg-white rounded-2xl border border-gray-100 px-3.5 py-3 ${animate ? "animate-[laSlideIn_0.5s_ease]" : ""}`}>
-      <div className="w-10 h-10 rounded-full bg-rose-50 flex items-center justify-center text-lg shrink-0">{item.icon}</div>
+    <div className={`flex items-center gap-3 bg-white rounded-2xl border border-gray-100 px-3.5 py-3 ${animate ? "animate-[laSlideIn_0.45s_ease]" : ""}`}>
+      <div className="relative shrink-0">
+        <div className="w-10 h-10 rounded-full flex items-center justify-center text-white text-sm font-black" style={{ background: item.color || "#f43f5e" }}>{(item.name || "?").slice(0, 1)}</div>
+        <span className="absolute -bottom-1 -left-1 w-5 h-5 rounded-full bg-white shadow flex items-center justify-center text-[11px]">{item.icon}</span>
+      </div>
       <div className="flex-1 min-w-0">
         <p className="text-sm font-bold text-gray-800 truncate">{bold}</p>
-        {muted && <p className="text-xs text-gray-500 truncate">{muted}</p>}
+        <p className="text-xs text-gray-500 truncate">{item.activity}</p>
       </div>
       <span className="text-[11px] text-gray-400 shrink-0 whitespace-nowrap">{item.time}</span>
     </div>
   );
 }
 
-const LIVE_WINDOW = 4;
-
-function LiveActivitySection({ activity }) {
-  const items = activity?.items || [];
-  const [feed, setFeed] = useState(() => items.slice(0, LIVE_WINDOW).map((it, i) => ({ ...it, _k: i })));
-  const nextRef = useRef(Math.min(LIVE_WINDOW, items.length));
-  const keyRef  = useRef(1000);
+function LiveActivitySection({ activity: cfg }) {
+  const [statsView, setStatsView] = useState(cfg.stats);
+  const [feed, setFeed] = useState([]);      // filled client-side (avoids SSR/hydration mismatch)
+  const [reduce, setReduce] = useState(false);
+  const statsRef = useRef(cfg.stats);
+  const keyRef = useRef(1);
 
   useEffect(() => {
-    if (items.length <= 1) return;
-    const reduce = typeof window !== "undefined" && window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
-    if (reduce) return; // reduced-motion: keep the initial list static, never animate
-    const speed = activity.speedMs || 2500;
-    let stopped = false;
-    const id = setInterval(() => {
-      if (stopped || document.visibilityState === "hidden") return; // pause when tab hidden
-      const item = items[nextRef.current % items.length];
-      nextRef.current += 1;
-      setFeed((prev) => [{ ...item, _k: keyRef.current++ }, ...prev].slice(0, LIVE_WINDOW));
-    }, speed);
-    return () => { stopped = true; clearInterval(id); };
-  }, [items, activity.speedMs]);
+    const isReduce = typeof window !== "undefined" && window.matchMedia?.("(prefers-reduced-motion: reduce)").matches;
+    setReduce(isReduce);
 
-  if (!items.length) return null;
+    // Persistence: restore counters unless the admin bumped the reset token.
+    let init = cfg.stats;
+    if (cfg.persistence) {
+      try {
+        const saved = JSON.parse(localStorage.getItem(LIVE_STORE_KEY) || "null");
+        if (saved && saved.resetToken === (cfg.resetToken || "") && saved.stats) init = saved.stats;
+        else localStorage.setItem(LIVE_STORE_KEY, JSON.stringify({ resetToken: cfg.resetToken || "", stats: cfg.stats }));
+      } catch {}
+    }
+    statsRef.current = init;
+    setStatsView(init);
+
+    // Seed the visible feed (display only — does not move counters).
+    setFeed(Array.from({ length: LIVE_WINDOW }, () => makeLiveEvent(cfg, keyRef)));
+
+    if (!cfg.enabled) return;
+
+    const persist = (st) => {
+      if (!cfg.persistence) return;
+      try { localStorage.setItem(LIVE_STORE_KEY, JSON.stringify({ resetToken: cfg.resetToken || "", stats: st })); } catch {}
+    };
+    let stopped = false, timer;
+    const gap = () => (cfg.intervalMinSec + Math.random() * (cfg.intervalMaxSec - cfg.intervalMinSec)) * 1000;
+    const tick = () => {
+      if (stopped) return;
+      if (document.visibilityState !== "hidden") { // pause generation while the tab is hidden
+        const type = pickActivityType(cfg.probabilities);
+        const ev = makeLiveEvent(cfg, keyRef, type);
+        statsRef.current = applyActivityToStats(statsRef.current, type, ev.commission);
+        setStatsView(statsRef.current);
+        setFeed((prev) => [ev, ...prev].slice(0, LIVE_WINDOW));
+        persist(statsRef.current);
+      }
+      timer = setTimeout(tick, gap());
+    };
+    timer = setTimeout(tick, gap());
+    return () => { stopped = true; clearTimeout(timer); };
+  }, [cfg]);
 
   return (
     <section id="live-activity" className="max-w-5xl mx-auto px-4 py-10">
@@ -505,11 +561,11 @@ function LiveActivitySection({ activity }) {
         <div className="grid lg:grid-cols-2 gap-5 items-start">
           <div className="grid grid-cols-2 gap-3">
             {LIVE_STAT_META.map((m) => (
-              <LiveStat key={m.key} icon={m.icon} label={m.label} value={activity.stats?.[m.key] || 0} suffix={m.suffix} />
+              <LiveStat key={m.key} icon={m.icon} label={m.label} value={statsView?.[m.key] || 0} suffix={m.suffix} />
             ))}
           </div>
           <div className="space-y-2.5 overflow-hidden" style={{ minHeight: LIVE_WINDOW * 70 }}>
-            {feed.map((it, i) => <ActivityRow key={it._k} item={it} animate={i === 0} />)}
+            {feed.map((it, i) => <ActivityRow key={it._k} item={it} animate={!reduce && i === 0} />)}
           </div>
         </div>
       </div>
