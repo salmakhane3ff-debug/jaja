@@ -154,6 +154,49 @@ function CopyButton({ text, label = "Copier" }) {
   );
 }
 
+// ── Referral CTA (redesign) ────────────────────────────────────────────────────
+// UI only — copies the SAME existing referral link; the % is read live from the
+// affiliate's referral commission rate (admin setting), never hardcoded.
+function ReferralCta({ link, ratePct }) {
+  const [copied, setCopied] = useState(false);
+  const copy = () => {
+    if (!link) return;
+    navigator.clipboard.writeText(link).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    }).catch(() => {});
+  };
+  return (
+    <div
+      dir="rtl"
+      className="max-w-[900px] mx-auto w-full rounded-[24px] bg-[#fdf3e3] border border-amber-100/70 shadow-sm hover:shadow-md hover:-translate-y-0.5 transition-all duration-200 px-5 py-5 sm:px-8 sm:py-6"
+    >
+      <div className="flex flex-col sm:flex-row items-center gap-4 sm:gap-6">
+        {/* Gift */}
+        <div className="w-16 h-16 rounded-2xl bg-white shadow-sm flex items-center justify-center text-3xl shrink-0">🎁</div>
+        {/* Center */}
+        <div className="flex-1 text-center sm:text-right min-w-0">
+          <h3 className="text-base sm:text-lg font-black text-gray-900">شارك رابط الإحالة ديالك</h3>
+          <p className="text-sm text-gray-600 mt-0.5">اربح على كل طلب من طرف أي شخص</p>
+          <p className="text-xs sm:text-sm text-amber-700 font-bold mt-1.5">
+            كتربح {ratePct}% من العمولة على كل طلب جاي من رابطك
+          </p>
+        </div>
+        {/* Copy button */}
+        <button
+          type="button"
+          onClick={copy}
+          disabled={!link}
+          className={`w-full sm:w-auto shrink-0 inline-flex items-center justify-center gap-2 px-7 py-4 rounded-2xl font-black text-sm shadow-md active:scale-[0.97] transition-all disabled:opacity-60
+            ${copied ? "bg-green-500 text-white" : "bg-amber-400 hover:bg-amber-500 text-gray-900"}`}
+        >
+          {copied ? <>✅ تم نسخ الرابط</> : <><Copy className="w-4 h-4" /> نسخ الرابط</>}
+        </button>
+      </div>
+    </div>
+  );
+}
+
 // ── Product preview (Part 7 — multi-item inline summary) ──────────────────────
 
 function productPreview(order) {
@@ -1753,19 +1796,8 @@ export default function AffiliateDashboard() {
                 Same component reused inline; the standalone tab has been removed. */}
             <CompetitionTab />
 
-            {/* Referral link (kept directly below the competition) */}
-            <Section title="Lien de parrainage" icon={Users}>
-              <div className="flex gap-2">
-                <div className="flex-1 px-3 py-2.5 bg-gray-50 border border-gray-200 rounded-xl text-xs font-mono text-gray-700 truncate">
-                  {refLink}
-                </div>
-                <CopyButton text={refLink} label="Copier" />
-              </div>
-              <p className="text-xs text-gray-400 mt-2">
-                Partagez ce lien. Chaque commande passée via votre lien vous rapporte{" "}
-                <strong>{((affiliate?.commissionRate || 0) * 100).toFixed(0)}%</strong> de commission.
-              </p>
-            </Section>
+            {/* Referral CTA (kept directly below the competition) */}
+            <ReferralCta link={refLink} ratePct={((affiliate?.commissionRate || 0) * 100).toFixed(0)} />
 
             {/* Last 5 orders */}
             {orders.length > 0 && (
