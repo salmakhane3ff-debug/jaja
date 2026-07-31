@@ -167,9 +167,10 @@ console.log("11) Live activity config — generator engine, admin-editable:");
   ok("ugc sales/video min>max swapped", (() => { const x = normalizeLiveActivity({ ugcSalesPerVideoMin: 20, ugcSalesPerVideoMax: 4 }); return x.ugcSalesPerVideoMin === 4 && x.ugcSalesPerVideoMax === 20; })());
   ok("starting stats respected + floored", normalizeLiveActivity({ stats: { todayOrders: 500, todayDelivered: -3 } }).stats.todayOrders === 500 && normalizeLiveActivity({ stats: { todayDelivered: -3 } }).stats.todayDelivered === 0);
   ok("resetToken coerced to string", typeof normalizeLiveActivity({ resetToken: 123 }).resetToken === "string");
-  ok("names default to the big pool", d.names.length === MOROCCAN_FEMALE_NAMES.length);
-  ok("admin can override names dataset", (() => { const x = normalizeLiveActivity({ names: ["أ", "ب", "أ"] }); return x.names.length === 2; })());
-  ok("empty names override → default pool", normalizeLiveActivity({ names: [] }).names.length === MOROCCAN_FEMALE_NAMES.length);
+  ok("no separate names list (identities come from the shared demo pool)", !("names" in d));
+  ok("cities default to the big pool", d.cities.length === MOROCCAN_CITIES.length);
+  ok("admin can override cities dataset (deduped)", (() => { const x = normalizeLiveActivity({ cities: ["فاس", "مكناس", "فاس"] }); return x.cities.length === 2; })());
+  ok("empty cities override → default pool", normalizeLiveActivity({ cities: [] }).cities.length === MOROCCAN_CITIES.length);
   ok("exposed via normalizeRecruitmentConfig", (() => { const c = normalizeRecruitmentConfig({ liveActivity: { commissionMax: 99 } }); return c.liveActivity && c.liveActivity.commissionMax === 99; })());
 }
 

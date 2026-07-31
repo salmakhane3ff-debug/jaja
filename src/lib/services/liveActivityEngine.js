@@ -7,8 +7,11 @@
  * server. All clients poll /api/live-activity and therefore see the SAME events —
  * no localStorage, no client-generated feed, no duplicated engine.
  *
- * Demo/presentation only — never real users or PII. Activities are generated from
- * the large seeded name/city pool. UGC earnings are ALWAYS computed as
+ * Demo/presentation only — never real users or PII. PEOPLE in the feed come from
+ * the SHARED demo identity pool (getDemoIdentityPool — the exact same dataset as
+ * the 🏆 Monthly Competition), so a person always keeps the same id / name /
+ * username / avatar in the leaderboard AND in Live Activity. Only the activity
+ * details are generated around the person. UGC earnings are ALWAYS computed as
  *   generatedSales × commissionPerSale   (the real UGC admin setting)
  * at serve time, so changing the commission instantly updates every UGC activity.
  *
@@ -18,12 +21,12 @@
  * ─────────────────────────────────────────────────────────────────────────────
  */
 import { getSettings, upsertSettings } from './settingsService.js';
+import { getDemoIdentityPool } from './demoService.js';
 import { normalizeUgcSettings } from '../ugcSettings.js';
 import { businessDateKey } from '../ugcTime.js';
 import {
   normalizeLiveActivity, pickActivityType, applyActivityToStats, driftOnline, relTime,
 } from '../recruitmentCta.js';
-import { LIVE_AVATAR_COLORS } from '../recruitmentLiveData.js';
 
 const STATE_KEY   = 'live-activity-state';
 const CACHE_MS    = 3000;   // serve the same snapshot for up to 3s
@@ -43,13 +46,21 @@ async function getUgcCommissionPerSale() {
   } catch { return 4; }
 }
 
-// Build ONE stored event (public-safe, no PII beyond a first name). UGC events
-// store videos+sales only — earnings are computed live at serve time.
-function buildEvent(type, cfg, now) {
-  const name = pick(cfg.names) || 'مسوقة';
+// Build ONE stored event around a person from the SHARED identity pool: the
+// person's stable id/name/username/avatar are COPIED verbatim (never re-rolled),
+// only the activity details are generated. Exported for tests. UGC events store
+// videos+sales only — earnings are computed live at serve time.
+export function buildEvent(type, cfg, now, pool, rnd = Math.random) {
+  const person = pool && pool.length ? pool[Math.floor(rnd() * pool.length)] : null;
   const city = pick(cfg.cities) || '';
-  const color = pick(LIVE_AVATAR_COLORS);
-  const base = { id: `${now}-${Math.random().toString(36).slice(2, 8)}`, type, name, color, at: now };
+  const base = {
+    id: `${now}-${Math.random().toString(36).slice(2, 8)}`, type, at: now,
+    personId:  person?.id || null,
+    name:      person?.name || 'مسوقة',
+    username:  person?.username || null,
+    avatarUrl: person?.avatarUrl || null,
+    color:     person?.avatarColor || '#f43f5e',
+  };
 
   if (type === 'ugc') {
     const videos = randInt(1, cfg.ugcMaxVideos);
@@ -78,12 +89,12 @@ const BOOTSTRAP_COUNT = 15; // events generated up-front so the feed is NEVER em
 
 // Seed an initial batch of activities with staggered past timestamps so the very
 // first page load already shows a full, natural-looking feed.
-function bootstrapFeed(state, cfg, commissionPerSale, now, avgMs) {
+function bootstrapFeed(state, cfg, commissionPerSale, now, avgMs, pool) {
   const batch = [];
   for (let i = 0; i < BOOTSTRAP_COUNT; i++) {
     const type = pickActivityType(cfg.probabilities);
     const at = now - (BOOTSTRAP_COUNT - i) * avgMs; // i=0 oldest … newest ≈ now-avgMs
-    const ev = buildEvent(type, cfg, at);
+    const ev = buildEvent(type, cfg, at, pool);
     state.counters = applyActivityToStats(state.counters, type, counterAmount(ev, commissionPerSale));
     if (Math.random() < 0.15) state.counters.affiliatesOnline = driftOnline(state.counters.affiliatesOnline);
     batch.push(ev);
@@ -106,6 +117,7 @@ export async function getLiveActivitySnapshot() {
   }
 
   const commissionPerSale = await getUgcCommissionPerSale();
+  const pool = await getDemoIdentityPool(); // shared with the Monthly Competition
   const now = Date.now();
   const today = businessDateKey(new Date());
   const avgMs = ((cfg.intervalMinSec + cfg.intervalMaxSec) / 2) * 1000;
@@ -120,7 +132,7 @@ export async function getLiveActivitySnapshot() {
   // Bootstrap: the feed must NEVER be empty. On a brand-new/rolled-over/reset
   // state, seed an initial batch so the first page load shows several activities.
   if (!state.events.length) {
-    bootstrapFeed(state, cfg, commissionPerSale, now, avgMs);
+    bootstrapFeed(state, cfg, commissionPerSale, now, avgMs, pool);
     state.lastTickAt = now;
     dirty = true;
   }
@@ -131,7 +143,7 @@ export async function getLiveActivitySnapshot() {
     const add = Math.min(elapsedTicks, MAX_CATCHUP);
     for (let k = 0; k < add; k++) {
       const type = pickActivityType(cfg.probabilities);
-      const ev = buildEvent(type, cfg, now);
+      const ev = buildEvent(type, cfg, now, pool);
       state.counters = applyActivityToStats(state.counters, type, counterAmount(ev, commissionPerSale));
       if (Math.random() < 0.15) state.counters.affiliatesOnline = driftOnline(state.counters.affiliatesOnline); // slow fluctuation
       state.events.unshift(ev);
@@ -144,11 +156,18 @@ export async function getLiveActivitySnapshot() {
 
   if (dirty) await upsertSettings(STATE_KEY, state).catch(() => {});
 
-  // Serve: compute relative time + live UGC earnings (respects current commission).
+  // Serve: relative time + live UGC earnings (respects current commission) + a
+  // fresh identity resolve by personId, so if a person's avatar/username changes
+  // in the shared pool, every stored event follows — one identity everywhere.
+  const byId = new Map(pool.map((p) => [p.id, p]));
   const events = state.events.map((e) => {
+    const p = e.personId ? byId.get(e.personId) : null;
+    const identity = p
+      ? { name: p.name, username: p.username, avatarUrl: p.avatarUrl ?? null, color: p.avatarColor }
+      : {};
     const time = relTime(now - (e.at || now));
-    if (e.type === 'ugc') return { ...e, time, earnings: Math.round(e.sales * commissionPerSale) };
-    return { ...e, time };
+    if (e.type === 'ugc') return { ...e, ...identity, time, earnings: Math.round(e.sales * commissionPerSale) };
+    return { ...e, ...identity, time };
   });
 
   const out = {

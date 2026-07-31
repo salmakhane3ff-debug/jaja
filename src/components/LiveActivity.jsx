@@ -44,12 +44,23 @@ function CountUp({ value, suffix }) {
 const videosLabel = (n) => (n === 1 ? "فيديو واحد UGC" : `${n} ${n >= 3 && n <= 10 ? "فيديوهات" : "فيديو"} UGC`);
 const salesLabel  = (n) => `${n} ${n >= 3 && n <= 10 ? "مبيعات" : "مبيعة"}`;
 
+// Stable identity avatar: the person's real demo photo (same one as in the
+// Monthly Competition). Initials are ONLY a fallback when the image is missing
+// or fails to load — never a replacement for an existing avatar.
 function Avatar({ ev }) {
+  const [broken, setBroken] = useState(false);
+  const showImg = !!ev.avatarUrl && !broken;
   return (
     <div className="relative shrink-0">
-      <div className="w-11 h-11 rounded-full flex items-center justify-center text-white text-sm font-black" style={{ background: ev.color || "#f43f5e" }}>
-        {(ev.name || "?").slice(0, 1)}
-      </div>
+      {showImg ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img src={ev.avatarUrl} alt="" loading="lazy" onError={() => setBroken(true)}
+          className="w-11 h-11 rounded-full object-cover" />
+      ) : (
+        <div className="w-11 h-11 rounded-full flex items-center justify-center text-white text-sm font-black" style={{ background: ev.color || "#f43f5e" }}>
+          {(ev.name || "?").slice(0, 1)}
+        </div>
+      )}
       <span className="absolute -bottom-1 -left-1 w-5 h-5 rounded-full bg-white shadow flex items-center justify-center text-[11px]">{ev.icon}</span>
     </div>
   );

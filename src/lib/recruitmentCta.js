@@ -8,7 +8,7 @@
  * ─────────────────────────────────────────────────────────────────────────────
  */
 import { normalizeSupportSettings, buildWhatsappUrl } from './whatsappSupport.js';
-import { MOROCCAN_FEMALE_NAMES, MOROCCAN_CITIES } from './recruitmentLiveData.js';
+import { MOROCCAN_CITIES } from './recruitmentLiveData.js';
 
 // Fixed Darija message opened when a visitor taps a "join us" CTA.
 export const RECRUITMENT_WA_MESSAGE =
@@ -154,11 +154,11 @@ export function normalizeLiveFeedConfig(raw = {}) {
 }
 
 // ── Live activity (inline "🔥 النشاط المباشر" live dashboard) ──────────────────
-// Presentation-only demo. No DB, no real PII. A client-side engine GENERATES
-// activities continuously from a large seeded name/city pool, evolving the four
-// counters realistically (delivered stays below orders, online fluctuates by
-// ±1/±2, commissions grow). Everything below is admin-editable; the datasets
-// fall back to the built-in pools (≥300 names / ≥150 cities) when not overridden.
+// Presentation-only demo config for the SERVER-SIDE engine (liveActivityEngine).
+// People/identities come from the shared demo pool (same as the competition);
+// this config only controls pacing, probabilities, counters, amounts and the
+// cities dataset. Counters evolve realistically (delivered stays below orders,
+// online fluctuates by ±1/+2, commissions grow).
 export const LIVE_ACTIVITY_TYPES = ['newOrder', 'delivered', 'commission', 'ugc', 'newAffiliate', 'competition'];
 
 export const DEFAULT_LIVE_ACTIVITY_STATS = {
@@ -216,7 +216,8 @@ export function normalizeLiveActivity(raw = {}) {
     ugcSalesPerVideoMin: sMin,
     ugcSalesPerVideoMax: sMax,
     resetToken: String(a.resetToken || ''),
-    names: cleanList(a.names, MOROCCAN_FEMALE_NAMES),
+    // People/identities come from the SHARED demo pool (getDemoIdentityPool —
+    // same dataset as the Monthly Competition), never from a separate name list.
     cities: cleanList(a.cities, MOROCCAN_CITIES),
   };
 }

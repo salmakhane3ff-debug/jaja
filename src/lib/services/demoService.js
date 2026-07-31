@@ -110,6 +110,50 @@ const LEADERBOARD_TTL = 60_000; // 60 s
 
 export function invalidateDemoCache() {
   _leaderboardCache = null;
+  _identityCache = { at: 0, data: null };
+}
+
+// ── Shared demo identity pool (single source of truth for demo people) ────────
+// The Monthly Competition (leaderboard) and the Live Activity feed both read
+// THIS pool, so a demo person always keeps the same id / name / username /
+// avatar everywhere. When the competition has fewer than IDENTITY_MIN active
+// demo affiliates, the pool is topped up with DETERMINISTIC supplemental
+// profiles (index-based, no randomness) so identities stay stable permanently
+// across requests, restarts and instances — without inserting rows or touching
+// competition scores/ranking.
+const IDENTITY_MIN = 300;
+const IDENTITY_TTL = 60_000;
+let _identityCache = { at: 0, data: null };
+
+function supplementalIdentity(i) {
+  const first = FEMALE_NAMES[i % FEMALE_NAMES.length];
+  const last  = LAST_NAMES[Math.floor(i / FEMALE_NAMES.length) % LAST_NAMES.length];
+  return {
+    id:          `demo-extra-${String(i + 1).padStart(3, '0')}`,
+    name:        `${first} ${last}`,
+    username:    `${first.toLowerCase()}${101 + (i * 7) % 899}`, // stable per index
+    avatarUrl:   null,                                            // initials fallback
+    avatarColor: AVATAR_COLORS[i % AVATAR_COLORS.length],
+    gender:      'women',
+  };
+}
+
+export async function getDemoIdentityPool(minSize = IDENTITY_MIN) {
+  if (_identityCache.data && Date.now() - _identityCache.at < IDENTITY_TTL) return _identityCache.data;
+  let base = [];
+  try {
+    const rows = await _db.demoAffiliate.findMany({ where: { isActive: true } });
+    base = rows.map((a) => ({
+      id: a.id, name: a.name, username: a.username,
+      avatarUrl: a.avatarUrl ?? null, avatarColor: a.avatarColor, gender: a.gender ?? 'women',
+    }));
+  } catch (err) {
+    console.error('[demo] identity pool error:', err?.message ?? err);
+  }
+  const pool = [...base];
+  for (let i = 0; pool.length < minSize; i++) pool.push(supplementalIdentity(i));
+  _identityCache = { at: Date.now(), data: pool };
+  return pool;
 }
 
 // ── Generate demo affiliates ──────────────────────────────────────────────────

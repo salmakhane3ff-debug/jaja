@@ -1229,7 +1229,7 @@ function RecruitmentLandingPanel() {
       probabilities: { ...DEFAULT_LIVE_ACTIVITY_PROBABILITIES },
       commissionMin: LIVE_ACTIVITY_DEFAULTS.commissionMin, commissionMax: LIVE_ACTIVITY_DEFAULTS.commissionMax,
       ugcMaxVideos: LIVE_ACTIVITY_DEFAULTS.ugcMaxVideos, ugcSalesPerVideoMin: LIVE_ACTIVITY_DEFAULTS.ugcSalesPerVideoMin, ugcSalesPerVideoMax: LIVE_ACTIVITY_DEFAULTS.ugcSalesPerVideoMax,
-      resetToken: "", namesText: "", citiesText: "",
+      resetToken: "", citiesText: "",
     },
     videos: [],
     testimonials: [],
@@ -1305,7 +1305,6 @@ function RecruitmentLandingPanel() {
             ugcSalesPerVideoMin: numOr(raw.liveActivity?.ugcSalesPerVideoMin, LIVE_ACTIVITY_DEFAULTS.ugcSalesPerVideoMin),
             ugcSalesPerVideoMax: numOr(raw.liveActivity?.ugcSalesPerVideoMax, LIVE_ACTIVITY_DEFAULTS.ugcSalesPerVideoMax),
             resetToken: String(raw.liveActivity?.resetToken || ""),
-            namesText: Array.isArray(raw.liveActivity?.names) ? raw.liveActivity.names.join("\n") : "",
             citiesText: Array.isArray(raw.liveActivity?.cities) ? raw.liveActivity.cities.join("\n") : "",
           },
           videos: Array.isArray(raw.videos) ? raw.videos : [],
@@ -1333,7 +1332,6 @@ function RecruitmentLandingPanel() {
           liveFeed: cfg.liveFeed,
           liveActivity: (() => {
             const la = cfg.liveActivity;
-            const names  = String(la.namesText || "").split(/[\n,]+/).map((s) => s.trim()).filter(Boolean);
             const cities = String(la.citiesText || "").split(/[\n,]+/).map((s) => s.trim()).filter(Boolean);
             return {
               enabled: la.enabled, intervalMinSec: la.intervalMinSec, intervalMaxSec: la.intervalMaxSec,
@@ -1341,7 +1339,7 @@ function RecruitmentLandingPanel() {
               commissionMin: la.commissionMin, commissionMax: la.commissionMax,
               ugcMaxVideos: la.ugcMaxVideos, ugcSalesPerVideoMin: la.ugcSalesPerVideoMin, ugcSalesPerVideoMax: la.ugcSalesPerVideoMax,
               resetToken: la.resetToken,
-              ...(names.length ? { names } : {}), ...(cities.length ? { cities } : {}),
+              ...(cities.length ? { cities } : {}),
             };
           })(),
           videos: cfg.videos,
@@ -1653,11 +1651,9 @@ function RecruitmentLandingPanel() {
               </div>
 
               {/* Datasets */}
-              <div className="grid sm:grid-cols-2 gap-2">
-                <label className="text-[11px] text-gray-600">Noms (1 par ligne — vide = 350 par défaut)
-                  <textarea className={fieldCls} rows={3} dir="rtl" placeholder="اتركيها فارغة لاستعمال القائمة الافتراضية" value={cfg.liveActivity.namesText} onChange={(e) => patchLA("namesText", e.target.value)} />
-                </label>
-                <label className="text-[11px] text-gray-600">Villes (1 par ligne — vide = 158 par défaut)
+              <div>
+                <p className="text-[11px] text-gray-500 mb-1">Identités (nom, @username, avatar) : reprises automatiquement du <strong>même pool démo que la Compétition du mois</strong> — la même personne garde toujours le même nom et la même photo partout.</p>
+                <label className="text-[11px] text-gray-600 block">Villes (1 par ligne — vide = 158 par défaut)
                   <textarea className={fieldCls} rows={3} dir="rtl" placeholder="اتركيها فارغة لاستعمال القائمة الافتراضية" value={cfg.liveActivity.citiesText} onChange={(e) => patchLA("citiesText", e.target.value)} />
                 </label>
               </div>

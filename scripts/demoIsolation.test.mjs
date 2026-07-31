@@ -38,7 +38,11 @@ import {
   DEMO_SIM_DEFAULT_INTERVAL,
   pickTickOrderCount,
   pickWeightedRecipient,
+  getDemoIdentityPool,
+  invalidateDemoCache,
 } from "../src/lib/services/demoService.js";
+import { buildEvent } from "../src/lib/services/liveActivityEngine.js";
+import { normalizeLiveActivity } from "../src/lib/recruitmentCta.js";
 
 let pass = 0, fail = 0;
 const ok = (n, c) => { if (c) { pass++; console.log("  PASS ", n); } else { fail++; console.log("  FAIL ", n); } };
@@ -490,6 +494,61 @@ async function main() {
     }
     ok("smallest total delta across runs ≥ 1", minDelta >= 1);
     ok("largest total delta across runs ≤ 4 (even on 'fast')", maxDelta <= 4);
+  }
+
+  console.log("17) Shared identity pool — competition & live activity use the SAME people:");
+  {
+    const { db, store } = makeFakeDb();
+    __setDemoDb(db);
+    seedAvatars(store, 5, 5);
+    await saveDemoSettings({ isEnabled: true, simulationSpeed: "fast" });
+    await generateDemoAffiliates(12, "mixed");
+    invalidateDemoCache();
+
+    const pool = await getDemoIdentityPool();
+    const board = await getLeaderboard(50);
+    const byId = new Map(pool.map((p) => [p.id, p]));
+
+    ok("every leaderboard person exists in the pool", board.every((r) => byId.has(r.id)));
+    ok("same id → same name (never re-rolled)", board.every((r) => byId.get(r.id).name === r.name));
+    ok("same id → same username", board.every((r) => byId.get(r.id).username === r.username));
+    ok("same id → same avatar (never another photo)", board.every((r) => (byId.get(r.id).avatarUrl ?? null) === (r.avatarUrl ?? null)));
+    ok("pool expanded to ≥300 stable profiles", pool.length >= 300);
+    ok("all pool ids unique", new Set(pool.map((p) => p.id)).size === pool.length);
+    ok("supplemental profiles are women with a stable color", pool.filter((p) => p.id.startsWith("demo-extra-")).every((p) => p.gender === "women" && p.avatarColor));
+
+    // Determinism: after a cache invalidation, the supplemental identities are
+    // IDENTICAL (index-based, no randomness) — identity is permanent.
+    const extras1 = pool.filter((p) => p.id.startsWith("demo-extra-"));
+    invalidateDemoCache();
+    const extras2 = (await getDemoIdentityPool()).filter((p) => p.id.startsWith("demo-extra-"));
+    ok("supplemental identities are deterministic across reloads", JSON.stringify(extras1) === JSON.stringify(extras2));
+  }
+
+  console.log("18) buildEvent copies the person's identity verbatim from the pool:");
+  {
+    const pool = [
+      { id: "demo_a1", name: "Karima Alaoui", username: "karima419", avatarUrl: "/uploads/demo/avatars/k.webp", avatarColor: "#6366f1", gender: "women" },
+      { id: "demo_a2", name: "Samira Tazi",   username: "samira204", avatarUrl: null,                            avatarColor: "#ec4899", gender: "women" },
+    ];
+    const cfg = normalizeLiveActivity({});
+    const first = () => 0;    // rnd → picks pool[0]
+    const second = () => 0.9; // rnd → picks pool[1]
+
+    const ugc = buildEvent("ugc", cfg, Date.now(), pool, first);
+    ok("ugc event copies id/name/username/avatar of Karima", ugc.personId === "demo_a1" && ugc.name === "Karima Alaoui" && ugc.username === "karima419" && ugc.avatarUrl === "/uploads/demo/avatars/k.webp");
+    ok("ugc event exposes videos+sales only (no views/product/city)", ugc.videos >= 1 && ugc.sales >= 1 && !("views" in ugc) && !("product" in ugc) && !("city" in ugc));
+
+    const del = buildEvent("delivered", cfg, Date.now(), pool, second);
+    ok("delivered event copies Samira's identity (avatar null → initials fallback)", del.personId === "demo_a2" && del.name === "Samira Tazi" && del.avatarUrl === null && del.color === "#ec4899");
+    ok("amount within the configured commission range", del.amount >= cfg.commissionMin && del.amount <= cfg.commissionMax);
+
+    ok("same person picked twice keeps the exact same identity", (() => {
+      const a = buildEvent("newOrder", cfg, Date.now(), pool, first);
+      const b = buildEvent("commission", cfg, Date.now(), pool, first);
+      return a.personId === b.personId && a.name === b.name && a.username === b.username && a.avatarUrl === b.avatarUrl && a.color === b.color;
+    })());
+    ok("empty pool falls back safely (no crash, generic name)", buildEvent("newOrder", cfg, Date.now(), [], first).name === "مسوقة");
   }
 
   console.log(`\nRESULT: ${pass} passed, ${fail} failed`);
