@@ -159,13 +159,13 @@ export function normalizeLiveFeedConfig(raw = {}) {
 // this config only controls pacing, probabilities, counters, amounts and the
 // cities dataset. Counters evolve realistically (delivered stays below orders,
 // online fluctuates by ±1/+2, commissions grow).
-export const LIVE_ACTIVITY_TYPES = ['newOrder', 'delivered', 'commission', 'ugc', 'newAffiliate', 'competition'];
+export const LIVE_ACTIVITY_TYPES = ['newOrder', 'delivered', 'commission', 'ugc', 'newAffiliate', 'competition', 'booster'];
 
 export const DEFAULT_LIVE_ACTIVITY_STATS = {
   todayOrders: 128, todayDelivered: 96, todayCommissions: 3420, affiliatesOnline: 42,
 };
 export const DEFAULT_LIVE_ACTIVITY_PROBABILITIES = {
-  newOrder: 40, delivered: 22, commission: 15, ugc: 13, newAffiliate: 6, competition: 4,
+  newOrder: 38, delivered: 20, commission: 14, ugc: 12, newAffiliate: 6, competition: 4, booster: 6,
 };
 export const LIVE_ACTIVITY_DEFAULTS = {
   intervalMinSec: 2, intervalMaxSec: 6, commissionMin: 15, commissionMax: 120,
@@ -261,6 +261,10 @@ export function applyActivityToStats(stats, type, commission = 0, rnd = Math.ran
       break;
     case 'newAffiliate':
       if (rnd() < 0.6) s.affiliatesOnline += 1; // increase online "randomly if needed"
+      break;
+    case 'booster':
+      // Booster progress shows sales landing — same shape as a new order.
+      s.todayOrders += Math.max(1, Math.round(num(commission, 1)));
       break;
     case 'competition':
       break; // no counter change

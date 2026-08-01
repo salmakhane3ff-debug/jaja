@@ -1223,15 +1223,19 @@ export default function AffiliateDashboard() {
   const [payoutLoading, setPayoutLoading] = useState(false);
   const [payoutMsg,     setPayoutMsg]     = useState(null);
 
-  // Booster purchases (merged into the existing balance history — no new page).
-  // Fetched lazily when the payout tab opens so the polling loop stays untouched.
+  // Booster purchases (merged into the existing balance history — no new page)
+  // + the active-booster widget shown on the overview. One read, no polling.
   const [boosterPurchases, setBoosterPurchases] = useState([]);
+  const [activeBoosters, setActiveBoosters] = useState([]);
   useEffect(() => {
-    if (activeTab !== "payout") return;
+    if (activeTab !== "payout" && activeTab !== "overview") return;
     const t = localStorage.getItem("affiliateToken") || "";
     fetch("/api/affiliate/boosters", { headers: { Authorization: `Bearer ${t}` }, cache: "no-store" })
       .then((r) => (r.ok ? r.json() : null))
-      .then((d) => setBoosterPurchases(Array.isArray(d?.purchases) ? d.purchases : []))
+      .then((d) => {
+        setBoosterPurchases(Array.isArray(d?.purchases) ? d.purchases : []);
+        setActiveBoosters(Array.isArray(d?.active) ? d.active : []);
+      })
       .catch(() => {});
   }, [activeTab]);
 
@@ -1890,6 +1894,33 @@ export default function AffiliateDashboard() {
               <StatCard icon={Users}       label="Commission Équipe"    value={fmtMoney(stats?.teamCommission)} color="teal"
                 sub={`${team.length} membre${team.length !== 1 ? "s" : ""}`} />
             </div>
+
+            {/* 🚀 Active Booster widget → opens the Booster page */}
+            {activeBoosters.map((b) => (
+              <button key={b.id} onClick={() => setActiveTab("booster")} className="w-full text-left">
+                <div dir="rtl" className="rounded-2xl bg-gradient-to-br from-violet-600 to-indigo-600 text-white p-4 hover:brightness-110 transition-all">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="text-sm font-black">🚀 {b.packageName}</span>
+                    <span className="text-[11px] font-bold bg-white/15 rounded-full px-2 py-0.5">
+                      {b.daysLeft != null ? `ينتهي بعد ${b.daysLeft} يوم` : "نشطة"}
+                    </span>
+                  </div>
+                  {b.target ? (
+                    <>
+                      <div className="mt-3 h-2.5 rounded-full bg-white/20 overflow-hidden">
+                        <div className="h-full rounded-full bg-white transition-all duration-700" style={{ width: `${b.percent ?? 0}%` }} />
+                      </div>
+                      <div className="flex items-center justify-between mt-1.5 text-xs font-black">
+                        <span>{b.sales} / {b.target}</span>
+                        <span>{b.percent ?? 0}%</span>
+                      </div>
+                    </>
+                  ) : (
+                    <p className="text-xs opacity-80 mt-2">{b.sales} مبيعات منذ التفعيل</p>
+                  )}
+                </div>
+              </button>
+            ))}
 
             {/* ── 💰 Dépôt de solde — balance top-up (credited after validation) ── */}
             <button onClick={goToDeposit} className="w-full text-left">

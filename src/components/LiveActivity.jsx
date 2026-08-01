@@ -79,6 +79,11 @@ function ActivityRow({ ev, animate }) {
             <p className="text-xs text-gray-500">🛒 {salesLabel(ev.sales)}</p>
             <p className="text-xs text-gray-500">💰 ربحت {ev.earnings} درهم</p>
           </>
+        ) : ev.type === "booster" ? (
+          <>
+            <p className="text-xs text-gray-500 truncate">{ev.activity}</p>
+            <p className="text-xs text-violet-600 font-semibold">{ev.detail}</p>
+          </>
         ) : (
           <>
             <p className="text-xs text-gray-500 truncate">{ev.activity}</p>

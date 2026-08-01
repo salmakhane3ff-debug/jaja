@@ -71,13 +71,25 @@ export function buildEvent(type, cfg, now, pool, rnd = Math.random) {
   if (type === 'commission') return { ...base, icon: '💰', activity: 'عمولة جديدة',        amount: randInt(cfg.commissionMin, cfg.commissionMax) };
   if (type === 'newOrder')   return { ...base, icon: '📦', city, activity: 'طلب جديد' };
   if (type === 'newAffiliate') return { ...base, icon: '👤', city, activity: 'انضمت للمنصة' };
+  if (type === 'booster') {
+    // Booster progress: either a batch of sales landing, or a milestone.
+    const sales = randInt(1, 3);
+    const target = pick([200, 500, 1000]);
+    const reached = Math.round(target * pick([0.25, 0.5, 0.6, 0.75]));
+    return rnd6() < 0.5
+      ? { ...base, icon: '🚀', activity: 'Starter Booster', detail: `+${sales} ${sales === 1 ? 'مبيعة' : 'مبيعات'}`, boosterSales: sales }
+      : { ...base, icon: '🚀', activity: 'وصلت', detail: `${reached} / ${target}` };
+  }
   return { ...base, icon: '🏆', activity: 'دخلات المنافسة ديال هاد الشهر' }; // competition
 }
+
+const rnd6 = () => Math.random();
 
 // Counter delta for an event (UGC earnings depend on the CURRENT commission).
 function counterAmount(ev, commissionPerSale) {
   if (ev.type === 'ugc') return Math.round(ev.sales * commissionPerSale);
   if (ev.type === 'delivered' || ev.type === 'commission') return ev.amount || 0;
+  if (ev.type === 'booster') return ev.boosterSales || 0; // sales, not money
   return 0;
 }
 

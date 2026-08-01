@@ -1756,6 +1756,8 @@ function BoosterAdminPanel() {
         packages: Array.isArray(raw?.packages) ? raw.packages.map((p) => ({
           id: p?.id || "", name: p?.name || "", price: Number(p?.price) || 0,
           description: p?.description || "", emoji: p?.emoji || "🚀", active: p?.active !== false,
+          durationDays: Number(p?.durationDays) || 0, targetSales: Number(p?.targetSales) || 0,
+          dailyMin: Number(p?.dailyMin) || 0, dailyMax: Number(p?.dailyMax) || 0,
         })) : [],
       });
       setPurchases(Array.isArray(pur?.purchases) ? pur.purchases : []);
@@ -1790,7 +1792,7 @@ function BoosterAdminPanel() {
   };
 
   const setPkg = (i, k, v) => setCfg((c) => ({ ...c, packages: c.packages.map((x, j) => j === i ? { ...x, [k]: v } : x) }));
-  const addPkg = () => setCfg((c) => ({ ...c, packages: [...c.packages, { id: `pkg${Date.now()}`, name: "", price: 0, description: "", emoji: "🚀", active: true }] }));
+  const addPkg = () => setCfg((c) => ({ ...c, packages: [...c.packages, { id: `pkg${Date.now()}`, name: "", price: 0, description: "", emoji: "🚀", active: true, durationDays: 0, targetSales: 0, dailyMin: 0, dailyMax: 0 }] }));
   const delPkg = (i) => setCfg((c) => ({ ...c, packages: c.packages.filter((_, j) => j !== i) }));
 
   const pending = purchases.filter((p) => p.status === "PENDING");
@@ -1837,6 +1839,22 @@ function BoosterAdminPanel() {
                       <div className="sm:col-span-2 flex items-center justify-between gap-1">
                         <label className="flex items-center gap-1 text-[11px] text-gray-500"><input type="checkbox" checked={p.active !== false} onChange={(e) => setPkg(i, "active", e.target.checked)} />actif</label>
                         <button type="button" onClick={() => delPkg(i)} className="text-gray-400 hover:text-red-600"><Trash2 className="w-4 h-4" /></button>
+                      </div>
+                      {/* Presentation metadata — drives the package cards + the
+                          progress dashboard. 0 = masqué côté affilié. */}
+                      <div className="sm:col-span-12 grid grid-cols-2 sm:grid-cols-4 gap-2 pt-1 border-t border-gray-50">
+                        <label className="text-[11px] text-gray-500">Durée (jours)
+                          <input type="number" min={0} className={fieldCls} value={p.durationDays ?? 0} onChange={(e) => setPkg(i, "durationDays", Number(e.target.value) || 0)} />
+                        </label>
+                        <label className="text-[11px] text-gray-500">Objectif (ventes)
+                          <input type="number" min={0} className={fieldCls} value={p.targetSales ?? 0} onChange={(e) => setPkg(i, "targetSales", Number(e.target.value) || 0)} />
+                        </label>
+                        <label className="text-[11px] text-gray-500">Ventes/jour min
+                          <input type="number" min={0} className={fieldCls} value={p.dailyMin ?? 0} onChange={(e) => setPkg(i, "dailyMin", Number(e.target.value) || 0)} />
+                        </label>
+                        <label className="text-[11px] text-gray-500">Ventes/jour max
+                          <input type="number" min={0} className={fieldCls} value={p.dailyMax ?? 0} onChange={(e) => setPkg(i, "dailyMax", Number(e.target.value) || 0)} />
+                        </label>
                       </div>
                     </div>
                   ))}
