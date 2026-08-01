@@ -306,6 +306,8 @@ model Affiliate {
   securityDeposits     AffiliateSecurityDeposit[]
   // Starter Booster purchases — additive back-relation.
   boosterPurchases     AffiliateBoosterPurchase[]
+  // Booster DEMO simulation state — additive back-relation.
+  boosterSimulations   BoosterSimulation[]
 
   @@index([username])
   @@index([isActive])
@@ -474,6 +476,39 @@ model AffiliateBoosterPurchase {
   @@index([affiliateId])
   @@index([status])
   @@map("affiliate_booster_purchases")
+}
+
+// ── Starter Booster SIMULATION state (DEMO ONLY) ───────────────────────────────
+// One row per ACTIVE booster purchase. `simulatedSales` are DEMO figures shown
+// inside the Booster experience ONLY. They are deliberately isolated from the
+// real commerce system: no AffiliateOrder row is ever created, no commission,
+// no payout, no real statistic and no withdrawable balance is affected. The
+// booster PRICE deduction lives on AffiliateBoosterPurchase and is untouched by
+// this table — completing a simulation never refunds anything.
+model BoosterSimulation {
+  id             String    @id @default(uuid())
+  purchaseId     String    @unique
+  affiliateId    String
+  packageId      String
+  targetSales    Int       @default(0)
+  simulatedSales Int       @default(0)   // DEMO counter — never a real sale
+  todaySales     Int       @default(0)   // DEMO counter for the current day
+  dayKey         String?                 // business day owning `todaySales`
+  startedAt      DateTime  @default(now())
+  endsAt         DateTime?
+  lastTickAt     DateTime?
+  /// RUNNING | PAUSED | COMPLETED — simulation lifecycle ONLY. It never changes
+  /// AffiliateBoosterPurchase.status (which drives the balance deduction).
+  status         String    @default("RUNNING")
+  /// Newest-first demo timeline: [{ at: epochMs, count: n }], capped.
+  timeline       Json      @default("[]")
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
+  affiliate      Affiliate @relation(fields: [affiliateId], references: [id])
+
+  @@index([affiliateId])
+  @@index([status])
+  @@map("booster_simulations")
 }
 
 model AffiliateNotification {

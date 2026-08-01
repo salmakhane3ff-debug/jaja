@@ -8,8 +8,8 @@ import { withAffiliateAuth } from '@/lib/middleware/withAffiliateAuth';
 import { getAffiliateBalanceBreakdown } from '@/lib/services/affiliateSystemService';
 import {
   getBoosterConfig, publicBoosterPackages, listBoosterPurchases, purchaseBooster,
-  getBoosterDashboard,
 } from '@/lib/services/boosterService';
+import { getBoosterSimulationDashboard } from '@/lib/services/boosterSimulationService';
 
 async function getHandler(req, _ctx, decoded) {
   try {
@@ -17,8 +17,8 @@ async function getHandler(req, _ctx, decoded) {
       getBoosterConfig(),
       listBoosterPurchases(decoded.affiliateId),
       getAffiliateBalanceBreakdown(decoded.affiliateId),
-      // Read-only derived progress (real orders since activation) — writes nothing.
-      getBoosterDashboard(decoded.affiliateId).catch(() => ({ active: [], past: [], pending: [] })),
+      // The ONE booster source of truth — the simulation engine. Never AffiliateOrder.
+      getBoosterSimulationDashboard(decoded.affiliateId).catch(() => ({ active: [], past: [], pending: [] })),
     ]);
     return Response.json({
       enabled: config.enabled,

@@ -56,5 +56,14 @@ module.exports = {
       script: 'scripts/demo-competition-engine.mjs',
       ...engineDefaults,
     },
+    {
+      // Starter Booster SIMULATION engine. Advances the demo progress of every
+      // active booster (page, widget, timeline, Live Activity all read it).
+      // Writes ONLY booster_simulations — never an order, commission or balance.
+      // Same advisory-lock / instances:1 rule — never scale this worker.
+      name:   'booster-simulation-engine',
+      script: 'scripts/booster-simulation-engine.mjs',
+      ...engineDefaults,
+    },
   ],
 };

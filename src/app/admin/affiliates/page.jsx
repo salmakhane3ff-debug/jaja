@@ -1732,8 +1732,11 @@ function RecruitmentLandingPanel() {
 
 // ── 🚀 Starter Boosters (packages + card-purchase validation) ──────────────────
 function BoosterAdminPanel() {
-  const [cfg, setCfg]         = useState({ enabled: false, allowStacking: false, packages: [] });
+  const SIM_DEFAULTS = { enabled: true, tickIntervalSec: 900, minPerTick: 1, maxPerTick: 2, dailyMin: 0, dailyMax: 0 };
+  const [cfg, setCfg]         = useState({ enabled: false, allowStacking: false, packages: [], simulation: { ...SIM_DEFAULTS } });
   const [purchases, setPurchases] = useState([]);
+  const [sims, setSims]       = useState([]);
+  const [simBusy, setSimBusy] = useState(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving]   = useState(false);
   const [busyId, setBusyId]   = useState(null);
@@ -1759,8 +1762,10 @@ function BoosterAdminPanel() {
           durationDays: Number(p?.durationDays) || 0, targetSales: Number(p?.targetSales) || 0,
           dailyMin: Number(p?.dailyMin) || 0, dailyMax: Number(p?.dailyMax) || 0,
         })) : [],
+        simulation: { ...SIM_DEFAULTS, ...(raw?.simulation && typeof raw.simulation === "object" ? raw.simulation : {}) },
       });
       setPurchases(Array.isArray(pur?.purchases) ? pur.purchases : []);
+      setSims(Array.isArray(pur?.simulations) ? pur.simulations : []);
     } catch {}
     finally { setLoading(false); }
   };
@@ -1771,7 +1776,7 @@ function BoosterAdminPanel() {
     try {
       const res = await fetch("/api/setting?type=booster-packages", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(cfg),
+        body: JSON.stringify({ enabled: cfg.enabled, allowStacking: cfg.allowStacking, packages: cfg.packages, simulation: cfg.simulation }),
       });
       setMsg(res.ok ? { ok: true, t: "Enregistré." } : { ok: false, t: "Échec." });
     } catch { setMsg({ ok: false, t: "Échec." }); }
@@ -1789,6 +1794,19 @@ function BoosterAdminPanel() {
       else setMsg({ ok: false, t: (await r.json().catch(() => ({})))?.error || "Échec." });
     } catch {}
     finally { setBusyId(null); }
+  };
+
+  const setSim = (k, v) => setCfg((c) => ({ ...c, simulation: { ...c.simulation, [k]: v } }));
+  const simAction = async (purchaseId, action, value) => {
+    setSimBusy(purchaseId + action);
+    try {
+      const r = await fetch("/api/admin/boosters", {
+        method: "PUT", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ purchaseId, action, value }),
+      });
+      if (r.ok) await load();
+      else setMsg({ ok: false, t: (await r.json().catch(() => ({})))?.error || "Échec." });
+    } catch {} finally { setSimBusy(null); }
   };
 
   const setPkg = (i, k, v) => setCfg((c) => ({ ...c, packages: c.packages.map((x, j) => j === i ? { ...x, [k]: v } : x) }));
@@ -1867,6 +1885,72 @@ function BoosterAdminPanel() {
                 {saving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <CheckCircle className="w-3.5 h-3.5" />} Enregistrer
               </button>
             </div>
+
+            {/* ── Simulation engine settings (DEMO progress only) ── */}
+            <div className="rounded-xl border border-violet-100 bg-violet-50/40 p-4 space-y-3">
+              <div className="flex items-center justify-between">
+                <span className="text-xs font-bold text-gray-700 uppercase tracking-wide">Moteur de simulation (démo)</span>
+                <label className="flex items-center gap-1.5 text-xs text-gray-600">
+                  <input type="checkbox" checked={cfg.simulation.enabled !== false} onChange={(e) => setSim("enabled", e.target.checked)} /> Activé
+                </label>
+              </div>
+              <p className="text-[11px] text-gray-400">
+                Ventes <strong>simulées</strong> : aucune commande réelle, aucune commission, aucun impact sur le solde ou les retraits.
+              </p>
+              <div className="grid grid-cols-2 sm:grid-cols-5 gap-2">
+                {[
+                  { k: "tickIntervalSec", l: "Intervalle (s)" },
+                  { k: "minPerTick", l: "Min / tick" },
+                  { k: "maxPerTick", l: "Max / tick" },
+                  { k: "dailyMin", l: "Min / jour" },
+                  { k: "dailyMax", l: "Max / jour (0 = ∞)" },
+                ].map(({ k, l }) => (
+                  <label key={k} className="text-[11px] text-gray-600">{l}
+                    <input type="number" min={0} className={fieldCls} value={cfg.simulation[k] ?? 0} onChange={(e) => setSim(k, Number(e.target.value) || 0)} />
+                  </label>
+                ))}
+              </div>
+            </div>
+
+            {/* ── Per-booster simulation controls ── */}
+            {sims.length > 0 && (
+              <div>
+                <span className="text-xs font-bold text-gray-700 uppercase tracking-wide">Boosters en simulation ({sims.length})</span>
+                <div className="space-y-2 mt-2">
+                  {sims.map((s) => (
+                    <div key={s.purchaseId} className="border border-gray-100 rounded-xl px-3 py-2.5 flex flex-wrap items-center justify-between gap-2">
+                      <div className="min-w-0">
+                        <p className="text-xs font-bold text-gray-800">
+                          🚀 {s.packageName} · {s.sales}{s.target ? ` / ${s.target}` : ""} {s.percent != null && <span className="text-gray-400">({s.percent}%)</span>}
+                        </p>
+                        <p className="text-[11px] text-gray-400">
+                          {s.affiliateName} (@{s.affiliateUsername}) · aujourd'hui +{s.todaySales}
+                          <span className={`ml-1.5 px-1.5 py-0.5 rounded-full text-[10px] font-bold ${s.status === "RUNNING" ? "bg-green-100 text-green-700" : s.status === "PAUSED" ? "bg-amber-100 text-amber-700" : "bg-gray-200 text-gray-600"}`}>{s.status}</span>
+                        </p>
+                      </div>
+                      <div className="flex flex-wrap gap-1.5">
+                        {(s.status === "RUNNING"
+                          ? [{ a: "pause", l: "Pause", c: "bg-amber-500" }]
+                          : s.status === "PAUSED" ? [{ a: "resume", l: "Reprendre", c: "bg-green-600" }]
+                          : [{ a: "resume", l: "Relancer", c: "bg-green-600" }]
+                        ).map(({ a, l, c }) => (
+                          <button key={a} type="button" disabled={simBusy === s.purchaseId + a} onClick={() => simAction(s.purchaseId, a)}
+                            className={`px-2.5 py-1.5 rounded-lg ${c} text-white text-[11px] font-bold disabled:opacity-50`}>{l}</button>
+                        ))}
+                        <button type="button" onClick={() => simAction(s.purchaseId, "add", 10)}
+                          className="px-2.5 py-1.5 rounded-lg bg-gray-800 text-white text-[11px] font-bold">+10</button>
+                        <button type="button" onClick={() => simAction(s.purchaseId, "remove", 10)}
+                          className="px-2.5 py-1.5 rounded-lg bg-gray-500 text-white text-[11px] font-bold">−10</button>
+                        <button type="button" onClick={() => simAction(s.purchaseId, "complete")}
+                          className="px-2.5 py-1.5 rounded-lg bg-indigo-600 text-white text-[11px] font-bold">Terminer</button>
+                        <button type="button" onClick={() => simAction(s.purchaseId, "reset")}
+                          className="px-2.5 py-1.5 rounded-lg bg-red-500 text-white text-[11px] font-bold">Reset</button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
 
             {/* Pending card purchases */}
             <div>

@@ -26,7 +26,7 @@
 import prisma from '../prisma.js';
 import { getAffiliateBalance, getTopupAvailable } from './affiliateSystemService.js';
 import { toDecimal, serializeAmount } from '../balance/composeBalance.js';
-import { computeBoosterProgress, splitBoosters } from '../boosterProgress.js';
+import { normalizeSimConfig } from '../boosterSimulation.js';
 
 export const BOOSTER_STATUS = { PENDING: 'PENDING', ACTIVE: 'ACTIVE', REJECTED: 'REJECTED' };
 export const BOOSTER_METHODS = ['BALANCE', 'CARD'];
@@ -64,6 +64,8 @@ export function normalizeBoosterConfig(raw = {}) {
     enabled:       c.enabled === true,   // ships OFF until the admin opts in
     allowStacking: c.allowStacking === true,
     packages,
+    // DEMO simulation engine settings (see boosterSimulation.js).
+    simulation:    normalizeSimConfig(c.simulation),
   };
 }
 
@@ -83,35 +85,6 @@ export async function listBoosterPurchases(affiliateId, db = prisma) {
     where: { affiliateId },
     orderBy: { createdAt: 'desc' },
   });
-}
-
-/**
- * READ-ONLY dashboard view:each purchase enriched with derived progress computed
- * from the affiliate's REAL orders since activation (see boosterProgress.js).
- * Writes nothing and never changes a stored status.
- */
-export async function getBoosterDashboard(affiliateId, db = prisma, now = Date.now()) {
-  const [config, purchases] = await Promise.all([
-    getBoosterConfig(db),
-    listBoosterPurchases(affiliateId, db),
-  ]);
-  const byId = new Map(config.packages.map((p) => [p.id, p]));
-
-  // Earliest activation bounds the order query (one read for every booster).
-  const starts = purchases
-    .map((p) => new Date(p.activatedAt || p.createdAt).getTime())
-    .filter((t) => Number.isFinite(t));
-  let orders = [];
-  if (starts.length) {
-    orders = await db.affiliateOrder.findMany({
-      where: { affiliateId, createdAt: { gte: new Date(Math.min(...starts)) } },
-      select: { createdAt: true, commissionAmount: true },
-      orderBy: { createdAt: 'desc' },
-    });
-  }
-
-  const views = purchases.map((p) => computeBoosterProgress(p, byId.get(p.packageId) || null, orders, now));
-  return { ...splitBoosters(views), packages: config.packages };
 }
 
 /**

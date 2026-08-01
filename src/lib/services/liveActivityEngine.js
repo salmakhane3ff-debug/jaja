@@ -22,6 +22,7 @@
  */
 import { getSettings, upsertSettings } from './settingsService.js';
 import { getDemoIdentityPool } from './demoService.js';
+import { getBoosterLiveFacts } from './boosterSimulationService.js';
 import { normalizeUgcSettings } from '../ugcSettings.js';
 import { businessDateKey } from '../ugcTime.js';
 import {
@@ -72,18 +73,21 @@ export function buildEvent(type, cfg, now, pool, rnd = Math.random) {
   if (type === 'newOrder')   return { ...base, icon: '📦', city, activity: 'طلب جديد' };
   if (type === 'newAffiliate') return { ...base, icon: '👤', city, activity: 'انضمت للمنصة' };
   if (type === 'booster') {
-    // Booster progress: either a batch of sales landing, or a milestone.
-    const sales = randInt(1, 3);
-    const target = pick([200, 500, 1000]);
-    const reached = Math.round(target * pick([0.25, 0.5, 0.6, 0.75]));
-    return rnd6() < 0.5
-      ? { ...base, icon: '🚀', activity: 'Starter Booster', detail: `+${sales} ${sales === 1 ? 'مبيعة' : 'مبيعات'}`, boosterSales: sales }
-      : { ...base, icon: '🚀', activity: 'وصلت', detail: `${reached} / ${target}` };
+    // Booster events come from the SIMULATION engine's real facts (passed in as
+    // cfg.boosterFacts) — one source of truth, no second generator. The persona
+    // is still a demo identity, so no affiliate is ever identified publicly.
+    const fact = pick(cfg.boosterFacts || []);
+    if (fact?.kind === 'milestone') {
+      return { ...base, icon: '🚀', activity: 'وصلت', detail: `${fact.sales} / ${fact.target}` };
+    }
+    if (fact?.kind === 'sales') {
+      const n = Math.max(1, fact.count);
+      return { ...base, icon: '🚀', activity: 'Starter Booster', detail: `+${n} ${n === 1 ? 'مبيعة' : 'مبيعات'}`, boosterSales: n };
+    }
+    return null; // no simulation activity yet → caller picks another type
   }
   return { ...base, icon: '🏆', activity: 'دخلات المنافسة ديال هاد الشهر' }; // competition
 }
-
-const rnd6 = () => Math.random();
 
 // Counter delta for an event (UGC earnings depend on the CURRENT commission).
 function counterAmount(ev, commissionPerSale) {
@@ -106,7 +110,7 @@ function bootstrapFeed(state, cfg, commissionPerSale, now, avgMs, pool) {
   for (let i = 0; i < BOOTSTRAP_COUNT; i++) {
     const type = pickActivityType(cfg.probabilities);
     const at = now - (BOOTSTRAP_COUNT - i) * avgMs; // i=0 oldest … newest ≈ now-avgMs
-    const ev = buildEvent(type, cfg, at, pool);
+    const ev = buildEvent(type, cfg, at, pool) || buildEvent('newOrder', cfg, at, pool);
     state.counters = applyActivityToStats(state.counters, type, counterAmount(ev, commissionPerSale));
     if (Math.random() < 0.15) state.counters.affiliatesOnline = driftOnline(state.counters.affiliatesOnline);
     batch.push(ev);
@@ -130,6 +134,8 @@ export async function getLiveActivitySnapshot() {
 
   const commissionPerSale = await getUgcCommissionPerSale();
   const pool = await getDemoIdentityPool(); // shared with the Monthly Competition
+  // Booster events read the SIMULATION engine — never a second generator.
+  cfg.boosterFacts = await getBoosterLiveFacts().catch(() => []);
   const now = Date.now();
   const today = businessDateKey(new Date());
   const avgMs = ((cfg.intervalMinSec + cfg.intervalMaxSec) / 2) * 1000;
@@ -155,7 +161,7 @@ export async function getLiveActivitySnapshot() {
     const add = Math.min(elapsedTicks, MAX_CATCHUP);
     for (let k = 0; k < add; k++) {
       const type = pickActivityType(cfg.probabilities);
-      const ev = buildEvent(type, cfg, now, pool);
+      const ev = buildEvent(type, cfg, now, pool) || buildEvent('newOrder', cfg, now, pool);
       state.counters = applyActivityToStats(state.counters, type, counterAmount(ev, commissionPerSale));
       if (Math.random() < 0.15) state.counters.affiliatesOnline = driftOnline(state.counters.affiliatesOnline); // slow fluctuation
       state.events.unshift(ev);
