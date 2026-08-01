@@ -304,6 +304,8 @@ model Affiliate {
   identityVerification IdentityVerification?
   // Security deposits ("Dépôt de garantie") — additive back-relation.
   securityDeposits     AffiliateSecurityDeposit[]
+  // Starter Booster purchases — additive back-relation.
+  boosterPurchases     AffiliateBoosterPurchase[]
 
   @@index([username])
   @@index([isActive])
@@ -445,6 +447,28 @@ model AffiliatePayout {
   @@index([affiliateId])
   @@index([status])
   @@map("affiliate_payouts")
+}
+
+// ── Starter Booster purchases ──────────────────────────────────────────────────
+// Paid with the EXISTING derived balance (no separate wallet): a BALANCE-paid
+// ACTIVE row is subtracted from "Solde disponible" by the booster_purchase
+// balance provider, so the charge IS the row — deduction and activation are one
+// atomic write. CARD purchases start PENDING and are activated by an admin.
+model AffiliateBoosterPurchase {
+  id            String    @id @default(uuid())
+  affiliateId   String
+  packageId     String
+  packageName   String
+  price         Float
+  paymentMethod String    // "BALANCE" | "CARD"
+  status        String    @default("PENDING") // PENDING | ACTIVE | REJECTED
+  createdAt     DateTime  @default(now())
+  activatedAt   DateTime?
+  affiliate     Affiliate @relation(fields: [affiliateId], references: [id])
+
+  @@index([affiliateId])
+  @@index([status])
+  @@map("affiliate_booster_purchases")
 }
 
 model AffiliateNotification {

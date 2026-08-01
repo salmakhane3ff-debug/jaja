@@ -140,6 +140,8 @@ console.log('6) Withdrawal gate — identity must be APPROVED (server-side):');
     affiliate: { findUnique: async () => ({ bonusBalance: 0 }) },
     affiliatePayout: { aggregate: async () => ({ _sum: { amount: null } }), create: async ({ data }) => ({ id: 'p1', ...data }) },
     ugcEarning: { aggregate: async () => ({ _sum: { amount: null } }) },
+    affiliateBoosterPurchase: { aggregate: async () => ({ _sum: { price: null } }) }, // booster provider — no purchases
+    affiliateSecurityDeposit: { aggregate: async () => ({ _sum: { amount: null } }) }, // deposit_topup provider — no top-ups
   });
 
   const noRow = makePayoutDb(null);

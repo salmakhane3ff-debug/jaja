@@ -302,7 +302,7 @@ function TeamBonusConfigPanel() {
           </div>
           <div>
             <label className="block text-xs font-semibold text-gray-600 mb-1.5">
-              Montant du dépôt de garantie (MAD)
+              Montant du dépôt de solde (MAD)
             </label>
             <input
               type="number"
@@ -1730,6 +1730,155 @@ function RecruitmentLandingPanel() {
   );
 }
 
+// ── 🚀 Starter Boosters (packages + card-purchase validation) ──────────────────
+function BoosterAdminPanel() {
+  const [cfg, setCfg]         = useState({ enabled: false, allowStacking: false, packages: [] });
+  const [purchases, setPurchases] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving]   = useState(false);
+  const [busyId, setBusyId]   = useState(null);
+  const [msg, setMsg]         = useState(null);
+
+  const fieldCls = "w-full text-sm border border-gray-200 rounded-lg px-2.5 py-1.5 bg-gray-50 focus:outline-none focus:border-gray-400";
+
+  const load = async () => {
+    setLoading(true);
+    try {
+      const [cfgRes, purRes] = await Promise.all([
+        fetch("/api/setting?type=booster-packages"),
+        fetch("/api/admin/boosters"),
+      ]);
+      const raw = await cfgRes.json().catch(() => ({}));
+      const pur = await purRes.json().catch(() => ({}));
+      setCfg({
+        enabled: raw?.enabled === true,
+        allowStacking: raw?.allowStacking === true,
+        packages: Array.isArray(raw?.packages) ? raw.packages.map((p) => ({
+          id: p?.id || "", name: p?.name || "", price: Number(p?.price) || 0,
+          description: p?.description || "", emoji: p?.emoji || "🚀", active: p?.active !== false,
+        })) : [],
+      });
+      setPurchases(Array.isArray(pur?.purchases) ? pur.purchases : []);
+    } catch {}
+    finally { setLoading(false); }
+  };
+  useEffect(() => { load(); }, []);
+
+  const save = async () => {
+    setSaving(true); setMsg(null);
+    try {
+      const res = await fetch("/api/setting?type=booster-packages", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(cfg),
+      });
+      setMsg(res.ok ? { ok: true, t: "Enregistré." } : { ok: false, t: "Échec." });
+    } catch { setMsg({ ok: false, t: "Échec." }); }
+    finally { setSaving(false); }
+  };
+
+  const review = async (id, action) => {
+    setBusyId(id);
+    try {
+      const r = await fetch("/api/admin/boosters", {
+        method: "PUT", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ id, action }),
+      });
+      if (r.ok) await load();
+      else setMsg({ ok: false, t: (await r.json().catch(() => ({})))?.error || "Échec." });
+    } catch {}
+    finally { setBusyId(null); }
+  };
+
+  const setPkg = (i, k, v) => setCfg((c) => ({ ...c, packages: c.packages.map((x, j) => j === i ? { ...x, [k]: v } : x) }));
+  const addPkg = () => setCfg((c) => ({ ...c, packages: [...c.packages, { id: `pkg${Date.now()}`, name: "", price: 0, description: "", emoji: "🚀", active: true }] }));
+  const delPkg = (i) => setCfg((c) => ({ ...c, packages: c.packages.filter((_, j) => j !== i) }));
+
+  const pending = purchases.filter((p) => p.status === "PENDING");
+
+  return (
+    <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden mt-6">
+      <div className="flex items-center gap-3 px-5 py-4 border-b border-gray-100 bg-violet-50">
+        <span className="text-lg">🚀</span>
+        <div>
+          <h2 className="text-sm font-bold text-gray-900">Starter Boosters</h2>
+          <p className="text-[11px] text-gray-500">Packs payables avec le solde affilié (déduction atomique) ou par carte (validation manuelle).</p>
+        </div>
+      </div>
+      <div className="p-5 space-y-4">
+        {loading ? (
+          <div className="flex justify-center py-6"><Loader2 className="w-5 h-5 animate-spin text-gray-400" /></div>
+        ) : (
+          <>
+            {msg && <div className={`text-xs px-3 py-2 rounded-lg ${msg.ok ? "bg-green-50 text-green-700" : "bg-red-50 text-red-700"}`}>{msg.t}</div>}
+
+            <div className="flex flex-wrap items-center gap-4">
+              <label className="flex items-center gap-1.5 text-xs text-gray-600">
+                <input type="checkbox" checked={cfg.enabled} onChange={(e) => setCfg((c) => ({ ...c, enabled: e.target.checked }))} /> Boosters activés
+              </label>
+              <label className="flex items-center gap-1.5 text-xs text-gray-600">
+                <input type="checkbox" checked={cfg.allowStacking} onChange={(e) => setCfg((c) => ({ ...c, allowStacking: e.target.checked }))} /> Autoriser le cumul du même pack
+              </label>
+            </div>
+
+            {/* Packages */}
+            <div>
+              <div className="flex items-center justify-between mb-2">
+                <span className="text-xs font-bold text-gray-700 uppercase tracking-wide">Packs</span>
+                <button type="button" onClick={addPkg} className="flex items-center gap-1 text-xs font-medium bg-gray-100 hover:bg-gray-200 text-gray-700 rounded-lg px-2.5 py-1"><Plus className="w-3 h-3" /> Ajouter</button>
+              </div>
+              {cfg.packages.length === 0 ? <p className="text-xs text-gray-400">Aucun pack — les affiliés voient « bientôt disponible ».</p> : (
+                <div className="space-y-2">
+                  {cfg.packages.map((p, i) => (
+                    <div key={p.id || i} className="border border-gray-100 rounded-xl p-3 grid grid-cols-1 sm:grid-cols-12 gap-2 items-center">
+                      <input className={`${fieldCls} sm:col-span-1 text-center`} placeholder="🚀" value={p.emoji} onChange={(e) => setPkg(i, "emoji", e.target.value)} />
+                      <input className={`${fieldCls} sm:col-span-3`} placeholder="Nom (ex: Starter Booster Gold)" value={p.name} onChange={(e) => setPkg(i, "name", e.target.value)} />
+                      <input type="number" min={0} className={`${fieldCls} sm:col-span-2`} placeholder="Prix (DH)" value={p.price} onChange={(e) => setPkg(i, "price", Number(e.target.value) || 0)} />
+                      <input className={`${fieldCls} sm:col-span-4`} placeholder="Description" value={p.description} onChange={(e) => setPkg(i, "description", e.target.value)} />
+                      <div className="sm:col-span-2 flex items-center justify-between gap-1">
+                        <label className="flex items-center gap-1 text-[11px] text-gray-500"><input type="checkbox" checked={p.active !== false} onChange={(e) => setPkg(i, "active", e.target.checked)} />actif</label>
+                        <button type="button" onClick={() => delPkg(i)} className="text-gray-400 hover:text-red-600"><Trash2 className="w-4 h-4" /></button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <div className="flex justify-end">
+              <button onClick={save} disabled={saving} className="flex items-center gap-1.5 text-xs font-semibold px-4 py-2 rounded-xl bg-gray-900 text-white hover:bg-black disabled:opacity-50">
+                {saving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <CheckCircle className="w-3.5 h-3.5" />} Enregistrer
+              </button>
+            </div>
+
+            {/* Pending card purchases */}
+            <div>
+              <span className="text-xs font-bold text-gray-700 uppercase tracking-wide">Paiements carte en attente ({pending.length})</span>
+              {pending.length === 0 ? <p className="text-xs text-gray-400 mt-1">Aucun paiement à valider.</p> : (
+                <div className="space-y-2 mt-2">
+                  {pending.map((p) => (
+                    <div key={p.id} className="flex flex-wrap items-center justify-between gap-2 border border-gray-100 rounded-xl px-3 py-2.5">
+                      <div>
+                        <p className="text-xs font-bold text-gray-800">🚀 {p.packageName} · {Number(p.price).toLocaleString("en-US")} DH</p>
+                        <p className="text-[11px] text-gray-400">{p.affiliate?.name} (@{p.affiliate?.username}) · {new Date(p.createdAt).toLocaleString("fr-FR")}</p>
+                      </div>
+                      <div className="flex gap-1.5">
+                        <button type="button" disabled={busyId === p.id} onClick={() => review(p.id, "approve")}
+                          className="px-3 py-1.5 rounded-lg bg-green-600 hover:bg-green-700 text-white text-[11px] font-bold disabled:opacity-50">Activer</button>
+                        <button type="button" disabled={busyId === p.id} onClick={() => review(p.id, "reject")}
+                          className="px-3 py-1.5 rounded-lg bg-red-500 hover:bg-red-600 text-white text-[11px] font-bold disabled:opacity-50">Refuser</button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
 export default function AdminAffiliatesPage() {
   const [affiliates, setAffiliates] = useState([]);
   const [loading,    setLoading]    = useState(true);
@@ -1931,6 +2080,8 @@ export default function AdminAffiliatesPage() {
       <FakeOrdersPanel />
 
       <SupportSettingsPanel />
+
+      <BoosterAdminPanel />
 
       <RecruitmentLandingPanel />
     </div>

@@ -2,10 +2,11 @@
 /**
  * scripts/securityDeposit.test.mjs
  * ─────────────────────────────────────────────────────────────────────────────
- * Affiliate "Dépôt de garantie" — submission, balance isolation, idempotent
- * approve/reject, proof access control, upload validation, and (critically) that
- * the security-deposit balance is NEVER withdrawable via the normal payout flow.
- * In-memory fake db + injected storage — no real database, no filesystem.
+ * Affiliate "💰 Dépôt de solde" (balance top-up; formerly the security deposit) —
+ * submission, idempotent approve/reject, proof access control, upload
+ * validation, and the 2026-08-01 accounting change: an APPROVED top-up now
+ * CREDITS "Solde disponible" (deposit_topup provider) while PENDING/REJECTED
+ * rows never count. In-memory fake db + injected storage — no real database.
  * Run: node scripts/securityDeposit.test.mjs
  * ─────────────────────────────────────────────────────────────────────────────
  */
@@ -18,7 +19,7 @@ import {
   adminApproveDeposit, adminRejectDeposit,
   getDepositProofForAffiliate, getConfiguredDepositAmount, DEFAULT_DEPOSIT_AMOUNT,
 } from '../src/lib/services/depositService.js';
-import { requestPayout } from '../src/lib/services/affiliateSystemService.js';
+import { requestPayout, getAffiliateBalance } from '../src/lib/services/affiliateSystemService.js';
 
 let pass = 0, fail = 0;
 const ok = (n, c) => { if (c) { pass++; console.log('  PASS ', n); } else { fail++; console.log('  FAIL ', n); } };
@@ -166,30 +167,44 @@ console.log('6) Proof access control — affiliate sees ONLY their own:');
   ok('unknown deposit → null', (await getDepositProofForAffiliate('ownerA', 'missing', db)) === null);
 }
 
-console.log('7) WITHDRAWAL ISOLATION — deposits are never withdrawable:');
+console.log('7) BALANCE TOP-UP — an APPROVED deposit credits Solde disponible:');
 {
-  // Affiliate has an APPROVED deposit of 5000 but ZERO commission. The normal
-  // withdrawal balance (composed providers) must NOT include the deposit.
+  // Affiliate has an APPROVED top-up of 5000 and ZERO commission. The available
+  // balance (composed providers) now INCLUDES the approved deposit — this is
+  // the 2026-08-01 product decision replacing the old isolation rule.
   const s = { txEntered: false };
+  const makeDeposits = (approved) => ({
+    aggregate: async ({ where }) => ({ _sum: { amount: where?.status === 'APPROVED' ? approved : null } }),
+    findMany:  async ({ where }) => (where?.status === 'APPROVED' && approved != null ? [{ amount: approved }] : []),
+  });
   const balProviders = {
     affiliateOrder:   { aggregate: async () => ({ _sum: { commissionAmount: 0 } }) },
     affiliate:        { findUnique: async (q) => (q.select?.bonusBalance ? { bonusBalance: 0 } : { bankName: 'CIH', accountName: 'A B', rib: '1234567890123' }) },
-    affiliatePayout:  { aggregate: async () => ({ _sum: { amount: null } }) },
+    affiliatePayout:  { aggregate: async () => ({ _sum: { amount: null } }), create: async ({ data }) => ({ id: 'p1', ...data }) },
     ugcEarning:       { aggregate: async () => ({ _sum: { amount: null } }) },
-    // Present but NEVER consulted by the balance/withdrawal path:
-    affiliateSecurityDeposit: { findMany: async () => [{ amount: 5000, status: 'APPROVED' }] },
+    affiliateBoosterPurchase: { aggregate: async () => ({ _sum: { price: null } }) }, // booster provider — no purchases
+    affiliateSecurityDeposit: makeDeposits(5000),
   };
   const db = {
     ...balProviders,
     identityVerification: { findUnique: async () => ({ status: 'APPROVED' }) },
     $transaction: async (fn) => { s.txEntered = true; return fn(balProviders); },
   };
-  // Deposit balance IS 5000 (isolated ledger) …
-  ok('deposit balance = 5000 (isolated)', (await getDepositBalance('a', db)) === 5000);
-  // … but withdrawable balance is 0 → payout of 100 is refused as INSUFFICIENT.
-  const code = await codeOf(() => requestPayout('a', 100, db));
-  ok('withdrawal of deposit amount → INSUFFICIENT_BALANCE (deposit excluded)', code === 'INSUFFICIENT_BALANCE');
-  ok('balance transaction was entered (passed bank + identity gates)', s.txEntered === true);
+  ok('deposit-page approved total = 5000', (await getDepositBalance('a', db)) === 5000);
+  ok('available balance INCLUDES the approved top-up (5000)', (await getAffiliateBalance('a', db)) === 5000);
+  const payout = await requestPayout('a', 100, db);
+  ok('spending against the topped-up balance is accepted', payout?.amount === 100 && s.txEntered === true);
+
+  // PENDING top-ups never count: same affiliate, nothing approved yet.
+  const pendingOnly = {
+    ...balProviders,
+    affiliateSecurityDeposit: makeDeposits(null),
+    identityVerification: { findUnique: async () => ({ status: 'APPROVED' }) },
+  };
+  pendingOnly.$transaction = async (fn) => fn(pendingOnly);
+  ok('PENDING top-up → balance still 0', (await getAffiliateBalance('a', pendingOnly)) === 0);
+  const code = await codeOf(() => requestPayout('a', 100, pendingOnly));
+  ok('spending before validation → INSUFFICIENT_BALANCE', code === 'INSUFFICIENT_BALANCE');
 }
 
 console.log(`\nRESULT: ${pass} passed, ${fail} failed`);

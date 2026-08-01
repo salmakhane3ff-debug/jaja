@@ -76,7 +76,7 @@ export default function AdminDepositsPage() {
       <div className="flex items-center gap-3">
         <Wallet className="w-6 h-6 text-indigo-600" />
         <div>
-          <h1 className="text-2xl font-bold text-gray-900">Dépôts de garantie</h1>
+          <h1 className="text-2xl font-bold text-gray-900">💰 Dépôts de solde</h1>
           <p className="text-sm text-gray-500">{displayed.length} / {rows.length} demande(s)</p>
         </div>
       </div>
@@ -165,7 +165,7 @@ export default function AdminDepositsPage() {
               <p className="text-sm text-gray-500 mb-3">
                 {rejecting
                   ? "Indiquez le motif du refus (visible par l'affilié). Aucun solde ne change."
-                  : `Créditer ${fmtMoney(confirm.row?.amount)} au Dépôt de garantie de @${confirm.row?.username} ?`}
+                  : `Créditer ${fmtMoney(confirm.row?.amount)} au solde disponible de @${confirm.row?.username} ?`}
               </p>
               {rejecting && (
                 <textarea value={reason} onChange={(e) => setReason(e.target.value)} autoFocus

@@ -9,10 +9,11 @@ import {
   XCircle, CheckCircle, Building2, CreditCard,
   Target, Star, UserPlus, Eye, AlertTriangle, Settings, Video, Wallet,
   ShieldCheck, ShieldAlert, MessageCircle, Upload, Trash2,
-  Home, Plus, MoreHorizontal, X,
+  Home, Plus, MoreHorizontal, X, Rocket,
 } from "lucide-react";
 import UgcTab from "./UgcTab";
 import DepositTab from "./DepositTab";
+import BoosterTab from "./BoosterTab";
 import LiveActivity from "@/components/LiveActivity";
 import { diffNewItems, shouldPlaySaleSound } from "@/lib/liveFeed";
 import { createSaleSound } from "./saleSound";
@@ -221,10 +222,11 @@ function MobileBottomNav({ activeTab, setActiveTab, refLink, onLogout, unread = 
 
   const moreItems = [
     { icon: Package,     label: "الطلبات",        tab: "orders" },
+    { icon: Rocket,      label: "Booster",        tab: "booster" },
     { icon: Video,       label: "UGC",            tab: "ugc" },
     { icon: Users,       label: "الفريق",         tab: "team" },
     { icon: Wallet,      label: "الرصيد والسحب",  tab: "payout" },
-    { icon: ShieldCheck, label: "الضمان",         tab: "deposit" },
+    { icon: Wallet,      label: "شحن الرصيد",     tab: "deposit" },
     { icon: Building2,   label: "المعلومات البنكية", tab: "bank" },
     { icon: Bell,        label: "الإشعارات",      tab: "notifications", badge: unread },
     { icon: Settings,    label: "الإعدادات",      tab: "settings" },
@@ -1221,6 +1223,18 @@ export default function AffiliateDashboard() {
   const [payoutLoading, setPayoutLoading] = useState(false);
   const [payoutMsg,     setPayoutMsg]     = useState(null);
 
+  // Booster purchases (merged into the existing balance history — no new page).
+  // Fetched lazily when the payout tab opens so the polling loop stays untouched.
+  const [boosterPurchases, setBoosterPurchases] = useState([]);
+  useEffect(() => {
+    if (activeTab !== "payout") return;
+    const t = localStorage.getItem("affiliateToken") || "";
+    fetch("/api/affiliate/boosters", { headers: { Authorization: `Bearer ${t}` }, cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => setBoosterPurchases(Array.isArray(d?.purchases) ? d.purchases : []))
+      .catch(() => {});
+  }, [activeTab]);
+
   // Order status update
   const [updatingOrder, setUpdatingOrder] = useState(null);
 
@@ -1638,7 +1652,8 @@ export default function AffiliateDashboard() {
     { id: "orders",        label: `Commandes (${orders.length})` },
     { id: "bank",          label: "Coordonnées" },
     { id: "payout",        label: "Retraits" },
-    { id: "deposit",       label: "Dépôt de garantie" },
+    { id: "deposit",       label: "💰 Dépôt de solde" },
+    { id: "booster",       label: "🚀 Booster" },
     { id: "ugc",           label: "💰 Video UGC" },
     { id: "notifications", label: `Notifs ${unread > 0 ? `(${unread})` : ""}` },
     { id: "team",          label: `Équipe (${team.length})` },
@@ -1870,12 +1885,12 @@ export default function AffiliateDashboard() {
                 sub={`${team.length} membre${team.length !== 1 ? "s" : ""}`} />
             </div>
 
-            {/* ── Dépôt de garantie — SEPARATE from Solde disponible / earnings ── */}
+            {/* ── 💰 Dépôt de solde — balance top-up (credited after validation) ── */}
             <button onClick={goToDeposit} className="w-full text-left">
               <div className="rounded-2xl border border-indigo-100 bg-indigo-50/60 p-4 flex items-center justify-between gap-3 hover:bg-indigo-50 transition-colors">
                 <div>
                   <div className="flex items-center gap-2 text-indigo-700 text-xs font-semibold">
-                    <Wallet className="w-4 h-4" /> Dépôt de garantie
+                    <Wallet className="w-4 h-4" /> 💰 Dépôt de solde
                   </div>
                   <p className="text-2xl font-black text-gray-900 mt-1">{fmtMoney(deposit.approvedBalance)}</p>
                   {deposit.pendingTotal > 0 && (
@@ -1883,7 +1898,7 @@ export default function AffiliateDashboard() {
                       En attente de validation : {fmtMoney(deposit.pendingTotal)}
                     </p>
                   )}
-                  <p className="text-[10px] text-gray-400 mt-0.5">Séparé du solde disponible · non retirable</p>
+                  <p className="text-[10px] text-gray-400 mt-0.5">Rechargez votre solde disponible · crédité après validation</p>
                 </div>
                 <svg className="w-4 h-4 text-indigo-400 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M9 18l6-6-6-6"/></svg>
               </div>
@@ -2183,22 +2198,41 @@ export default function AffiliateDashboard() {
               </form>
             </Section>
 
-            {/* Payout history */}
-            {stats?.payouts?.length > 0 && (
-              <Section title="Historique des retraits" icon={TrendingUp}>
+            {/* Balance history — payouts + Starter Booster purchases, one merged
+                list (the boosters reuse THIS history; no separate page). */}
+            {((stats?.payouts?.length || 0) + boosterPurchases.length) > 0 && (
+              <Section title="Historique du solde" icon={TrendingUp}>
                 <div className="space-y-2">
-                  {stats.payouts.map((p) => (
-                    <div key={p.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-xl">
-                      <div>
-                        <p className="text-sm font-semibold text-gray-800">{fmtMoney(p.amount)}</p>
-                        <p className="text-xs text-gray-400">{fmtDate(p.createdAt)}</p>
+                  {[
+                    ...(stats?.payouts || []).map((p) => ({ kind: "payout", ...p })),
+                    ...boosterPurchases.map((b) => ({ kind: "booster", ...b })),
+                  ]
+                    .sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))
+                    .map((x) => x.kind === "payout" ? (
+                      <div key={`p-${x.id}`} className="flex items-center justify-between p-3 bg-gray-50 rounded-xl">
+                        <div>
+                          <p className="text-sm font-semibold text-gray-800">Retrait · {fmtMoney(x.amount)}</p>
+                          <p className="text-xs text-gray-400">{fmtDate(x.createdAt)}</p>
+                        </div>
+                        <span className={`px-2.5 py-1 rounded-full text-xs font-semibold
+                          ${x.status === "paid" ? "bg-green-100 text-green-700" : "bg-yellow-100 text-yellow-700"}`}>
+                          {x.status === "paid" ? "Payé" : "En attente"}
+                        </span>
                       </div>
-                      <span className={`px-2.5 py-1 rounded-full text-xs font-semibold
-                        ${p.status === "paid" ? "bg-green-100 text-green-700" : "bg-yellow-100 text-yellow-700"}`}>
-                        {p.status === "paid" ? "Payé" : "En attente"}
-                      </span>
-                    </div>
-                  ))}
+                    ) : (
+                      <div key={`b-${x.id}`} className="flex items-center justify-between p-3 bg-gray-50 rounded-xl">
+                        <div>
+                          <p className="text-sm font-semibold text-gray-800">🚀 {x.packageName} · −{fmtMoney(x.price)}</p>
+                          <p className="text-xs text-gray-400">
+                            {x.paymentMethod === "BALANCE" ? "Payé avec le solde" : "Payé par carte"} · {fmtDate(x.createdAt)}
+                          </p>
+                        </div>
+                        <span className={`px-2.5 py-1 rounded-full text-xs font-semibold
+                          ${x.status === "ACTIVE" ? "bg-green-100 text-green-700" : x.status === "REJECTED" ? "bg-red-100 text-red-600" : "bg-yellow-100 text-yellow-700"}`}>
+                          {x.status === "ACTIVE" ? "Actif" : x.status === "REJECTED" ? "Refusé" : "En attente"}
+                        </span>
+                      </div>
+                    ))}
                 </div>
               </Section>
             )}
@@ -2832,6 +2866,8 @@ export default function AffiliateDashboard() {
         {activeTab === "deposit" && (
           <DepositTab token={token} onChanged={() => fetchAll(token, { silent: true })} />
         )}
+
+        {activeTab === "booster" && <BoosterTab onRecharge={goToDeposit} />}
 
         {activeTab === "ugc" && <UgcTab />}
 

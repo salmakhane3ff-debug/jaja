@@ -1,12 +1,17 @@
 /**
  * src/lib/services/depositService.js
  * ─────────────────────────────────────────────────────────────────────────────
- * Affiliate security deposit ("Dépôt de garantie") business logic.
+ * Affiliate balance top-up ("💰 Dépôt de solde") business logic.
+ * (Formerly the "Dépôt de garantie" security deposit — converted to a normal
+ * balance recharge by explicit product decision on 2026-08-01. Table/model
+ * names are kept for a non-destructive migration.)
  *
- * ACCOUNTING: the approved-deposit balance is DERIVED from the SUM of APPROVED
- * rows (never a stored, mutable field), using the SAME Decimal money helpers as
- * the withdrawable balance. It is deliberately NOT a balance provider, so it can
- * never enter "Solde disponible" or the withdrawal system.
+ * ACCOUNTING: the approved total is DERIVED from the SUM of APPROVED rows
+ * (never a stored, mutable field), using the SAME Decimal money helpers as the
+ * rest of the balance. It now feeds "Solde disponible" through the
+ * `deposit_topup` balance provider (affiliateSystemService) — an admin-approved
+ * deposit credits the available balance; PENDING/REJECTED rows never count.
+ * There is NO second wallet anywhere.
  *
  * IDEMPOTENT REVIEW: approve/reject use a conditional `updateMany` gated on
  * status = 'PENDING'. Only one call can ever match (count === 1); double-clicks,
@@ -47,7 +52,7 @@ function sumAmounts(rows) {
   return serializeAmount(sum);
 }
 
-/** Approved deposit balance (derived — NEVER withdrawable, NEVER in Solde disponible). */
+/** Approved top-up total (derived; credited to Solde disponible via the deposit_topup provider). */
 export async function getDepositBalance(affiliateId, db = prisma) {
   const rows = await db.affiliateSecurityDeposit.findMany({ where: { affiliateId, status: 'APPROVED' }, select: { amount: true } });
   return sumAmounts(rows);
@@ -200,7 +205,7 @@ export async function adminApproveDeposit(id, adminId = null, db = prisma) {
 
   // Notification (amount from DB). Non-fatal — never rolls back the approval.
   await db.affiliateNotification.create({
-    data: { affiliateId: row.affiliateId, message: `Votre dépôt de garantie de ${Number(row.amount).toFixed(0)} MAD a été approuvé.` },
+    data: { affiliateId: row.affiliateId, message: `Votre dépôt de solde de ${Number(row.amount).toFixed(0)} MAD a été approuvé et ajouté à votre solde disponible.` },
   }).catch(() => {});
 
   return { ok: true, credited: true };
@@ -222,7 +227,7 @@ export async function adminRejectDeposit(id, reason, adminId = null, db = prisma
   if (res.count !== 1) return { ok: true, changed: false };
 
   await db.affiliateNotification.create({
-    data: { affiliateId: row.affiliateId, message: `Votre dépôt de garantie a été refusé.\nRaison :\n${clean}` },
+    data: { affiliateId: row.affiliateId, message: `Votre dépôt de solde a été refusé.\nRaison :\n${clean}` },
   }).catch(() => {});
 
   return { ok: true, changed: true };

@@ -3,11 +3,13 @@
 /**
  * src/app/affiliate/dashboard/DepositTab.jsx
  * ─────────────────────────────────────────────────────────────────────────────
- * Affiliate "Dépôt de garantie" — reuses the extracted checkout UI (amount
- * banner, bank details card + copy, proof upload). The deposit amount is FIXED
- * by the admin (read-only here; the server re-reads it on submit — the client
- * can never set it). "Voir la preuve" opens the proof in an in-page modal via
- * the protected API route (never exposing the private storage URL).
+ * Affiliate "💰 Dépôt de solde" — the balance TOP-UP page (formerly the
+ * security deposit; approved deposits now credit Solde disponible). Reuses the
+ * extracted checkout UI (amount banner, bank details card + copy, proof
+ * upload). The recharge amount is FIXED by the admin (read-only here; the
+ * server re-reads it on submit — the client can never set it). "Voir la preuve"
+ * opens the proof in an in-page modal via the protected API route (never
+ * exposing the private storage URL).
  * ─────────────────────────────────────────────────────────────────────────────
  */
 import { useState, useEffect } from "react";
@@ -148,12 +150,12 @@ export default function DepositTab({ token, onChanged }) {
 
   return (
     <div className="max-w-lg mx-auto space-y-4">
-      {/* Summary — approved (derived) + pending, kept separate from Solde disponible */}
+      {/* Summary — approved top-ups (credited to Solde disponible) + pending */}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
         <div className="rounded-2xl border border-gray-100 bg-white p-5">
-          <div className="flex items-center gap-2 text-gray-500 text-xs mb-1"><Wallet className="w-4 h-4" /> Dépôt de garantie approuvé</div>
+          <div className="flex items-center gap-2 text-gray-500 text-xs mb-1"><Wallet className="w-4 h-4" /> Rechargements approuvés</div>
           <p className="text-2xl font-black text-gray-900">{fmtMoney(data.summary.approvedBalance)}</p>
-          <p className="text-[11px] text-gray-400 mt-1">Séparé du solde disponible · non retirable</p>
+          <p className="text-[11px] text-gray-400 mt-1">Crédités sur votre solde disponible</p>
         </div>
         <div className="rounded-2xl border border-amber-100 bg-amber-50 p-5">
           <div className="text-amber-700 text-xs mb-1">En attente de validation</div>
@@ -192,9 +194,9 @@ export default function DepositTab({ token, onChanged }) {
         <>
           {/* ── Amount banner (reused) — FIXED, read-only, set by admin ── */}
           <BankTransferAmountBanner
-            label="Montant du dépôt de garantie"
+            label="Montant du dépôt de solde"
             value={fmtMoney(data.depositAmount)}
-            footer={<p className="text-xs mt-2 opacity-60">Ce montant est fixé par l'administration.</p>}
+            footer={<p className="text-xs mt-2 opacity-60">Ce montant est fixé par l'administration. Une fois validé, il est ajouté à votre solde disponible.</p>}
           />
 
           {/* ── Bank details card (reused) — from Bank Settings ── */}

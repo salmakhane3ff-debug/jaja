@@ -52,10 +52,39 @@ export async function getPayoutDeductionComponent(affiliateId, db = prisma) {
   return -(p._sum.amount ?? 0);
 }
 
+/**
+ * Σ APPROVED balance top-ups ("💰 Dépôt de solde") as a POSITIVE component
+ * (read-only). The former "security deposit" is now a normal balance recharge:
+ * an admin-validated deposit credits "Solde disponible" directly (explicit
+ * product decision, 2026-08-01 — supersedes the old isolation rule). Same
+ * admin-validation workflow; PENDING/REJECTED rows never count. Priority 25 —
+ * an earning-side slot between the bonus (20) and deductions (30+).
+ */
+export async function getDepositTopupComponent(affiliateId, db = prisma) {
+  const d = await db.affiliateSecurityDeposit.aggregate({
+    where: { affiliateId, status: 'APPROVED' }, _sum: { amount: true },
+  });
+  return d._sum.amount ?? 0;
+}
+
+/**
+ * Σ ACTIVE, BALANCE-paid Starter Booster purchases as a NEGATIVE deduction
+ * (read-only). CARD-paid purchases never touch the balance. Priority 50 — the
+ * documented free "new deduction" slot; no separate wallet exists anywhere.
+ */
+export async function getBoosterDeductionComponent(affiliateId, db = prisma) {
+  const b = await db.affiliateBoosterPurchase.aggregate({
+    where: { affiliateId, paymentMethod: 'BALANCE', status: 'ACTIVE' }, _sum: { price: true },
+  });
+  return -(b._sum.price ?? 0);
+}
+
 // Thin adapters — pure wiring, no logic (see providerRegistry read-only contract).
 registerBalanceProvider({ source: 'referral_commission', priority: BALANCE_PRIORITY.REFERRAL_COMMISSION, compute: getReferralCommissionComponent });
 registerBalanceProvider({ source: 'referral_bonus',      priority: BALANCE_PRIORITY.REFERRAL_BONUS,      compute: getReferralBonusComponent });
+registerBalanceProvider({ source: 'deposit_topup',       priority: 25,                                   compute: getDepositTopupComponent });
 registerBalanceProvider({ source: 'payout_deduction',    priority: BALANCE_PRIORITY.PAYOUT_DEDUCTION,    compute: getPayoutDeductionComponent });
+registerBalanceProvider({ source: 'booster_purchase',    priority: 50,                                   compute: getBoosterDeductionComponent });
 
 // ── Mapper ────────────────────────────────────────────────────────────────────
 
@@ -763,7 +792,7 @@ const DEFAULT_BONUS_CONFIG = {
   requiredActiveAffiliates: 10,
   bonusAmount: 2000,
   ugcGoal: 5, // "Objectif UGC" — target validated UGC videos (admin-configurable)
-  securityDepositAmount: 500, // "Montant du dépôt de garantie" (MAD) — admin-fixed
+  securityDepositAmount: 500, // "Montant du dépôt de solde" (MAD) — admin-fixed top-up amount
   commissionTiers: [
     { minDelivered: 0, maxDelivered: 2,    commissionPct: 5  },
     { minDelivered: 3, maxDelivered: 5,    commissionPct: 7  },

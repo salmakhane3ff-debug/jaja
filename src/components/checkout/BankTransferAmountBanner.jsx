@@ -4,7 +4,7 @@
  * src/components/checkout/BankTransferAmountBanner.jsx
  * ─────────────────────────────────────────────────────────────────────────────
  * The black "amount" banner shared by /checkout/confirm and the affiliate
- * "Dépôt de garantie" page. Presentational only — the caller supplies the label
+ * "Dépôt de solde" page. Presentational only — the caller supplies the label
  * and the value node (a formatted price on checkout, an editable input on the
  * deposit page), plus an optional footer. Markup/classes are the single source
  * of truth so both surfaces stay pixel-identical.
