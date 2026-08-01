@@ -43,8 +43,12 @@ export default function BoosterTab({ onRecharge }) {
   }, []);
   useEffect(() => { load(); }, [load]);
 
-  const balance = Number(data?.balance || 0);
+  const balance = Number(data?.balance || 0);                     // ONE wallet total
+  const topupAvailable = Number(data?.topupAvailable || 0);       // spend-only
   const sufficient = selected ? balance >= selected.price : false;
+  // Deduction order (mirrors the server): top-up first, then earnings.
+  const fromTopup = selected ? Math.min(topupAvailable, selected.price) : 0;
+  const fromEarnings = selected ? Math.max(0, selected.price - fromTopup) : 0;
 
   const openPackage = (pkg) => {
     setSelected(pkg);
@@ -95,13 +99,27 @@ export default function BoosterTab({ onRecharge }) {
         </div>
       )}
 
-      {/* Balance strip */}
-      <div className="bg-gradient-to-br from-violet-600 to-indigo-600 rounded-2xl p-5 text-white flex items-center justify-between">
-        <div>
-          <p className="text-xs opacity-75">Solde disponible</p>
-          <p className="text-2xl font-black">{fmt(balance)}</p>
+      {/* Balance strip — one total, optional breakdown */}
+      <div className="bg-gradient-to-br from-violet-600 to-indigo-600 rounded-2xl p-5 text-white">
+        <div className="flex items-center justify-between">
+          <div>
+            <p className="text-xs opacity-75">Solde total disponible</p>
+            <p className="text-2xl font-black">{fmt(balance)}</p>
+          </div>
+          <Rocket className="w-8 h-8 opacity-60" />
         </div>
-        <Rocket className="w-8 h-8 opacity-60" />
+        {topupAvailable > 0 && (
+          <div className="grid grid-cols-2 gap-2 mt-3">
+            <div className="rounded-xl bg-white/10 px-3 py-2">
+              <p className="text-[11px] opacity-70">Gains disponibles</p>
+              <p className="text-sm font-black">{fmt(Number(data?.withdrawable || 0))}</p>
+            </div>
+            <div className="rounded-xl bg-white/10 px-3 py-2">
+              <p className="text-[11px] opacity-70">Solde rechargé</p>
+              <p className="text-sm font-black">{fmt(topupAvailable)}</p>
+            </div>
+          </div>
+        )}
       </div>
 
       {/* ── Screen 1: packages ── */}
@@ -157,6 +175,14 @@ export default function BoosterTab({ onRecharge }) {
               <div className="rounded-xl bg-gray-50 border border-gray-100 divide-y divide-gray-100 text-sm">
                 <div className="flex justify-between px-4 py-2.5"><span className="text-gray-500">Solde actuel</span><strong>{fmt(balance)}</strong></div>
                 <div className="flex justify-between px-4 py-2.5"><span className="text-gray-500">Prix du pack</span><strong className="text-red-600">−{fmt(selected.price)}</strong></div>
+                {fromTopup > 0 && (
+                  <>
+                    <div className="flex justify-between px-4 py-2 text-xs"><span className="text-gray-400">↳ depuis le solde rechargé</span><span className="text-gray-600 font-semibold">−{fmt(fromTopup)}</span></div>
+                    {fromEarnings > 0 && (
+                      <div className="flex justify-between px-4 py-2 text-xs"><span className="text-gray-400">↳ depuis vos gains</span><span className="text-gray-600 font-semibold">−{fmt(fromEarnings)}</span></div>
+                    )}
+                  </>
+                )}
                 <div className="flex justify-between px-4 py-2.5"><span className="text-gray-500">Solde restant</span><strong className="text-green-600">{fmt(balance - selected.price)}</strong></div>
               </div>
               <button type="button" onClick={() => setConfirming(true)} disabled={busy}

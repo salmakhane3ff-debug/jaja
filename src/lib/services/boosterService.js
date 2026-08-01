@@ -24,7 +24,8 @@
  */
 
 import prisma from '../prisma.js';
-import { getAffiliateBalance } from './affiliateSystemService.js';
+import { getAffiliateBalance, getTopupAvailable } from './affiliateSystemService.js';
+import { toDecimal, serializeAmount } from '../balance/composeBalance.js';
 
 export const BOOSTER_STATUS = { PENDING: 'PENDING', ACTIVE: 'ACTIVE', REJECTED: 'REJECTED' };
 export const BOOSTER_METHODS = ['BALANCE', 'CARD'];
@@ -76,12 +77,18 @@ export async function listBoosterPurchases(affiliateId, db = prisma) {
 
 /**
  * Purchase a booster package.
+ *
+ * BALANCE payments consume the TOP-UP component FIRST, then earnings, and the
+ * split is snapshotted on the row (paidFromTopup / paidFromEarnings) so the
+ * attribution is fixed at purchase time — a later top-up can never retroactively
+ * turn already-spent earnings back into withdrawable funds.
+ *
  * @param {object} p { affiliateId, packageId, method: 'BALANCE'|'CARD' }
- * @param {object} [deps] { db, getBalance } — injectable for tests
+ * @param {object} [deps] { db, getBalance, getTopup } — injectable for tests
  * @returns {Promise<object>} the created purchase row
  */
 export async function purchaseBooster({ affiliateId, packageId, method }, deps = {}) {
-  const { db = prisma, getBalance = getAffiliateBalance } = deps;
+  const { db = prisma, getBalance = getAffiliateBalance, getTopup = getTopupAvailable } = deps;
 
   if (!BOOSTER_METHODS.includes(method)) throw err('INVALID_METHOD', 'Méthode de paiement invalide');
 
@@ -102,13 +109,27 @@ export async function purchaseBooster({ affiliateId, packageId, method }, deps =
     }
 
     if (method === 'BALANCE') {
-      const balance = await getBalance(affiliateId, tx);
+      // Both reads happen inside the Serializable tx, so the split is computed
+      // from the same consistent snapshot that authorizes the purchase.
+      const [balance, topupAvail] = await Promise.all([
+        getBalance(affiliateId, tx),
+        getTopup(affiliateId, tx),
+      ]);
       if (pkg.price > balance) throw err('INSUFFICIENT_BALANCE', 'Solde insuffisant');
+
+      // Top-up first, remainder from earnings (Decimal — no float drift).
+      const price = toDecimal(pkg.price);
+      const topupCap = toDecimal(Math.max(0, Number(topupAvail) || 0));
+      const fromTopup = topupCap.greaterThan(price) ? price : topupCap;
+      const fromEarnings = price.minus(fromTopup);
+
       // ACTIVE row = charge + activation in one write (provider derives the deduction).
       return tx.affiliateBoosterPurchase.create({
         data: {
           affiliateId, packageId: pkg.id, packageName: pkg.name, price: pkg.price,
           paymentMethod: 'BALANCE', status: BOOSTER_STATUS.ACTIVE, activatedAt: new Date(),
+          paidFromTopup:    serializeAmount(fromTopup),
+          paidFromEarnings: serializeAmount(fromEarnings),
         },
       });
     }

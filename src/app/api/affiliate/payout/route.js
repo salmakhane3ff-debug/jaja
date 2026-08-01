@@ -8,16 +8,23 @@ import { requireFinancialAmount }          from '@/lib/utils/validate';
 import {
   getAffiliatePayouts,
   requestPayout,
-  getAffiliateBalance,
+  getAffiliateBalanceBreakdown,
 } from '@/lib/services/affiliateSystemService';
 
 async function getHandler(req, _ctx, decoded) {
   try {
-    const [payouts, balance] = await Promise.all([
+    const [payouts, breakdown] = await Promise.all([
       getAffiliatePayouts(decoded.affiliateId),
-      getAffiliateBalance(decoded.affiliateId),
+      getAffiliateBalanceBreakdown(decoded.affiliateId),
     ]);
-    return Response.json({ payouts, balance });
+    // `balance` stays the ONE wallet total (unchanged shape); `withdrawable` is
+    // the earnings-only ceiling a payout is validated against server-side.
+    return Response.json({
+      payouts,
+      balance: breakdown.total,
+      withdrawable: breakdown.withdrawable,
+      topupAvailable: breakdown.topupAvailable,
+    });
   } catch (err) {
     console.error('Affiliate payout GET error:', err);
     return Response.json({ error: 'Erreur serveur' }, { status: 500 });

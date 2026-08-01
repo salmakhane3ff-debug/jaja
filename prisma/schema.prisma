@@ -462,6 +462,11 @@ model AffiliateBoosterPurchase {
   price         Float
   paymentMethod String    // "BALANCE" | "CARD"
   status        String    @default("PENDING") // PENDING | ACTIVE | REJECTED
+  // Snapshot attribution for BALANCE payments (top-up consumed FIRST, then
+  // earnings). Recorded at purchase time so a later top-up can never
+  // retroactively convert spent earnings back into withdrawable funds.
+  paidFromTopup    Float  @default(0)
+  paidFromEarnings Float  @default(0)
   createdAt     DateTime  @default(now())
   activatedAt   DateTime?
   affiliate     Affiliate @relation(fields: [affiliateId], references: [id])

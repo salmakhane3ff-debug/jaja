@@ -1601,7 +1601,10 @@ export default function AffiliateDashboard() {
   const bonusClaimed   = affiliate?.teamBonusClaimed ?? false;
   const refLink   = typeof window !== "undefined" ? `${window.location.origin}?ref=${affiliate?.username}` : "";
   const unread    = notifs.filter((n) => !n.read).length;
-  const balance   = stats?.balance ?? 0;
+  const balance   = stats?.balance ?? 0;                       // ONE wallet total
+  // Two server-side components: earnings (withdrawable) + top-up (spend-only).
+  const withdrawable   = stats?.withdrawable ?? balance;
+  const topupAvailable = stats?.topupAvailable ?? 0;
   // Bank details must be complete before a withdrawal (mirrors the server rule:
   // non-empty bankName/accountName + RIB length 10–34). Server also re-validates.
   const _rib = String(affiliate?.rib ?? "").trim();
@@ -2125,11 +2128,26 @@ export default function AffiliateDashboard() {
         {/* ══ PAYOUT ════════════════════════════════════════════════════════ */}
         {activeTab === "payout" && (
           <div className="space-y-4">
-            {/* Balance */}
+            {/* ONE wallet total + its breakdown (earnings vs recharged) */}
             <div className="bg-gradient-to-br from-gray-900 to-gray-800 rounded-2xl p-6 text-white">
-              <p className="text-sm font-medium opacity-70 mb-1">Solde disponible</p>
+              <p className="text-sm font-medium opacity-70 mb-1">Solde total disponible</p>
               <p className="text-4xl font-black">{fmtMoney(balance)}</p>
-              <p className="text-xs opacity-50 mt-2">Commissions des commandes livrées</p>
+              {topupAvailable > 0 ? (
+                <div className="grid grid-cols-2 gap-2 mt-4">
+                  <div className="rounded-xl bg-white/10 px-3 py-2">
+                    <p className="text-[11px] opacity-70">Gains disponibles</p>
+                    <p className="text-base font-black">{fmtMoney(withdrawable)}</p>
+                    <p className="text-[10px] opacity-50 mt-0.5">Retirables</p>
+                  </div>
+                  <div className="rounded-xl bg-white/10 px-3 py-2">
+                    <p className="text-[11px] opacity-70">Solde rechargé</p>
+                    <p className="text-base font-black">{fmtMoney(topupAvailable)}</p>
+                    <p className="text-[10px] opacity-50 mt-0.5">Achats uniquement · non retirable</p>
+                  </div>
+                </div>
+              ) : (
+                <p className="text-xs opacity-50 mt-2">Commissions des commandes livrées</p>
+              )}
             </div>
 
             {/* Request form */}
@@ -2175,7 +2193,7 @@ export default function AffiliateDashboard() {
                   <input
                     type="number"
                     min="1"
-                    max={balance}
+                    max={withdrawable}
                     step="0.01"
                     value={payoutAmount}
                     onChange={(e) => setPayoutAmount(e.target.value)}
@@ -2183,13 +2201,20 @@ export default function AffiliateDashboard() {
                     className="w-full px-4 py-2.5 text-sm border border-gray-200 rounded-xl bg-gray-50 focus:outline-none focus:border-gray-400"
                     dir="ltr"
                   />
+                  {/* Only EARNINGS are withdrawable — the recharged balance is
+                      spend-only (also enforced server-side). */}
                   <p className="text-xs text-gray-400 mt-1">
-                    Maximum disponible : <strong>{fmtMoney(balance)}</strong>
+                    Maximum retirable : <strong>{fmtMoney(withdrawable)}</strong>
                   </p>
+                  {topupAvailable > 0 && (
+                    <p className="text-[11px] text-amber-600 mt-1">
+                      {fmtMoney(topupAvailable)} de solde rechargé ne sont pas retirables (achats de packs et services uniquement).
+                    </p>
+                  )}
                 </div>
                 <button
                   type="submit"
-                  disabled={!identityApproved || !bankComplete || payoutLoading || !payoutAmount || parseFloat(payoutAmount) <= 0 || parseFloat(payoutAmount) > balance}
+                  disabled={!identityApproved || !bankComplete || payoutLoading || !payoutAmount || parseFloat(payoutAmount) <= 0 || parseFloat(payoutAmount) > withdrawable}
                   className="flex items-center gap-2 px-6 py-2.5 bg-gray-900 hover:bg-gray-800 text-white rounded-xl text-sm font-semibold disabled:opacity-50 transition-all"
                 >
                   {payoutLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : <CreditCard className="w-4 h-4" />}

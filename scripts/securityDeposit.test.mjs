@@ -19,7 +19,7 @@ import {
   adminApproveDeposit, adminRejectDeposit,
   getDepositProofForAffiliate, getConfiguredDepositAmount, DEFAULT_DEPOSIT_AMOUNT,
 } from '../src/lib/services/depositService.js';
-import { requestPayout, getAffiliateBalance } from '../src/lib/services/affiliateSystemService.js';
+import { requestPayout, getAffiliateBalance, getWithdrawableBalance } from '../src/lib/services/affiliateSystemService.js';
 
 let pass = 0, fail = 0;
 const ok = (n, c) => { if (c) { pass++; console.log('  PASS ', n); } else { fail++; console.log('  FAIL ', n); } };
@@ -167,22 +167,26 @@ console.log('6) Proof access control — affiliate sees ONLY their own:');
   ok('unknown deposit → null', (await getDepositProofForAffiliate('ownerA', 'missing', db)) === null);
 }
 
-console.log('7) BALANCE TOP-UP — an APPROVED deposit credits Solde disponible:');
+console.log('7) BALANCE TOP-UP — credits the wallet total but is NEVER withdrawable:');
 {
-  // Affiliate has an APPROVED top-up of 5000 and ZERO commission. The available
-  // balance (composed providers) now INCLUDES the approved deposit — this is
-  // the 2026-08-01 product decision replacing the old isolation rule.
+  // Affiliate has an APPROVED top-up of 5000 and ZERO earnings. The wallet TOTAL
+  // includes it (one wallet), but the WITHDRAWABLE component is earnings-only,
+  // so a payout must be refused (2026-08-01 accounting separation).
   const s = { txEntered: false };
   const makeDeposits = (approved) => ({
     aggregate: async ({ where }) => ({ _sum: { amount: where?.status === 'APPROVED' ? approved : null } }),
     findMany:  async ({ where }) => (where?.status === 'APPROVED' && approved != null ? [{ amount: approved }] : []),
   });
+  const noBoosters = {
+    aggregate: async () => ({ _sum: { price: null } }),
+    findMany:  async () => [],
+  };
   const balProviders = {
     affiliateOrder:   { aggregate: async () => ({ _sum: { commissionAmount: 0 } }) },
     affiliate:        { findUnique: async (q) => (q.select?.bonusBalance ? { bonusBalance: 0 } : { bankName: 'CIH', accountName: 'A B', rib: '1234567890123' }) },
     affiliatePayout:  { aggregate: async () => ({ _sum: { amount: null } }), create: async ({ data }) => ({ id: 'p1', ...data }) },
     ugcEarning:       { aggregate: async () => ({ _sum: { amount: null } }) },
-    affiliateBoosterPurchase: { aggregate: async () => ({ _sum: { price: null } }) }, // booster provider — no purchases
+    affiliateBoosterPurchase: noBoosters,
     affiliateSecurityDeposit: makeDeposits(5000),
   };
   const db = {
@@ -191,20 +195,22 @@ console.log('7) BALANCE TOP-UP — an APPROVED deposit credits Solde disponible:
     $transaction: async (fn) => { s.txEntered = true; return fn(balProviders); },
   };
   ok('deposit-page approved total = 5000', (await getDepositBalance('a', db)) === 5000);
-  ok('available balance INCLUDES the approved top-up (5000)', (await getAffiliateBalance('a', db)) === 5000);
-  const payout = await requestPayout('a', 100, db);
-  ok('spending against the topped-up balance is accepted', payout?.amount === 100 && s.txEntered === true);
+  ok('wallet TOTAL includes the approved top-up (5000)', (await getAffiliateBalance('a', db)) === 5000);
+  ok('WITHDRAWABLE is 0 (top-up excluded)', (await getWithdrawableBalance('a', db)) === 0);
+  const code = await codeOf(() => requestPayout('a', 100, db));
+  ok('withdrawing a top-up → INSUFFICIENT_BALANCE', code === 'INSUFFICIENT_BALANCE');
+  ok('balance transaction was entered (passed bank + identity gates)', s.txEntered === true);
 
-  // PENDING top-ups never count: same affiliate, nothing approved yet.
+  // PENDING top-ups never count anywhere.
   const pendingOnly = {
     ...balProviders,
     affiliateSecurityDeposit: makeDeposits(null),
     identityVerification: { findUnique: async () => ({ status: 'APPROVED' }) },
   };
   pendingOnly.$transaction = async (fn) => fn(pendingOnly);
-  ok('PENDING top-up → balance still 0', (await getAffiliateBalance('a', pendingOnly)) === 0);
-  const code = await codeOf(() => requestPayout('a', 100, pendingOnly));
-  ok('spending before validation → INSUFFICIENT_BALANCE', code === 'INSUFFICIENT_BALANCE');
+  ok('PENDING top-up → wallet total still 0', (await getAffiliateBalance('a', pendingOnly)) === 0);
+  const code2 = await codeOf(() => requestPayout('a', 100, pendingOnly));
+  ok('spending before validation → INSUFFICIENT_BALANCE', code2 === 'INSUFFICIENT_BALANCE');
 }
 
 console.log(`\nRESULT: ${pass} passed, ${fail} failed`);

@@ -11,7 +11,7 @@ import { hashPassword, comparePassword, signToken } from './authService.js';
 import {
   registerBalanceProvider, computeRegisteredBalance, BALANCE_PRIORITY,
 } from '../balance/providerRegistry.js';
-import { serializeAmount } from '../balance/composeBalance.js';
+import { serializeAmount, toDecimal } from '../balance/composeBalance.js';
 // ── TEMPORARY WIRING (refinement #1) ──────────────────────────────────────────
 // Provider registration currently happens as a side effect of importing the
 // services that own each balance component: importing ugcEarningsService here
@@ -475,6 +475,83 @@ export async function getAffiliateBalance(affiliateId, db = prisma) {
   return serializeAmount(await computeRegisteredBalance(affiliateId, db));
 }
 
+// ── Two-component accounting: earnings (withdrawable) vs top-up (spend-only) ──
+// ONE wallet, one total (the provider registry above), but two server-side
+// components. Booster purchases consume the TOP-UP first and snapshot the split
+// on the purchase row (paidFromTopup / paidFromEarnings) — attribution is fixed
+// at purchase time, so a later top-up can never retroactively free up spent
+// earnings. Withdrawals are validated against the EARNINGS component only.
+
+/**
+ * Decimal sums of how much ACTIVE BALANCE-paid boosters consumed from each
+ * component. Legacy rows (created before the split existed: both fields 0 with
+ * a positive price) count as EARNINGS-paid — conservative: it can only reduce
+ * the withdrawable side, never unlock top-up money.
+ */
+export async function getBoosterSpendSplit(affiliateId, db = prisma) {
+  const rows = await db.affiliateBoosterPurchase.findMany({
+    where: { affiliateId, paymentMethod: 'BALANCE', status: 'ACTIVE' },
+    select: { price: true, paidFromTopup: true, paidFromEarnings: true },
+  });
+  let topup = toDecimal(0), earnings = toDecimal(0);
+  for (const r of rows) {
+    const t = toDecimal(r.paidFromTopup || 0);
+    const e = toDecimal(r.paidFromEarnings || 0);
+    const p = toDecimal(r.price || 0);
+    if (t.plus(e).isZero() && p.greaterThan(0)) earnings = earnings.plus(p); // legacy row
+    else { topup = topup.plus(t); earnings = earnings.plus(e); }
+  }
+  return { topup, earnings };
+}
+
+/**
+ * Spend-only top-up component still available:
+ *   Σ APPROVED "Dépôt de solde" − Σ booster paidFromTopup   (floored at 0).
+ * Usable for boosters/paid services; NEVER withdrawable.
+ */
+export async function getTopupAvailable(affiliateId, db = prisma) {
+  const [topups, spend] = await Promise.all([
+    getDepositTopupComponent(affiliateId, db),
+    getBoosterSpendSplit(affiliateId, db),
+  ]);
+  const avail = toDecimal(topups).minus(spend.topup);
+  return serializeAmount(avail.lessThan(0) ? toDecimal(0) : avail);
+}
+
+/**
+ * Withdrawable balance = EARNINGS only:
+ *   total (all providers) − top-up still available
+ * which equals commissions + bonus + UGC − paid payouts − booster earnings
+ * spend, computed in Decimal. This is the ONLY number payouts validate against.
+ */
+export async function getWithdrawableBalance(affiliateId, db = prisma) {
+  return (await getAffiliateBalanceBreakdown(affiliateId, db)).withdrawable;
+}
+
+/**
+ * The wallet in ONE read: the single total the affiliate sees, plus its two
+ * server-side components.
+ *   total          = every registered provider (unchanged — one wallet)
+ *   topupAvailable = approved top-ups − top-up already spent on boosters  (≥ 0)
+ *   withdrawable   = total − topupAvailable   (= earnings only)
+ * Invariant: withdrawable + topupAvailable === total.
+ * @returns {Promise<{ total:number, withdrawable:number, topupAvailable:number }>}
+ */
+export async function getAffiliateBalanceBreakdown(affiliateId, db = prisma) {
+  const [total, spend, topups] = await Promise.all([
+    computeRegisteredBalance(affiliateId, db),
+    getBoosterSpendSplit(affiliateId, db),
+    getDepositTopupComponent(affiliateId, db),
+  ]);
+  const raw = toDecimal(topups).minus(spend.topup);
+  const topupAvail = raw.lessThan(0) ? toDecimal(0) : raw;
+  return {
+    total:          serializeAmount(total),
+    withdrawable:   serializeAmount(total.minus(topupAvail)),
+    topupAvailable: serializeAmount(topupAvail),
+  };
+}
+
 export async function getAffiliatePayouts(affiliateId) {
   const payouts = await prisma.affiliatePayout.findMany({
     where:   { affiliateId },
@@ -533,10 +610,13 @@ export async function requestPayout(affiliateId, amount, db = prisma) {
 
   // Use a serializable transaction so the balance read and payout insert
   // are atomic — prevents double-withdrawal under concurrent requests.
+  // WITHDRAWABLE = EARNINGS ONLY. Approved "Dépôt de solde" top-ups are
+  // spend-only (boosters / paid services) and are excluded here, so a top-up
+  // can never be cashed out.
   const payout = await db.$transaction(async (tx) => {
-    const balance = await getAffiliateBalance(affiliateId, tx);
+    const balance = await getWithdrawableBalance(affiliateId, tx);
     if (parsedAmount > balance) {
-      throw Object.assign(new Error('Montant supérieur au solde disponible'), { code: 'INSUFFICIENT_BALANCE' });
+      throw Object.assign(new Error('Montant supérieur aux gains disponibles'), { code: 'INSUFFICIENT_BALANCE' });
     }
     return tx.affiliatePayout.create({
       data: { affiliateId, amount: parsedAmount, status: 'pending' },
@@ -684,7 +764,7 @@ export async function getAffiliateDashboardStats(affiliateId) {
     teamCount,
     validReferrals,
     unreadCount,
-    balance,
+    breakdown,
     payouts,
     teamMembers,
     ugcValidated,
@@ -700,7 +780,7 @@ export async function getAffiliateDashboardStats(affiliateId) {
     prisma.affiliate.count({ where: { parentId: affiliateId } }),
     prisma.affiliate.count({ where: { parentId: affiliateId, referralStatus: 'active' } }),
     prisma.affiliateNotification.count({ where: { affiliateId, read: false } }),
-    getAffiliateBalance(affiliateId),
+    getAffiliateBalanceBreakdown(affiliateId),
     getAffiliatePayouts(affiliateId),
     prisma.affiliate.findMany({ where: { parentId: affiliateId }, select: { id: true } }),
     // Validated UGC = strictly APPROVED. RUNNING / PENDING / REJECTED are excluded.
@@ -755,7 +835,10 @@ export async function getAffiliateDashboardStats(affiliateId) {
     delivered:        deliveredItems,
     totalRevenue:     allOrders.reduce((s, o) => s + o.total, 0),
     totalCommission:  allOrders.reduce((s, o) => s + o.commissionAmount, 0),
-    balance,
+    // ONE wallet total + its two server-side components (see getAffiliateBalanceBreakdown).
+    balance:          breakdown.total,
+    withdrawable:     breakdown.withdrawable, // earnings only — the payout ceiling
+    topupAvailable:   breakdown.topupAvailable, // spend-only (boosters / paid services)
     teamCount,
     totalReferrals:   teamCount,        // all invited affiliates
     validReferrals,                     // only those with ≥1 delivered order

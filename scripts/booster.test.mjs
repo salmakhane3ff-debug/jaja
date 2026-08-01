@@ -25,7 +25,7 @@ let pass = 0, fail = 0;
 const ok = (n, c) => { if (c) { pass++; console.log("  PASS ", n); } else { fail++; console.log("  FAIL ", n); } };
 
 // ── In-memory fake db (only the models the service touches) ───────────────────
-function makeFakeDb(configRaw) {
+function makeFakeDb(configRaw, approvedTopups = 0) {
   let seq = 1;
   const purchases = [];
   const matches = (row, where = {}) => Object.entries(where).every(([k, v]) => {
@@ -37,6 +37,11 @@ function makeFakeDb(configRaw) {
     txOptions: null,
     setting: {
       findUnique: async ({ where }) => (where.id === "booster-packages" && configRaw ? { id: where.id, data: configRaw } : null),
+    },
+    // Read by the real getTopupAvailable (top-up-first deduction order).
+    affiliateSecurityDeposit: {
+      aggregate: async ({ where }) => ({ _sum: { amount: where?.status === "APPROVED" ? approvedTopups : 0 } }),
+      findMany:  async ({ where }) => (where?.status === "APPROVED" ? [{ amount: approvedTopups }] : []),
     },
     affiliateBoosterPurchase: {
       create: async ({ data }) => { const r = { id: `bp_${seq++}`, createdAt: new Date(), activatedAt: null, ...data }; purchases.push(r); return { ...r }; },
@@ -202,6 +207,28 @@ async function main() {
     ok("ACTIVE CARD purchase still deducts nothing", (await getBoosterDeductionComponent("b1", db)) === -2000);
 
     ok("another affiliate is unaffected", (await getBoosterDeductionComponent("someone-else", db)) === -0);
+  }
+
+  console.log("7) Payment split is snapshotted on the row (top-up first):");
+  {
+    // 3000 of approved top-up, 2000 pack → fully covered by the top-up.
+    const db = makeFakeDb(CFG, 3000);
+    const p = await purchaseBooster({ affiliateId: "s1", packageId: "gold", method: "BALANCE" }, { db, getBalance: bal(9999) });
+    ok("fully top-up-funded pack records paidFromTopup only", p.paidFromTopup === 2000 && p.paidFromEarnings === 0);
+
+    // Same ledger: the next 3500 pack has only 1000 top-up left → 1000 + 2500.
+    const p2 = await purchaseBooster({ affiliateId: "s1", packageId: "silver", method: "BALANCE" }, { db, getBalance: bal(9999) });
+    ok("second pack drains the remaining top-up then uses earnings", p2.paidFromTopup === 1000 && p2.paidFromEarnings === 2500);
+    ok("splits always sum to the price", p2.paidFromTopup + p2.paidFromEarnings === p2.price);
+
+    // No top-up at all → entirely earnings-funded.
+    const db2 = makeFakeDb(CFG, 0);
+    const p3 = await purchaseBooster({ affiliateId: "s2", packageId: "gold", method: "BALANCE" }, { db: db2, getBalance: bal(9999) });
+    ok("no top-up → paid entirely from earnings", p3.paidFromTopup === 0 && p3.paidFromEarnings === 2000);
+
+    // CARD purchases never attribute a split.
+    const p4 = await purchaseBooster({ affiliateId: "s3", packageId: "gold", method: "CARD" }, { db: db2, getBalance: bal(0) });
+    ok("card purchase records no balance split", (p4.paidFromTopup ?? 0) === 0 && (p4.paidFromEarnings ?? 0) === 0);
   }
 
   console.log(`\nRESULT: ${pass} passed, ${fail} failed`);

@@ -5,24 +5,27 @@
  * the service): re-check balance → deduct (derived) → activate in one write.
  */
 import { withAffiliateAuth } from '@/lib/middleware/withAffiliateAuth';
-import { getAffiliateBalance } from '@/lib/services/affiliateSystemService';
+import { getAffiliateBalanceBreakdown } from '@/lib/services/affiliateSystemService';
 import {
   getBoosterConfig, publicBoosterPackages, listBoosterPurchases, purchaseBooster,
 } from '@/lib/services/boosterService';
 
 async function getHandler(req, _ctx, decoded) {
   try {
-    const [config, purchases, balance] = await Promise.all([
+    const [config, purchases, breakdown] = await Promise.all([
       getBoosterConfig(),
       listBoosterPurchases(decoded.affiliateId),
-      getAffiliateBalance(decoded.affiliateId),
+      getAffiliateBalanceBreakdown(decoded.affiliateId),
     ]);
     return Response.json({
       enabled: config.enabled,
       allowStacking: config.allowStacking,
       packages: publicBoosterPackages(config),
       purchases,
-      balance,
+      // Boosters are payable from the FULL wallet (top-up first, then earnings).
+      balance: breakdown.total,
+      topupAvailable: breakdown.topupAvailable,
+      withdrawable: breakdown.withdrawable,
     });
   } catch (err) {
     console.error('affiliate/boosters GET error:', err);
