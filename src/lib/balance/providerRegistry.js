@@ -47,7 +47,9 @@ export const DEFAULT_PROVIDER_PRIORITY = 100;
  *   ────────  ─────────────────────  ────  ─────────────────────────────────────
  *     10      referral_commission     +    Σ delivered AffiliateOrder.commissionAmount
  *     20      referral_bonus          +    Affiliate.bonusBalance (team bonus)
- *     30      payout_deduction        −    Σ paid AffiliatePayout.amount
+ *     30      payout_deduction        −    Σ RESERVED AffiliatePayout.amount
+ *                                          (paid + pending + processing; a
+ *                                           pending request reserves the funds)
  *     40      ugc_earning             +    Σ available UgcEarning.amount
  *   (50+)     future sources          ±    register with a priority in a free gap
  *

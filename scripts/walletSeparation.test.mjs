@@ -40,6 +40,7 @@ function makeLedger({ commissions = 0, bonus = 0, ugc = 0, approvedTopups = 0, p
   const sum = (rows, k) => rows.reduce((a, r) => a + (Number(r[k]) || 0), 0);
   const matches = (row, where = {}) => Object.entries(where).every(([k, v]) => {
     if (v && typeof v === 'object' && Array.isArray(v.in)) return v.in.includes(row[k]);
+    if (v && typeof v === 'object' && Array.isArray(v.notIn)) return !v.notIn.includes(row[k]);
     return row[k] === v;
   });
 
@@ -112,10 +113,10 @@ async function main() {
     ok('invariant: withdrawable + topup === total', b.withdrawable + b.topupAvailable === b.total);
 
     ok('payout of 2000 (all earnings) is ACCEPTED', (await requestPayout('a', 2000, db))?.amount === 2000);
-    // NOTE: a payout only deducts once an admin marks it `paid` — pre-existing
-    // payout_deduction semantics, unchanged by this fix.
+    // A pending request RESERVES the earnings immediately (no double-spend).
+    ok('pending payout reserves it at once (withdrawable 0)', (await getWithdrawableBalance('a', db)) === 0);
     db._state.payouts.forEach((p) => { p.status = 'paid'; });
-    ok('once paid, withdrawable drops to 0', (await getWithdrawableBalance('a', db)) === 0);
+    ok('still 0 once the payout is marked paid', (await getWithdrawableBalance('a', db)) === 0);
     ok('a further payout of 1 DH → INSUFFICIENT_BALANCE', (await codeOf(() => requestPayout('a', 1, db))) === 'INSUFFICIENT_BALANCE');
     ok('the 5000 top-up is untouched by the payout', (await getTopupAvailable('a', db)) === 5000);
     ok('…and still cannot be withdrawn', (await codeOf(() => requestPayout('a', 5000, db))) === 'INSUFFICIENT_BALANCE');
@@ -145,6 +146,7 @@ async function main() {
 
     // Withdrawal is now capped at the REMAINING earnings, not the wallet total.
     ok('payout of 2000 accepted (remaining earnings)', (await requestPayout('a', 2000, db))?.amount === 2000);
+    ok('pending payout reserves the remaining earnings', (await getWithdrawableBalance('a', db)) === 0);
     db._state.payouts.forEach((p) => { p.status = 'paid'; });
     ok('after payment, withdrawable = 0', (await getWithdrawableBalance('a', db)) === 0);
     ok('payout beyond that → INSUFFICIENT_BALANCE', (await codeOf(() => requestPayout('a', 0.01, db))) === 'INSUFFICIENT_BALANCE');

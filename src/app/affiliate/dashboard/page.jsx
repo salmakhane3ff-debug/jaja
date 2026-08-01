@@ -1605,6 +1605,9 @@ export default function AffiliateDashboard() {
   // Two server-side components: earnings (withdrawable) + top-up (spend-only).
   const withdrawable   = stats?.withdrawable ?? balance;
   const topupAvailable = stats?.topupAvailable ?? 0;
+  // Reserved by pending/processing payout requests (already excluded from
+  // `withdrawable` — shown for transparency, never subtracted twice).
+  const pendingPayouts = stats?.pendingPayouts ?? 0;
   // Bank details must be complete before a withdrawal (mirrors the server rule:
   // non-empty bankName/accountName + RIB length 10–34). Server also re-validates.
   const _rib = String(affiliate?.rib ?? "").trim();
@@ -2132,17 +2135,21 @@ export default function AffiliateDashboard() {
             <div className="bg-gradient-to-br from-gray-900 to-gray-800 rounded-2xl p-6 text-white">
               <p className="text-sm font-medium opacity-70 mb-1">Solde total disponible</p>
               <p className="text-4xl font-black">{fmtMoney(balance)}</p>
-              {topupAvailable > 0 ? (
-                <div className="grid grid-cols-2 gap-2 mt-4">
+              {(topupAvailable > 0 || pendingPayouts > 0) ? (
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 mt-4">
                   <div className="rounded-xl bg-white/10 px-3 py-2">
-                    <p className="text-[11px] opacity-70">Gains disponibles</p>
+                    <p className="text-[11px] opacity-70">Gains disponibles pour retrait</p>
                     <p className="text-base font-black">{fmtMoney(withdrawable)}</p>
-                    <p className="text-[10px] opacity-50 mt-0.5">Retirables</p>
                   </div>
                   <div className="rounded-xl bg-white/10 px-3 py-2">
-                    <p className="text-[11px] opacity-70">Solde rechargé</p>
+                    <p className="text-[11px] opacity-70">Montant en attente de paiement</p>
+                    <p className="text-base font-black">{fmtMoney(pendingPayouts)}</p>
+                    <p className="text-[10px] opacity-50 mt-0.5">Déjà réservé</p>
+                  </div>
+                  <div className="rounded-xl bg-white/10 px-3 py-2">
+                    <p className="text-[11px] opacity-70">Solde rechargé non retirable</p>
                     <p className="text-base font-black">{fmtMoney(topupAvailable)}</p>
-                    <p className="text-[10px] opacity-50 mt-0.5">Achats uniquement · non retirable</p>
+                    <p className="text-[10px] opacity-50 mt-0.5">Achats uniquement</p>
                   </div>
                 </div>
               ) : (
@@ -2206,6 +2213,11 @@ export default function AffiliateDashboard() {
                   <p className="text-xs text-gray-400 mt-1">
                     Maximum retirable : <strong>{fmtMoney(withdrawable)}</strong>
                   </p>
+                  {pendingPayouts > 0 && (
+                    <p className="text-[11px] text-gray-500 mt-1">
+                      {fmtMoney(pendingPayouts)} déjà réservés par une demande en attente de paiement.
+                    </p>
+                  )}
                   {topupAvailable > 0 && (
                     <p className="text-[11px] text-amber-600 mt-1">
                       {fmtMoney(topupAvailable)} de solde rechargé ne sont pas retirables (achats de packs et services uniquement).

@@ -44,12 +44,35 @@ export async function getReferralBonusComponent(affiliateId, db = prisma) {
   return a?.bonusBalance ?? 0;
 }
 
-/** Σ paid payouts as a NEGATIVE deduction component (read-only). */
+/**
+ * Payout statuses that RELEASE a reservation — the money goes back to the
+ * affiliate. EVERYTHING ELSE reserves (pending, processing, paid, and any
+ * future/unknown status): failing closed is the money-safe default, since a
+ * status we do not recognise must never silently free funds.
+ */
+export const PAYOUT_RELEASING_STATUSES = Object.freeze(['rejected', 'cancelled', 'canceled', 'refused']);
+
+/**
+ * Σ RESERVED payouts as a NEGATIVE deduction component (read-only):
+ * paid + pending + processing. A pending request therefore reserves the
+ * earnings immediately, so it can be neither withdrawn a second time nor spent
+ * on a booster while it waits. Rejected/cancelled rows release the reservation.
+ */
 export async function getPayoutDeductionComponent(affiliateId, db = prisma) {
   const p = await db.affiliatePayout.aggregate({
-    where: { affiliateId, status: 'paid' }, _sum: { amount: true },
+    where: { affiliateId, status: { notIn: PAYOUT_RELEASING_STATUSES } },
+    _sum: { amount: true },
   });
   return -(p._sum.amount ?? 0);
+}
+
+/** Σ payouts reserved but NOT yet paid out ("Montant en attente de paiement"). */
+export async function getPendingPayoutTotal(affiliateId, db = prisma) {
+  const p = await db.affiliatePayout.aggregate({
+    where: { affiliateId, status: { notIn: [...PAYOUT_RELEASING_STATUSES, 'paid'] } },
+    _sum: { amount: true },
+  });
+  return serializeAmount(toDecimal(p._sum.amount ?? 0));
 }
 
 /**
@@ -529,19 +552,22 @@ export async function getWithdrawableBalance(affiliateId, db = prisma) {
 }
 
 /**
- * The wallet in ONE read: the single total the affiliate sees, plus its two
+ * The wallet in ONE read: the single total the affiliate sees, plus its
  * server-side components.
- *   total          = every registered provider (unchanged — one wallet)
+ *   total          = every registered provider (already NET of reserved payouts)
  *   topupAvailable = approved top-ups − top-up already spent on boosters  (≥ 0)
- *   withdrawable   = total − topupAvailable   (= earnings only)
+ *   withdrawable   = total − topupAvailable   (= earnings still available)
+ *   pendingPayouts = reserved but not yet paid (informational — ALREADY excluded
+ *                    from `withdrawable`, never subtract it again)
  * Invariant: withdrawable + topupAvailable === total.
- * @returns {Promise<{ total:number, withdrawable:number, topupAvailable:number }>}
+ * @returns {Promise<{ total:number, withdrawable:number, topupAvailable:number, pendingPayouts:number }>}
  */
 export async function getAffiliateBalanceBreakdown(affiliateId, db = prisma) {
-  const [total, spend, topups] = await Promise.all([
+  const [total, spend, topups, pendingPayouts] = await Promise.all([
     computeRegisteredBalance(affiliateId, db),
     getBoosterSpendSplit(affiliateId, db),
     getDepositTopupComponent(affiliateId, db),
+    getPendingPayoutTotal(affiliateId, db),
   ]);
   const raw = toDecimal(topups).minus(spend.topup);
   const topupAvail = raw.lessThan(0) ? toDecimal(0) : raw;
@@ -549,6 +575,7 @@ export async function getAffiliateBalanceBreakdown(affiliateId, db = prisma) {
     total:          serializeAmount(total),
     withdrawable:   serializeAmount(total.minus(topupAvail)),
     topupAvailable: serializeAmount(topupAvail),
+    pendingPayouts,
   };
 }
 
@@ -608,11 +635,14 @@ export async function requestPayout(affiliateId, amount, db = prisma) {
     );
   }
 
-  // Use a serializable transaction so the balance read and payout insert
-  // are atomic — prevents double-withdrawal under concurrent requests.
-  // WITHDRAWABLE = EARNINGS ONLY. Approved "Dépôt de solde" top-ups are
-  // spend-only (boosters / paid services) and are excluded here, so a top-up
-  // can never be cashed out.
+  // Serializable transaction: the withdrawable balance is RECOMPUTED inside the
+  // tx (reading the payout rows it also writes), so two concurrent requests
+  // cannot both pass the check — one serialises after the other and sees the
+  // first as already reserved.
+  //   • WITHDRAWABLE = EARNINGS ONLY — approved "Dépôt de solde" top-ups are
+  //     spend-only and can never be cashed out.
+  //   • Already-reserved payouts (pending / processing / paid) are subtracted,
+  //     so stacked pending requests can never exceed the available earnings.
   const payout = await db.$transaction(async (tx) => {
     const balance = await getWithdrawableBalance(affiliateId, tx);
     if (parsedAmount > balance) {
@@ -835,10 +865,11 @@ export async function getAffiliateDashboardStats(affiliateId) {
     delivered:        deliveredItems,
     totalRevenue:     allOrders.reduce((s, o) => s + o.total, 0),
     totalCommission:  allOrders.reduce((s, o) => s + o.commissionAmount, 0),
-    // ONE wallet total + its two server-side components (see getAffiliateBalanceBreakdown).
+    // ONE wallet total + its server-side components (see getAffiliateBalanceBreakdown).
     balance:          breakdown.total,
-    withdrawable:     breakdown.withdrawable, // earnings only — the payout ceiling
+    withdrawable:     breakdown.withdrawable,   // earnings still available — the payout ceiling
     topupAvailable:   breakdown.topupAvailable, // spend-only (boosters / paid services)
+    pendingPayouts:   breakdown.pendingPayouts, // already reserved, awaiting payment
     teamCount,
     totalReferrals:   teamCount,        // all invited affiliates
     validReferrals,                     // only those with ≥1 delivered order

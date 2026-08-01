@@ -24,6 +24,7 @@ async function getHandler(req, _ctx, decoded) {
       balance: breakdown.total,
       withdrawable: breakdown.withdrawable,
       topupAvailable: breakdown.topupAvailable,
+      pendingPayouts: breakdown.pendingPayouts,
     });
   } catch (err) {
     console.error('Affiliate payout GET error:', err);
