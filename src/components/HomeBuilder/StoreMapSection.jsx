@@ -5,26 +5,103 @@
  * (HomeSectionRenderer) and the Homepage Builder preview, so the two can never
  * drift apart.
  *
- * The iframe src is always built/validated by lib/storeMap.js: a link that
- * cannot be converted into a real embed URL never reaches the iframe, so a
- * broken frame is impossible — the map is simply hidden and (in the builder) the
- * admin sees a warning instead.
+ * MAP: Leaflet + OpenStreetMap tiles. No Google iframe, no Embed API, no API
+ * key — Google blocks framing of its Maps pages, which is what produced the
+ * broken map. Leaflet is imported dynamically inside an effect so it never runs
+ * during SSR. The marker is a CSS/SVG divIcon, which also avoids Leaflet's
+ * well-known bundler issue with its default marker image assets.
+ *
+ * The "Open in Google Maps" BUTTON still points at Google — a normal link works
+ * fine, only framing is blocked.
  */
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import "leaflet/dist/leaflet.css";
 import { MapPin, Phone as PhoneIcon, Clock, Star } from "lucide-react";
 import {
-  normalizeStoreMap, buildEmbedUrl, buildDirectionsUrl, telHref, computeOpenNow,
+  normalizeStoreMap, resolveCoordinates, buildDirectionsUrl, telHref, computeOpenNow,
 } from "@/lib/storeMap";
+
+/** Red pin rendered as pure markup — no image asset to 404. */
+const RED_PIN_HTML = `
+  <span style="position:relative;display:block;width:28px;height:40px">
+    <svg viewBox="0 0 24 34" width="28" height="40" xmlns="http://www.w3.org/2000/svg">
+      <path d="M12 0C5.4 0 0 5.4 0 12c0 8.4 12 22 12 22s12-13.6 12-22c0-6.6-5.4-12-12-12z"
+            fill="#ef4444" stroke="#ffffff" stroke-width="2"/>
+      <circle cx="12" cy="12" r="4.5" fill="#ffffff"/>
+    </svg>
+  </span>`;
+
+function LeafletMap({ lat, lng, label }) {
+  const holder = useRef(null);
+  const mapRef = useRef(null);
+  const [ready, setReady] = useState(false);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    (async () => {
+      const L = (await import("leaflet")).default;
+      if (cancelled || !holder.current) return;
+
+      // Re-init safely when the coordinates change (admin preview edits live).
+      if (mapRef.current) { mapRef.current.remove(); mapRef.current = null; }
+
+      const map = L.map(holder.current, {
+        center: [lat, lng],
+        zoom: 16,
+        zoomAnimation: true,          // smooth zoom
+        fadeAnimation: true,
+        scrollWheelZoom: false,       // never hijack page scrolling
+        attributionControl: true,
+      });
+      mapRef.current = map;
+
+      L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+        maxZoom: 19,
+        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
+      }).addTo(map);
+
+      L.marker([lat, lng], {
+        title: label || undefined,
+        icon: L.divIcon({
+          html: RED_PIN_HTML,
+          className: "",              // no default leaflet styling
+          iconSize: [28, 40],
+          iconAnchor: [14, 40],       // tip of the pin sits on the coordinate
+        }),
+      }).addTo(map);
+
+      // Container starts hidden/sized by CSS — make sure Leaflet measures it.
+      setTimeout(() => { try { map.invalidateSize(); } catch {} }, 0);
+      setReady(true);
+    })();
+
+    return () => {
+      cancelled = true;
+      if (mapRef.current) { mapRef.current.remove(); mapRef.current = null; }
+    };
+  }, [lat, lng, label]);
+
+  return (
+    <div className="relative w-full h-[300px] md:h-[420px] rounded-[24px] overflow-hidden shadow-lg shadow-gray-200/70 bg-gray-100">
+      {!ready && (
+        <div className="absolute inset-0 z-[1] animate-pulse bg-gradient-to-br from-gray-100 via-gray-200 to-gray-100 flex items-center justify-center">
+          <MapPin className="w-8 h-8 text-gray-300" />
+        </div>
+      )}
+      <div ref={holder} className="w-full h-full" />
+    </div>
+  );
+}
 
 export default function StoreMapSection({ data }) {
   const cfg = normalizeStoreMap(data);
-  const embed = buildEmbedUrl(cfg);
+  const coords = resolveCoordinates(cfg);
   const directions = buildDirectionsUrl(cfg);
   const tel = telHref(cfg.phone);
   const openNow = computeOpenNow(cfg.hours);
-  const [loaded, setLoaded] = useState(false);
 
-  if (!embed && !cfg.storeName && !cfg.address) return null;
+  if (!coords && !cfg.storeName && !cfg.address) return null;
 
   return (
     <section className="w-full animate-[smIn_0.5s_ease]">
@@ -46,7 +123,6 @@ export default function StoreMapSection({ data }) {
               {cfg.storeName && <h3 className="text-base sm:text-lg font-black text-gray-900 leading-tight truncate">{cfg.storeName}</h3>}
               {cfg.address && <p className="text-sm text-gray-500 mt-0.5 break-words">{cfg.address}</p>}
 
-              {/* Rating · city · open-now */}
               <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5 mt-2">
                 {cfg.rating !== null && (
                   <span className="inline-flex items-center gap-1.5">
@@ -88,25 +164,15 @@ export default function StoreMapSection({ data }) {
         </div>
       )}
 
-      {/* The map is the main visual element */}
-      {embed && (
-        <div className="relative w-full h-[300px] md:h-[420px] rounded-[24px] overflow-hidden shadow-lg shadow-gray-200/70 bg-gray-100">
-          {!loaded && (
-            <div className="absolute inset-0 animate-pulse bg-gradient-to-br from-gray-100 via-gray-200 to-gray-100 flex items-center justify-center">
-              <MapPin className="w-8 h-8 text-gray-300" />
-            </div>
-          )}
-          <iframe
-            src={embed}
-            title={cfg.storeName || cfg.title || "Store map"}
-            onLoad={() => setLoaded(true)}
-            className={`w-full h-full border-0 transition-opacity duration-700 ${loaded ? "opacity-100" : "opacity-0"}`}
-            loading="lazy"
-            referrerPolicy="no-referrer-when-downgrade"
-            allowFullScreen
-          />
-        </div>
-      )}
+      {/* OpenStreetMap via Leaflet — no Google iframe */}
+      {coords
+        ? <LeafletMap lat={coords.lat} lng={coords.lng} label={cfg.storeName || cfg.title} />
+        : (
+          <div className="w-full rounded-[24px] border border-dashed border-gray-200 bg-gray-50 px-6 py-10 text-center">
+            <MapPin className="w-7 h-7 text-gray-300 mx-auto mb-2" />
+            <p className="text-sm font-semibold text-gray-500">La position du magasin n'est pas encore configurée.</p>
+          </div>
+        )}
 
       {/* Two equal actions below the map — Call hides when no phone is set */}
       {(directions || tel) && (
@@ -125,7 +191,10 @@ export default function StoreMapSection({ data }) {
           )}
         </div>
       )}
-      <style>{`@keyframes smIn{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}`}</style>
+      <style>{`
+        @keyframes smIn{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}
+        .leaflet-container{font:inherit;background:#e5e7eb}
+      `}</style>
     </section>
   );
 }

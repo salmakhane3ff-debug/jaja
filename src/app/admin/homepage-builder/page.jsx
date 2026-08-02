@@ -6,7 +6,7 @@ import {
   Timer, MousePointer, LayoutGrid, Zap, Heart, Phone, Save, Check, MapPin, Copy,
 } from "lucide-react";
 import SingleImageSelect from "@/components/block/ImageSelector";
-import { STORE_MAP_DEFAULTS, buildEmbedUrl, toEmbedUrl, extractLatLng } from "@/lib/storeMap";
+import { STORE_MAP_DEFAULTS, linkCoordStatus, extractLatLng, resolveCoordinates } from "@/lib/storeMap";
 import StoreMapSection from "@/components/HomeBuilder/StoreMapSection";
 
 // ── Section type definitions ──────────────────────────────────────────────────
@@ -175,8 +175,8 @@ function EditStoreMap({ data, onChange }) {
 
   // Any pasted Google Maps link is converted automatically — the admin never
   // has to know what an "embed URL" is.
-  const conv = toEmbedUrl(data.embedUrl);
-  const preview = buildEmbedUrl(data);
+  const status = linkCoordStatus(data.embedUrl);
+  const coords = resolveCoordinates(data);
   const pasted = (data.embedUrl || "").trim();
 
   // Works for EVERY link shape: coordinates already inside the URL are read
@@ -204,10 +204,10 @@ function EditStoreMap({ data, onChange }) {
   };
 
   const STATUS = {
-    ok:            { cls: "text-green-700 bg-green-50 border-green-200", t: "✅ Lien reconnu — la carte s'affichera correctement." },
-    needs_resolve: { cls: "text-amber-800 bg-amber-50 border-amber-200", t: "🔗 Lien court détecté — cliquez sur « Localiser automatiquement »." },
+    ok:            { cls: "text-green-700 bg-green-50 border-green-200", t: "✅ Coordonnées détectées dans le lien." },
+    needs_resolve: { cls: "text-amber-800 bg-amber-50 border-amber-200", t: "🔗 Cliquez sur « Localiser automatiquement » pour extraire la position." },
     unsupported:   { cls: "text-red-700 bg-red-50 border-red-200",       t: "⚠️ Lien non exploitable. Utilisez « Localiser automatiquement » ou saisissez la latitude / longitude." },
-  }[conv.status];
+  }[status];
 
   return (
     <div className="space-y-4">
@@ -241,7 +241,8 @@ function EditStoreMap({ data, onChange }) {
         {!located && STATUS && <p className={`text-[11px] border rounded-lg px-2 py-1.5 ${STATUS.cls}`}>{STATUS.t}</p>}
 
         <p className="text-[11px] text-gray-400">
-          Google Maps → votre magasin → <strong>Partager</strong> → <strong>Copier le lien</strong>. Tous les formats sont acceptés.
+          Google Maps → votre magasin → <strong>Partager</strong> → <strong>Copier le lien</strong>. La carte affichée utilise
+          OpenStreetMap (aucune clé API) ; le lien sert uniquement à récupérer les coordonnées.
         </p>
 
         <div className="grid grid-cols-2 gap-3">
@@ -269,13 +270,13 @@ function EditStoreMap({ data, onChange }) {
 
       {/* Preview uses the EXACT storefront renderer — the two can never differ. */}
       <Field label="Aperçu (rendu réel de la boutique)">
-        {preview ? (
+        {coords ? (
           <div className="rounded-xl border border-gray-200 bg-white p-4">
             <StoreMapSection data={data} />
           </div>
         ) : (
           <p className="text-[11px] text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-2 py-1.5">
-            Aucune carte à afficher : collez un lien puis cliquez sur « Localiser automatiquement », ou saisissez la latitude / longitude.
+            Aucune position définie : collez un lien puis cliquez sur « Localiser automatiquement », ou saisissez la latitude / longitude.
           </p>
         )}
       </Field>

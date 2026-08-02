@@ -13,7 +13,7 @@
  * Returns only the extracted coordinates + the final URL.
  */
 import { withAdminAuth } from '@/lib/middleware/withAdminAuth';
-import { isShortMapLink, extractLatLng, embedFromLatLng, SHORT_HOSTS } from '@/lib/storeMap';
+import { isShortMapLink, extractLatLng, SHORT_HOSTS } from '@/lib/storeMap';
 
 const MAX_HOPS = 5;
 const TIMEOUT_MS = 6000;
@@ -51,7 +51,6 @@ export const POST = withAdminAuth(async (req) => {
       if (coords) {
         return Response.json({
           latitude: String(coords.lat), longitude: String(coords.lng),
-          embedUrl: embedFromLatLng(coords.lat, coords.lng),
           resolvedFrom: loc || current,
         });
       }

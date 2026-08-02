@@ -4,16 +4,17 @@
  * ─────────────────────────────────────────────────────────────────────────────
  * 📍 Store Map — automatic Google-Maps-link conversion + the iframe safety gate.
  *
- * THE BUG THIS PINS: a normal `/maps/place/…` link CANNOT be iframed (Google
- * refuses to render it), so pasting one used to produce a broken frame. Such a
- * link must be CONVERTED into an embeddable `?output=embed` URL — and anything
- * that cannot be converted must never reach the iframe at all.
+ * NO GOOGLE IFRAME: Google blocks framing of its Maps pages, so the map is now
+ * rendered with Leaflet + OpenStreetMap. Everything here is therefore about
+ * COORDINATES — resolved from the admin lat/lng or extracted from any pasted
+ * Google Maps link. The "Open in Google Maps" button is a normal link and still
+ * points at Google.
  * Run: node scripts/storeMap.test.mjs
  * ─────────────────────────────────────────────────────────────────────────────
  */
 import {
-  parseLat, parseLng, parseRating, isSafeMapEmbedUrl, isShortMapLink,
-  extractLatLng, extractPlaceName, toEmbedUrl, buildEmbedUrl, buildDirectionsUrl,
+  parseLat, parseLng, parseRating, isShortMapLink,
+  extractLatLng, extractPlaceName, resolveCoordinates, linkCoordStatus, buildDirectionsUrl,
   telHref, normalizeStoreMap, computeOpenNow, STORE_MAP_DEFAULTS,
 } from "../src/lib/storeMap.js";
 
@@ -35,17 +36,16 @@ console.log("1) Coordinate & rating parsing:");
   ok("rating out of range → null", parseRating(6) === null && parseRating(0) === null && parseRating("") === null);
 }
 
-console.log("2) SECURITY — only genuinely embeddable Google URLs pass:");
+console.log("2) Link classification (no embed URLs anymore):");
 {
-  ok("official /maps/embed accepted", isSafeMapEmbedUrl(EMBED));
-  ok("?output=embed accepted", isSafeMapEmbedUrl("https://maps.google.com/maps?q=1,2&output=embed"));
-  ok("/maps/place on a Google host REJECTED (cannot be iframed)", isSafeMapEmbedUrl(PLACE) === false);
-  ok("third-party host rejected", isSafeMapEmbedUrl("https://evil.example.com/x") === false);
-  ok("javascript: rejected", isSafeMapEmbedUrl("javascript:alert(1)") === false);
-  ok("data: rejected", isSafeMapEmbedUrl("data:text/html,<script>") === false);
-  ok("lookalike host rejected", isSafeMapEmbedUrl("https://google.com.evil.net/maps?output=embed") === false);
   ok("short link recognised", isShortMapLink(SHORT) && isShortMapLink("https://goo.gl/maps/x"));
   ok("normal link is not a short link", isShortMapLink(PLACE) === false);
+  ok("link with coordinates → ok", linkCoordStatus(PLACE) === "ok");
+  ok("short link → needs_resolve", linkCoordStatus(SHORT) === "needs_resolve");
+  ok("google link without coords → needs_resolve", linkCoordStatus("https://www.google.com/maps/place/House+Electronics/") === "needs_resolve");
+  ok("third-party link → unsupported", linkCoordStatus("https://evil.example.com/x") === "unsupported");
+  ok("javascript: → unsupported", linkCoordStatus("javascript:alert(1)") === "unsupported");
+  ok("empty → empty", linkCoordStatus("") === "empty");
 }
 
 console.log("3) Coordinate / place-name extraction from real link shapes:");
@@ -59,41 +59,23 @@ console.log("3) Coordinate / place-name extraction from real link shapes:");
   ok("no place segment → null", extractPlaceName("https://www.google.com/maps/@1,2,15z") === null);
 }
 
-console.log("4) toEmbedUrl converts ANY pasted link (the broken-map fix):");
+console.log("4) resolveCoordinates — what the Leaflet map centres on:");
 {
-  ok("already an embed → passed through", toEmbedUrl(EMBED).status === "ok" && toEmbedUrl(EMBED).url === EMBED);
-  const conv = toEmbedUrl(PLACE);
-  ok("/maps/place CONVERTED to an embeddable url", conv.status === "ok" && conv.source === "coords");
-  ok("converted url is embeddable", isSafeMapEmbedUrl(conv.url) && conv.url.includes("q=32.7644,-6.3986"));
-  const placeOnly = toEmbedUrl("https://www.google.com/maps/place/House+Electronics/");
-  ok("place without coords → query embed", placeOnly.status === "ok" && placeOnly.source === "place" && isSafeMapEmbedUrl(placeOnly.url));
-  ok("short link → needs_resolve (never a broken iframe)", toEmbedUrl(SHORT).status === "needs_resolve" && toEmbedUrl(SHORT).url === null);
-  ok("empty → empty", toEmbedUrl("").status === "empty");
-  ok("third-party link → unsupported, no url", (() => { const r = toEmbedUrl("https://evil.example.com/maps"); return r.status === "unsupported" && r.url === null; })());
-  ok("javascript: → unsupported", toEmbedUrl("javascript:alert(1)").status === "unsupported");
-}
-
-console.log("5) buildEmbedUrl priority + never renders a broken frame:");
-{
-  ok("converted link wins", buildEmbedUrl({ embedUrl: PLACE }).includes("q=32.7644,-6.3986"));
-  ok("unresolvable short link falls back to coordinates", (() => {
-    const u = buildEmbedUrl({ embedUrl: SHORT, latitude: 33.5731, longitude: -7.5898 });
-    return u.includes("q=33.5731,-7.5898") && isSafeMapEmbedUrl(u);
-  })());
-  ok("unsupported link falls back to coordinates", buildEmbedUrl({ embedUrl: "https://evil.example.com", latitude: 1, longitude: 2 }).includes("q=1,2"));
-  ok("address fallback encoded", buildEmbedUrl({ address: "12 Rue Hassan II, Casablanca" }).includes("12%20Rue%20Hassan%20II"));
-  ok("nothing usable → null (map hidden, not broken)", buildEmbedUrl({ embedUrl: SHORT }) === null);
-  ok("every produced url is iframe-safe", [
-    buildEmbedUrl({ embedUrl: PLACE }), buildEmbedUrl({ latitude: 1, longitude: 2 }), buildEmbedUrl({ address: "X" }),
-  ].every((u) => isSafeMapEmbedUrl(u)));
+  ok("explicit lat/lng wins", (() => { const c = resolveCoordinates({ latitude: "33.5731", longitude: "-7.5898", embedUrl: PLACE }); return c.lat === 33.5731 && c.lng === -7.5898; })());
+  ok("falls back to coordinates inside the pasted link", (() => { const c = resolveCoordinates({ embedUrl: PLACE }); return c.lat === 32.7644 && c.lng === -6.3986; })());
+  ok("short link alone → null (needs resolving first)", resolveCoordinates({ embedUrl: SHORT }) === null);
+  ok("nothing configured → null (map hidden, never broken)", resolveCoordinates({}) === null);
+  ok("half a coordinate pair → falls through", resolveCoordinates({ latitude: "33.5" }) === null);
+  ok("out-of-range coordinates rejected", resolveCoordinates({ latitude: "95", longitude: "10" }) === null);
+  ok("address alone gives no map position", resolveCoordinates({ address: "12 Rue Hassan II" }) === null);
 }
 
 console.log("6) Directions button:");
 {
   ok("explicit button URL wins", buildDirectionsUrl({ buttonUrl: "https://x.test/a", latitude: 1, longitude: 2 }) === "https://x.test/a");
-  ok("short link opens directly (works outside an iframe)", buildDirectionsUrl({ embedUrl: SHORT }) === SHORT);
-  ok("place link opens directly", buildDirectionsUrl({ embedUrl: PLACE }) === PLACE);
-  ok("coordinates build a search link", buildDirectionsUrl({ latitude: 33.5731, longitude: -7.5898 }) === "https://www.google.com/maps/search/?api=1&query=33.5731,-7.5898");
+  ok("configured coordinates drive navigation", buildDirectionsUrl({ latitude: 33.5731, longitude: -7.5898 }) === "https://www.google.com/maps/search/?api=1&query=33.5731,-7.5898");
+  ok("coordinates inside the link are used too", buildDirectionsUrl({ embedUrl: PLACE }) === "https://www.google.com/maps/search/?api=1&query=32.7644,-6.3986");
+  ok("a coordinate-less short link still opens directly", buildDirectionsUrl({ embedUrl: SHORT }) === SHORT);
   ok("address fallback encoded", buildDirectionsUrl({ address: "Rue A, Casa" }).includes("query=Rue%20A%2C%20Casa"));
   ok("nothing configured → null", buildDirectionsUrl({}) === null);
 }
@@ -113,28 +95,16 @@ console.log("7) Phone (Call button visibility) + normalization:");
   ok("all configurable fields present", ["title","subtitle","embedUrl","latitude","longitude","storeName","address","phone","hours","rating","buttonText","callText","buttonUrl"].every((k) => k in n));
 }
 
-console.log("8) The iframe NEVER receives a place/search/short link (broken-frame fix):");
+console.log("8) No Google embed/iframe surface remains:");
 {
-  // Even carrying ?output=embed, these paths are refused by Google in a frame.
-  ok("/maps/place + output=embed still rejected", isSafeMapEmbedUrl("https://www.google.com/maps/place/X/?output=embed") === false);
-  ok("/maps/search + output=embed still rejected", isSafeMapEmbedUrl("https://www.google.com/maps/search/?api=1&query=1,2&output=embed") === false);
-  ok("maps.app.goo.gl never embeddable", isSafeMapEmbedUrl("https://maps.app.goo.gl/x?output=embed") === false);
-  ok("bare /maps?q=…&output=embed IS embeddable", isSafeMapEmbedUrl("https://www.google.com/maps?q=1,2&output=embed"));
-  ok("official /maps/embed IS embeddable", isSafeMapEmbedUrl(EMBED));
-
-  // A /maps/search link with coordinates is converted, not passed through.
-  const search = toEmbedUrl("https://www.google.com/maps/search/?api=1&query=32.7644,-6.3986");
-  ok("/maps/search converted to a bare embed", search.status === "ok" && search.url.startsWith("https://www.google.com/maps?q=32.7644,-6.3986"));
-
-  // Whatever the input, anything handed to the iframe passes the strict gate.
-  const inputs = [PLACE, SHORT, EMBED, "https://www.google.com/maps/search/?api=1&query=1,2",
-    "https://www.google.com/maps/place/X/?output=embed", "https://evil.example.com/x", "", "javascript:alert(1)"];
-  ok("every buildEmbedUrl output is strictly embeddable or null", inputs.every((i) => {
-    const u = buildEmbedUrl({ embedUrl: i });
-    return u === null || isSafeMapEmbedUrl(u);
-  }));
-  ok("with a lat/lng fallback every input yields a valid embed", inputs.every((i) =>
-    isSafeMapEmbedUrl(buildEmbedUrl({ embedUrl: i, latitude: 32.7, longitude: -6.3 }))));
+  const api = Object.keys(await import("../src/lib/storeMap.js"));
+  ok("buildEmbedUrl removed", !api.includes("buildEmbedUrl"));
+  ok("toEmbedUrl removed", !api.includes("toEmbedUrl"));
+  ok("isSafeMapEmbedUrl removed", !api.includes("isSafeMapEmbedUrl"));
+  ok("embedFromLatLng removed", !api.includes("embedFromLatLng"));
+  ok("resolveCoordinates is the map input", api.includes("resolveCoordinates"));
+  // The directions BUTTON is a plain link and may still target Google.
+  ok("directions link still points at Google", buildDirectionsUrl({ latitude: 1, longitude: 2 }).startsWith("https://www.google.com/maps/search/"));
 }
 
 console.log("9) Open-now badge computed from free-text hours:");

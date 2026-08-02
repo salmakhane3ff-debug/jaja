@@ -3,19 +3,14 @@
  * ─────────────────────────────────────────────────────────────────────────────
  * PURE helpers for the 📍 Store Map homepage section.
  *
- * THE EMBED PROBLEM: a normal Google Maps link (`/maps/place/…`, `/maps/@…`)
- * CANNOT be put in an iframe — Google refuses to render it and the visitor sees
- * a broken frame. Only two forms actually embed:
- *     • https://www.google.com/maps/embed?pb=…        (official embed)
- *     • https://…/maps?q=<query>&output=embed         (classic embed, no API key)
- * So `toEmbedUrl()` accepts ANY Google Maps link the admin pastes and converts
- * it: it extracts coordinates (!3d/!4d, @lat,lng, q=/ll=) or the place name and
- * rebuilds a real embed URL. Short `maps.app.goo.gl` links are redirects that
- * cannot be resolved without a network call, so they are reported as
- * `needsResolve` and the admin resolves them with one click (server-side).
+ * NO GOOGLE IFRAME. Google blocks framing of its Maps pages, which produced a
+ * broken map, so the section now renders with Leaflet + OpenStreetMap tiles
+ * (no API key, no embed URL). Everything here is therefore about COORDINATES:
+ * the map needs a { lat, lng }, which is resolved from the admin latitude /
+ * longitude fields or extracted from any Google Maps link the admin pasted.
  *
- * SECURITY: whatever ends up in the iframe is BUILT here or validated against a
- * Google host allow-list. Admin input is never passed through blindly.
+ * The "Open in Google Maps" BUTTON still links to Google — that is a normal
+ * link, not an iframe, so it works fine.
  *
  * No React, no DOM, no I/O → unit-testable.
  * ─────────────────────────────────────────────────────────────────────────────
@@ -41,28 +36,6 @@ export const parseLat = (v) => parseCoord(v, 90);
 export const parseLng = (v) => parseCoord(v, 180);
 
 const urlOf = (s) => { try { return new URL(str(s)); } catch { return null; } };
-
-/**
- * True ONLY for the two URL shapes Google actually renders inside an iframe:
- *   1. /maps/embed?pb=…                       (official embed)
- *   2. /maps?q=<lat,lng|query>&output=embed   (classic embed, no API key)
- *
- * `/maps/place/…`, `/maps/search/…` and `maps.app.goo.gl` are REJECTED even when
- * they carry `output=embed`, because Google refuses to frame those paths — that
- * is exactly what produced the broken preview. Such links must be converted by
- * `toEmbedUrl()` into shape 2 instead of being passed through.
- */
-export function isSafeMapEmbedUrl(url) {
-  const u = urlOf(url);
-  if (!u) return false;
-  if (u.protocol !== 'https:' && u.protocol !== 'http:') return false;
-  if (!ALLOWED_HOSTS.has(u.hostname.toLowerCase())) return false;
-
-  const path = u.pathname.replace(/\/+$/, '');       // tolerate a trailing slash
-  if (path.startsWith('/maps/embed')) return true;   // official embed
-  const isBareMaps = path === '/maps' || path === '';
-  return isBareMaps && u.searchParams.get('output') === 'embed';
-}
 
 /** True when the link is a Google short link needing a server-side redirect follow. */
 export function isShortMapLink(url) {
@@ -105,65 +78,33 @@ export function extractPlaceName(url) {
   } catch { return null; }
 }
 
-const embedFromQuery = (q) => `https://www.google.com/maps?q=${q}&z=16&hl=fr&output=embed`;
-export const embedFromLatLng = (lat, lng) => embedFromQuery(`${lat},${lng}`);
-
 /**
- * Convert ANY pasted Google Maps link into something that actually embeds.
- * The admin never has to know what an "embed URL" is.
- *
- * @returns {{ url: string|null, status: 'ok'|'empty'|'needs_resolve'|'unsupported', source?: string }}
- *   ok            → `url` is safe to put in an iframe
- *   empty         → nothing pasted
- *   needs_resolve → a maps.app.goo.gl short link; resolve it server-side first
- *   unsupported   → not a Google Maps link we can convert (never render it)
+ * The coordinates the Leaflet map should centre on, or null when the section is
+ * not configured yet. Priority: explicit admin latitude/longitude → coordinates
+ * embedded in the pasted Google Maps link.
+ * @returns {{lat:number, lng:number}|null}
  */
-export function toEmbedUrl(input) {
-  const s = str(input);
-  if (!s) return { url: null, status: 'empty' };
-
-  // Already embeddable (official embed or ?output=embed).
-  if (isSafeMapEmbedUrl(s)) return { url: s, status: 'ok', source: 'embed' };
-
-  if (isShortMapLink(s)) {
-    // A redirect — coordinates are not in the short URL itself.
-    const coords = extractLatLng(s);
-    if (coords) return { url: embedFromLatLng(coords.lat, coords.lng), status: 'ok', source: 'coords' };
-    return { url: null, status: 'needs_resolve' };
-  }
-
-  const u = urlOf(s);
-  if (!u || !ALLOWED_HOSTS.has(u.hostname.toLowerCase())) return { url: null, status: 'unsupported' };
-
-  // A normal Google Maps link → rebuild an embeddable URL from its contents.
-  const coords = extractLatLng(s);
-  if (coords) return { url: embedFromLatLng(coords.lat, coords.lng), status: 'ok', source: 'coords' };
-
-  const place = extractPlaceName(s);
-  if (place) return { url: embedFromQuery(encodeURIComponent(place)), status: 'ok', source: 'place' };
-
-  const q = u.searchParams.get('q') || u.searchParams.get('query');
-  if (q) return { url: embedFromQuery(encodeURIComponent(q)), status: 'ok', source: 'query' };
-
-  return { url: null, status: 'unsupported' };
+export function resolveCoordinates(data = {}) {
+  const lat = parseLat(data.latitude);
+  const lng = parseLng(data.longitude);
+  if (lat !== null && lng !== null) return { lat, lng };
+  return extractLatLng(data.embedUrl) || null;
 }
 
 /**
- * The iframe URL for the section, or null when nothing usable is configured.
- * Priority: converted admin link → coordinates → address. A link that cannot be
- * converted NEVER reaches the iframe (no broken frame for visitors).
+ * Admin hint for a pasted link — what, if anything, we could get out of it.
+ * 'ok'            → coordinates were read straight from the link
+ * 'needs_resolve' → a short link; resolve it server-side (it is a redirect)
+ * 'unsupported'   → not a Google Maps link with usable coordinates
  */
-export function buildEmbedUrl(data = {}) {
-  const converted = toEmbedUrl(data.embedUrl);
-  if (converted.status === 'ok') return converted.url;
-
-  const lat = parseLat(data.latitude);
-  const lng = parseLng(data.longitude);
-  if (lat !== null && lng !== null) return embedFromLatLng(lat, lng);
-
-  const address = str(data.address);
-  if (address) return embedFromQuery(encodeURIComponent(address));
-  return null;
+export function linkCoordStatus(input) {
+  const s = str(input);
+  if (!s) return 'empty';
+  if (extractLatLng(s)) return 'ok';
+  if (isShortMapLink(s)) return 'needs_resolve';
+  const u = urlOf(s);
+  if (u && ALLOWED_HOSTS.has(u.hostname.toLowerCase())) return 'needs_resolve';
+  return 'unsupported';
 }
 
 /**
@@ -175,14 +116,15 @@ export function buildDirectionsUrl(data = {}) {
   const explicit = str(data.buttonUrl);
   if (explicit) return explicit;
 
-  const pasted = str(data.embedUrl);
-  if (pasted && (isShortMapLink(pasted) || ALLOWED_HOSTS.has(urlOf(pasted)?.hostname?.toLowerCase()))) {
-    if (!isSafeMapEmbedUrl(pasted)) return pasted; // a normal maps link opens perfectly
-  }
+  // Coordinates give the most accurate navigation target.
+  const coords = resolveCoordinates(data);
+  if (coords) return `https://www.google.com/maps/search/?api=1&query=${coords.lat},${coords.lng}`;
 
-  const lat = parseLat(data.latitude);
-  const lng = parseLng(data.longitude);
-  if (lat !== null && lng !== null) return `https://www.google.com/maps/search/?api=1&query=${lat},${lng}`;
+  // Otherwise the pasted Google link opens perfectly on its own (it is a link,
+  // not an iframe), and finally the address.
+  const pasted = str(data.embedUrl);
+  const u = urlOf(pasted);
+  if (pasted && (isShortMapLink(pasted) || (u && ALLOWED_HOSTS.has(u.hostname.toLowerCase())))) return pasted;
 
   const address = str(data.address);
   if (address) return `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(address)}`;
