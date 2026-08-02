@@ -6,7 +6,8 @@ import {
   Timer, MousePointer, LayoutGrid, Zap, Heart, Phone, Save, Check, MapPin, Copy,
 } from "lucide-react";
 import SingleImageSelect from "@/components/block/ImageSelector";
-import { STORE_MAP_DEFAULTS, buildEmbedUrl, toEmbedUrl } from "@/lib/storeMap";
+import { STORE_MAP_DEFAULTS, buildEmbedUrl, toEmbedUrl, extractLatLng } from "@/lib/storeMap";
+import StoreMapSection from "@/components/HomeBuilder/StoreMapSection";
 
 // ── Section type definitions ──────────────────────────────────────────────────
 const SECTION_TYPES = [
@@ -169,68 +170,94 @@ function EditContact({ data, onChange }) {
 
 function EditStoreMap({ data, onChange }) {
   const set = (k) => (e) => onChange({ ...data, [k]: e.target.value });
-  const [resolving, setResolving] = useState(false);
-  const [resolveMsg, setResolveMsg] = useState(null);
+  const [locating, setLocating] = useState(false);
+  const [located, setLocated]   = useState(null); // { ok, lat, lng, msg }
 
-  // Any pasted Google Maps link is converted automatically; the admin never has
-  // to know what an "embed URL" is.
+  // Any pasted Google Maps link is converted automatically — the admin never
+  // has to know what an "embed URL" is.
   const conv = toEmbedUrl(data.embedUrl);
   const preview = buildEmbedUrl(data);
+  const pasted = (data.embedUrl || "").trim();
 
-  const resolveShortLink = async () => {
-    setResolving(true); setResolveMsg(null);
+  // Works for EVERY link shape: coordinates already inside the URL are read
+  // instantly, short links are resolved server-side (they are redirects).
+  const locate = async () => {
+    setLocating(true); setLocated(null);
     try {
+      const local = extractLatLng(pasted);
+      if (local) {
+        onChange({ ...data, latitude: String(local.lat), longitude: String(local.lng) });
+        setLocated({ ok: true, lat: local.lat, lng: local.lng });
+        return;
+      }
       const r = await fetch("/api/admin/store-map/resolve", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ url: data.embedUrl }),
+        body: JSON.stringify({ url: pasted }),
       });
       const d = await r.json();
-      if (!r.ok) { setResolveMsg({ ok: false, t: d?.error || "Échec de la résolution." }); return; }
+      if (!r.ok) { setLocated({ ok: false, msg: d?.error || "Localisation impossible." }); return; }
       onChange({ ...data, latitude: d.latitude, longitude: d.longitude });
-      setResolveMsg({ ok: true, t: `Position trouvée : ${d.latitude}, ${d.longitude}` });
-    } catch { setResolveMsg({ ok: false, t: "Erreur réseau." }); }
-    finally { setResolving(false); }
+      setLocated({ ok: true, lat: d.latitude, lng: d.longitude });
+    } catch {
+      setLocated({ ok: false, msg: "Erreur réseau." });
+    } finally { setLocating(false); }
   };
 
   const STATUS = {
-    ok:            { cls: "text-green-700 bg-green-50 border-green-200", t: "✓ Lien reconnu — la carte s'affichera correctement." },
-    needs_resolve: { cls: "text-amber-800 bg-amber-50 border-amber-200", t: "Lien court détecté. Cliquez sur « Localiser » pour récupérer la position." },
-    unsupported:   { cls: "text-red-700 bg-red-50 border-red-200",       t: "Ce lien n'est pas un lien Google Maps exploitable. La carte utilisera la latitude / longitude ci-dessous." },
+    ok:            { cls: "text-green-700 bg-green-50 border-green-200", t: "✅ Lien reconnu — la carte s'affichera correctement." },
+    needs_resolve: { cls: "text-amber-800 bg-amber-50 border-amber-200", t: "🔗 Lien court détecté — cliquez sur « Localiser automatiquement »." },
+    unsupported:   { cls: "text-red-700 bg-red-50 border-red-200",       t: "⚠️ Lien non exploitable. Utilisez « Localiser automatiquement » ou saisissez la latitude / longitude." },
   }[conv.status];
 
   return (
-    <div className="space-y-3">
+    <div className="space-y-4">
       <Field label="Section Title"><input className="field" value={data.title || ""} onChange={set("title")} /></Field>
       <Field label="Subtitle"><input className="field" value={data.subtitle || ""} onChange={set("subtitle")} /></Field>
 
-      <Field label="Lien Google Maps">
-        <div className="flex gap-2">
-          <input className="field flex-1" placeholder="Collez n'importe quel lien Google Maps…" value={data.embedUrl || ""} onChange={set("embedUrl")} />
-          {conv.status === "needs_resolve" && (
-            <button type="button" onClick={resolveShortLink} disabled={resolving}
-              className="text-xs px-3 py-1.5 rounded-md bg-black text-white font-semibold disabled:opacity-50 shrink-0">
-              {resolving ? "…" : "Localiser"}
-            </button>
-          )}
-        </div>
-        <p className="text-[11px] text-gray-400 mt-1">
-          Ouvrez votre magasin dans Google Maps → Partager → Copier le lien. Tous les formats sont acceptés
-          (maps.app.goo.gl, /maps/place/…, ou un lien d'intégration).
-        </p>
-        {STATUS && <p className={`text-[11px] mt-1.5 border rounded-md px-2 py-1.5 ${STATUS.cls}`}>{STATUS.t}</p>}
-        {resolveMsg && <p className={`text-[11px] mt-1.5 ${resolveMsg.ok ? "text-green-700" : "text-red-600"}`}>{resolveMsg.t}</p>}
-      </Field>
+      {/* ── 📍 Google Maps ── */}
+      <div className="rounded-xl border border-gray-200 bg-gray-50/60 p-4 space-y-3">
+        <p className="text-sm font-bold text-gray-900">📍 Google Maps</p>
 
-      <div className="grid grid-cols-2 gap-3">
-        <Field label="Latitude (secours)"><input className="field" placeholder="33.5731" value={data.latitude || ""} onChange={set("latitude")} /></Field>
-        <Field label="Longitude (secours)"><input className="field" placeholder="-7.5898" value={data.longitude || ""} onChange={set("longitude")} /></Field>
+        <input className="field" placeholder="Collez n'importe quel lien Google Maps ici…"
+          value={data.embedUrl || ""} onChange={set("embedUrl")} />
+
+        <button type="button" onClick={locate} disabled={locating || !pasted}
+          className="w-full py-3 rounded-xl bg-gray-900 hover:bg-black text-white text-sm font-bold disabled:opacity-40 transition-colors">
+          {locating ? "⏳ Récupération de la position…" : "📍 Localiser automatiquement"}
+        </button>
+
+        {located?.ok && (
+          <div className="rounded-xl border border-green-200 bg-green-50 px-3 py-2.5">
+            <p className="text-xs font-bold text-green-800">✅ Position détectée avec succès</p>
+            <div className="grid grid-cols-2 gap-2 mt-1.5">
+              <p className="text-[11px] text-green-700">Latitude<br /><strong className="text-green-900">{located.lat}</strong></p>
+              <p className="text-[11px] text-green-700">Longitude<br /><strong className="text-green-900">{located.lng}</strong></p>
+            </div>
+          </div>
+        )}
+        {located && !located.ok && (
+          <p className="text-[11px] text-red-700 bg-red-50 border border-red-200 rounded-lg px-2 py-1.5">{located.msg}</p>
+        )}
+        {!located && STATUS && <p className={`text-[11px] border rounded-lg px-2 py-1.5 ${STATUS.cls}`}>{STATUS.t}</p>}
+
+        <p className="text-[11px] text-gray-400">
+          Google Maps → votre magasin → <strong>Partager</strong> → <strong>Copier le lien</strong>. Tous les formats sont acceptés.
+        </p>
+
+        <div className="grid grid-cols-2 gap-3">
+          <Field label="Latitude (secours)"><input className="field" placeholder="32.7644" value={data.latitude || ""} onChange={set("latitude")} /></Field>
+          <Field label="Longitude (secours)"><input className="field" placeholder="-6.3986" value={data.longitude || ""} onChange={set("longitude")} /></Field>
+        </div>
       </div>
 
       <Field label="Store Name"><input className="field" value={data.storeName || ""} onChange={set("storeName")} /></Field>
-      <Field label="Store Address"><input className="field" value={data.address || ""} onChange={set("address")} /></Field>
+      <div className="grid grid-cols-2 gap-3">
+        <Field label="Store Address"><input className="field" value={data.address || ""} onChange={set("address")} /></Field>
+        <Field label="City"><input className="field" placeholder="Boujad, Morocco" value={data.city || ""} onChange={set("city")} /></Field>
+      </div>
       <div className="grid grid-cols-3 gap-3">
         <Field label="Phone Number"><input className="field" value={data.phone || ""} onChange={set("phone")} /></Field>
-        <Field label="Working Hours"><input className="field" placeholder="Lun–Sam • 09:00–20:00" value={data.hours || ""} onChange={set("hours")} /></Field>
+        <Field label="Working Hours"><input className="field" placeholder="Mon–Sat • 09:00–20:00" value={data.hours || ""} onChange={set("hours")} /></Field>
         <Field label="Rating (0–5)"><input className="field" placeholder="4.9" value={data.rating ?? ""} onChange={set("rating")} /></Field>
       </div>
 
@@ -240,15 +267,18 @@ function EditStoreMap({ data, onChange }) {
         <Field label="Button URL (optional)"><input className="field" placeholder="Auto" value={data.buttonUrl || ""} onChange={set("buttonUrl")} /></Field>
       </div>
 
-      {preview ? (
-        <Field label="Aperçu de la carte">
-          <iframe src={preview} title="Store map preview" className="w-full h-44 rounded-xl border border-gray-200" loading="lazy" />
-        </Field>
-      ) : (
-        <p className="text-[11px] text-amber-700 bg-amber-50 border border-amber-200 rounded-md px-2 py-1.5">
-          Aucune carte à afficher pour l'instant : collez un lien Google Maps, ou renseignez la latitude / longitude (ou une adresse).
-        </p>
-      )}
+      {/* Preview uses the EXACT storefront renderer — the two can never differ. */}
+      <Field label="Aperçu (rendu réel de la boutique)">
+        {preview ? (
+          <div className="rounded-xl border border-gray-200 bg-white p-4">
+            <StoreMapSection data={data} />
+          </div>
+        ) : (
+          <p className="text-[11px] text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-2 py-1.5">
+            Aucune carte à afficher : collez un lien puis cliquez sur « Localiser automatiquement », ou saisissez la latitude / longitude.
+          </p>
+        )}
+      </Field>
     </div>
   );
 }

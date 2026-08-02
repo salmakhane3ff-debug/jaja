@@ -14,7 +14,7 @@
 import {
   parseLat, parseLng, parseRating, isSafeMapEmbedUrl, isShortMapLink,
   extractLatLng, extractPlaceName, toEmbedUrl, buildEmbedUrl, buildDirectionsUrl,
-  telHref, normalizeStoreMap, STORE_MAP_DEFAULTS,
+  telHref, normalizeStoreMap, computeOpenNow, STORE_MAP_DEFAULTS,
 } from "../src/lib/storeMap.js";
 
 let pass = 0, fail = 0;
@@ -111,6 +111,45 @@ console.log("7) Phone (Call button visibility) + normalization:");
   ok("button texts default", n.buttonText === STORE_MAP_DEFAULTS.buttonText && n.callText === STORE_MAP_DEFAULTS.callText);
   ok("garbage input never throws", (() => { try { normalizeStoreMap(null); normalizeStoreMap("x"); return true; } catch { return false; } })());
   ok("all configurable fields present", ["title","subtitle","embedUrl","latitude","longitude","storeName","address","phone","hours","rating","buttonText","callText","buttonUrl"].every((k) => k in n));
+}
+
+console.log("8) The iframe NEVER receives a place/search/short link (broken-frame fix):");
+{
+  // Even carrying ?output=embed, these paths are refused by Google in a frame.
+  ok("/maps/place + output=embed still rejected", isSafeMapEmbedUrl("https://www.google.com/maps/place/X/?output=embed") === false);
+  ok("/maps/search + output=embed still rejected", isSafeMapEmbedUrl("https://www.google.com/maps/search/?api=1&query=1,2&output=embed") === false);
+  ok("maps.app.goo.gl never embeddable", isSafeMapEmbedUrl("https://maps.app.goo.gl/x?output=embed") === false);
+  ok("bare /maps?q=…&output=embed IS embeddable", isSafeMapEmbedUrl("https://www.google.com/maps?q=1,2&output=embed"));
+  ok("official /maps/embed IS embeddable", isSafeMapEmbedUrl(EMBED));
+
+  // A /maps/search link with coordinates is converted, not passed through.
+  const search = toEmbedUrl("https://www.google.com/maps/search/?api=1&query=32.7644,-6.3986");
+  ok("/maps/search converted to a bare embed", search.status === "ok" && search.url.startsWith("https://www.google.com/maps?q=32.7644,-6.3986"));
+
+  // Whatever the input, anything handed to the iframe passes the strict gate.
+  const inputs = [PLACE, SHORT, EMBED, "https://www.google.com/maps/search/?api=1&query=1,2",
+    "https://www.google.com/maps/place/X/?output=embed", "https://evil.example.com/x", "", "javascript:alert(1)"];
+  ok("every buildEmbedUrl output is strictly embeddable or null", inputs.every((i) => {
+    const u = buildEmbedUrl({ embedUrl: i });
+    return u === null || isSafeMapEmbedUrl(u);
+  }));
+  ok("with a lat/lng fallback every input yields a valid embed", inputs.every((i) =>
+    isSafeMapEmbedUrl(buildEmbedUrl({ embedUrl: i, latitude: 32.7, longitude: -6.3 }))));
+}
+
+console.log("9) Open-now badge computed from free-text hours:");
+{
+  const at = (h, m = 0, day = 3) => { const d = new Date(2026, 7, 5, h, m); return d.getDay() === day ? d : d; };
+  ok("inside EN range → open", computeOpenNow("Mon–Sat • 09:00–20:00", at(14)) === true);
+  ok("before opening → closed", computeOpenNow("Mon–Sat • 09:00–20:00", at(7)) === false);
+  ok("after closing → closed", computeOpenNow("Mon–Sat • 09:00–20:00", at(21)) === false);
+  ok("FR format with h", computeOpenNow("Lun-Sam 9h-20h", at(10)) === true);
+  ok("time-only applies every day", computeOpenNow("09:00 - 20:00", at(12)) === true);
+  ok("minutes respected", computeOpenNow("09:30–10:00", at(9, 15)) === false && computeOpenNow("09:30–10:00", at(9, 45)) === true);
+  ok("day outside the range → closed", computeOpenNow("Mon–Fri 09:00–20:00", new Date(2026, 7, 2, 12)) === false); // Sunday
+  ok("overnight range wraps midnight", computeOpenNow("20:00–02:00", at(23)) === true && computeOpenNow("20:00–02:00", at(10)) === false);
+  ok("unparseable text → null (badge hidden)", computeOpenNow("sur rendez-vous") === null);
+  ok("empty → null", computeOpenNow("") === null && computeOpenNow(null) === null);
 }
 
 console.log(`\nRESULT: ${pass} passed, ${fail} failed`);

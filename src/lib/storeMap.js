@@ -42,14 +42,26 @@ export const parseLng = (v) => parseCoord(v, 180);
 
 const urlOf = (s) => { try { return new URL(str(s)); } catch { return null; } };
 
-/** True when `url` is an http(s) Google Maps URL that genuinely renders in an iframe. */
+/**
+ * True ONLY for the two URL shapes Google actually renders inside an iframe:
+ *   1. /maps/embed?pb=…                       (official embed)
+ *   2. /maps?q=<lat,lng|query>&output=embed   (classic embed, no API key)
+ *
+ * `/maps/place/…`, `/maps/search/…` and `maps.app.goo.gl` are REJECTED even when
+ * they carry `output=embed`, because Google refuses to frame those paths — that
+ * is exactly what produced the broken preview. Such links must be converted by
+ * `toEmbedUrl()` into shape 2 instead of being passed through.
+ */
 export function isSafeMapEmbedUrl(url) {
   const u = urlOf(url);
   if (!u) return false;
   if (u.protocol !== 'https:' && u.protocol !== 'http:') return false;
   if (!ALLOWED_HOSTS.has(u.hostname.toLowerCase())) return false;
-  // Embeddable forms only — a /maps/place link on a Google host is NOT one.
-  return u.pathname.startsWith('/maps/embed') || u.searchParams.get('output') === 'embed';
+
+  const path = u.pathname.replace(/\/+$/, '');       // tolerate a trailing slash
+  if (path.startsWith('/maps/embed')) return true;   // official embed
+  const isBareMaps = path === '/maps' || path === '';
+  return isBareMaps && u.searchParams.get('output') === 'embed';
 }
 
 /** True when the link is a Google short link needing a server-side redirect follow. */
@@ -185,6 +197,65 @@ export function telHref(phone) {
   return cleaned ? `tel:${cleaned}` : null;
 }
 
+// ── "Open now" from free-text working hours ──────────────────────────────────
+// Understands the common shapes an admin actually types, in EN or FR:
+//   "Mon–Sat • 09:00–20:00"   "Lun-Sam 9h-20h"   "09:00 - 20:00"
+// Returns null when the text cannot be parsed confidently — the badge is then
+// hidden rather than guessing whether the store is open.
+const DAY_TOKENS = [
+  ['sun', 'dim'], ['mon', 'lun'], ['tue', 'mar'], ['wed', 'mer'],
+  ['thu', 'jeu'], ['fri', 'ven'], ['sat', 'sam'],
+];
+
+function dayIndexOf(token) {
+  const t = token.toLowerCase();
+  for (let i = 0; i < DAY_TOKENS.length; i++) {
+    if (DAY_TOKENS[i].some((p) => t.startsWith(p))) return i;
+  }
+  return -1;
+}
+
+/** Minutes since midnight from "9", "9h", "09:00", "9h30". */
+function toMinutes(h, m) {
+  const hh = Number(h), mm = Number(m || 0);
+  if (!Number.isFinite(hh) || hh < 0 || hh > 24) return null;
+  if (!Number.isFinite(mm) || mm < 0 || mm > 59) return null;
+  return hh * 60 + mm;
+}
+
+/**
+ * @returns {boolean|null} true = open, false = closed, null = unknown/unparseable
+ */
+export function computeOpenNow(hours, now = new Date()) {
+  const s = str(hours);
+  if (!s) return null;
+
+  const time = s.match(/(\d{1,2})\s*[:h.]?\s*(\d{2})?\s*(?:[-–—]|à|to|–)\s*(\d{1,2})\s*[:h.]?\s*(\d{2})?/i);
+  if (!time) return null;
+  const open = toMinutes(time[1], time[2]);
+  const close = toMinutes(time[3], time[4]);
+  if (open === null || close === null) return null;
+
+  // Optional day range ("Mon–Sat", "Lun-Sam"). Absent → every day.
+  const days = s.match(/([a-zA-Zéû]{3,9})\s*[-–—]\s*([a-zA-Zéû]{3,9})/);
+  if (days) {
+    const from = dayIndexOf(days[1]);
+    const to = dayIndexOf(days[2]);
+    if (from >= 0 && to >= 0) {
+      const today = now.getDay();
+      const inRange = from <= to
+        ? today >= from && today <= to
+        : today >= from || today <= to;   // wraps the week (e.g. Sat–Mon)
+      if (!inRange) return false;
+    }
+  }
+
+  const nowMin = now.getHours() * 60 + now.getMinutes();
+  return close > open
+    ? nowMin >= open && nowMin < close
+    : nowMin >= open || nowMin < close;   // crosses midnight
+}
+
 export const STORE_MAP_DEFAULTS = Object.freeze({
   title: 'Notre magasin',
   subtitle: 'Venez nous rendre visite',
@@ -193,6 +264,7 @@ export const STORE_MAP_DEFAULTS = Object.freeze({
   longitude: '',
   storeName: '',
   address: '',
+  city: '',
   phone: '',
   hours: '',
   rating: '',
@@ -220,6 +292,7 @@ export function normalizeStoreMap(raw = {}) {
     longitude: str(d.longitude),
     storeName: str(d.storeName),
     address:   str(d.address),
+    city:      str(d.city),
     phone:     str(d.phone),
     hours:     str(d.hours),
     rating:    parseRating(d.rating),
