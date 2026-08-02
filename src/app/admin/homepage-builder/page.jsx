@@ -3,9 +3,10 @@ import React, { useEffect, useState, useCallback } from "react";
 import {
   GripVertical, Plus, Trash2, ChevronUp, ChevronDown, Eye, EyeOff,
   Image as ImageIcon, Type, Video, ShoppingBag, Layers, Star,
-  Timer, MousePointer, LayoutGrid, Zap, Heart, Phone, Save, Check,
+  Timer, MousePointer, LayoutGrid, Zap, Heart, Phone, Save, Check, MapPin, Copy,
 } from "lucide-react";
 import SingleImageSelect from "@/components/block/ImageSelector";
+import { STORE_MAP_DEFAULTS, buildEmbedUrl, isSafeMapEmbedUrl } from "@/lib/storeMap";
 
 // ── Section type definitions ──────────────────────────────────────────────────
 const SECTION_TYPES = [
@@ -26,6 +27,7 @@ const SECTION_TYPES = [
   { type: "shoppable_reels",    icon: ShoppingBag,  color: "from-violet-500 to-purple-600",  label: "Shoppable Videos",    desc: "Clickable videos linked to products" },
   { type: "before_after",       icon: Zap,          color: "from-rose-400 to-orange-400",    label: "Avant / Après",       desc: "Slider avant/après avec produit lié" },
   { type: "contact",            icon: Phone,        color: "from-slate-500 to-gray-700",     label: "Contact",             desc: "Contact info & social links" },
+  { type: "store_map",          icon: MapPin,       color: "from-red-500 to-rose-600",       label: "📍 Store Map",        desc: "Google Map + store info & directions" },
 ];
 
 const TYPE_META = Object.fromEntries(SECTION_TYPES.map((t) => [t.type, t]));
@@ -47,6 +49,7 @@ const DEFAULTS = {
   support:            {},
   reels:              {},
   contact:            { title: "Contact Us", phone: "", email: "", address: "" },
+  store_map:          { ...STORE_MAP_DEFAULTS },
 };
 
 let _seq = 0;
@@ -160,6 +163,51 @@ function EditContact({ data, onChange }) {
       <Field label="Phone"><input className="field" value={data.phone || ""} onChange={e => onChange({ ...data, phone: e.target.value })} /></Field>
       <Field label="Email"><input className="field" value={data.email || ""} onChange={e => onChange({ ...data, email: e.target.value })} /></Field>
       <Field label="Address"><input className="field" value={data.address || ""} onChange={e => onChange({ ...data, address: e.target.value })} /></Field>
+    </div>
+  );
+}
+
+function EditStoreMap({ data, onChange }) {
+  const set = (k) => (e) => onChange({ ...data, [k]: e.target.value });
+  const preview = buildEmbedUrl(data);
+  const embedInvalid = !!(data.embedUrl || "").trim() && !isSafeMapEmbedUrl(data.embedUrl);
+  return (
+    <div className="space-y-3">
+      <Field label="Section Title"><input className="field" value={data.title || ""} onChange={set("title")} /></Field>
+      <Field label="Subtitle"><input className="field" value={data.subtitle || ""} onChange={set("subtitle")} /></Field>
+
+      <Field label="Google Maps Embed URL (optional)">
+        <input className="field" placeholder="https://www.google.com/maps/embed?pb=…" value={data.embedUrl || ""} onChange={set("embedUrl")} />
+        {embedInvalid && (
+          <p className="text-[11px] text-red-600 mt-1">
+            URL refusée : seules les URL Google Maps sont autorisées dans la carte. Les coordonnées ci-dessous seront utilisées à la place.
+          </p>
+        )}
+        <p className="text-[11px] text-gray-400 mt-1">Laissez vide pour générer la carte depuis la latitude / longitude.</p>
+      </Field>
+
+      <div className="grid grid-cols-2 gap-3">
+        <Field label="Latitude"><input className="field" placeholder="33.5731" value={data.latitude || ""} onChange={set("latitude")} /></Field>
+        <Field label="Longitude"><input className="field" placeholder="-7.5898" value={data.longitude || ""} onChange={set("longitude")} /></Field>
+      </div>
+
+      <Field label="Store Name"><input className="field" value={data.storeName || ""} onChange={set("storeName")} /></Field>
+      <Field label="Store Address"><input className="field" value={data.address || ""} onChange={set("address")} /></Field>
+      <div className="grid grid-cols-2 gap-3">
+        <Field label="Phone Number"><input className="field" value={data.phone || ""} onChange={set("phone")} /></Field>
+        <Field label="Working Hours"><input className="field" placeholder="Lun–Sam : 9h–20h" value={data.hours || ""} onChange={set("hours")} /></Field>
+      </div>
+
+      <div className="grid grid-cols-2 gap-3">
+        <Field label="Button Text"><input className="field" value={data.buttonText || ""} onChange={set("buttonText")} /></Field>
+        <Field label="Button URL (optional)"><input className="field" placeholder="Auto depuis les coordonnées" value={data.buttonUrl || ""} onChange={set("buttonUrl")} /></Field>
+      </div>
+
+      {preview && (
+        <Field label="Preview">
+          <iframe src={preview} title="Store map preview" className="w-full h-40 rounded-xl border border-gray-200" loading="lazy" />
+        </Field>
+      )}
     </div>
   );
 }
@@ -407,7 +455,7 @@ function EditBeforeAfter({ data, onChange }) {
 const EDIT_FORMS = {
   hero: EditHero, products: EditProducts, image: EditImage,
   video: EditVideo, text: EditText, cta: EditCta,
-  countdown: EditCountdown, contact: EditContact,
+  countdown: EditCountdown, contact: EditContact, store_map: EditStoreMap,
   collection_section: EditCollectionSection,
   shoppable_reels: EditShoppableReels,
   before_after: EditBeforeAfter,
@@ -491,6 +539,30 @@ export default function HomepageBuilder() {
     setSections(prev => prev.map(s => s.id === id ? { ...s, data } : s));
   }, []);
 
+  // Duplicate a section (new id, same type/data) — inserted right after it.
+  const duplicate = (idx) => {
+    setSections(prev => {
+      const src = prev[idx];
+      if (!src) return prev;
+      const copy = { ...src, id: uid(), data: JSON.parse(JSON.stringify(src.data || {})) };
+      const a = [...prev]; a.splice(idx + 1, 0, copy); return a;
+    });
+  };
+
+  // Drag & drop reordering (makes the existing grip handle functional).
+  const [dragIdx, setDragIdx] = useState(null);
+  const [overIdx, setOverIdx] = useState(null);
+  const onDrop = (to) => {
+    setSections(prev => {
+      if (dragIdx === null || dragIdx === to) return prev;
+      const a = [...prev];
+      const [moved] = a.splice(dragIdx, 1);
+      a.splice(to, 0, moved);
+      return a;
+    });
+    setDragIdx(null); setOverIdx(null);
+  };
+
   if (loading) return <div className="flex justify-center items-center h-60 text-gray-400 text-sm">Loading...</div>;
 
   return (
@@ -529,7 +601,12 @@ export default function HomepageBuilder() {
 
             return (
               <div key={sec.id}
-                className={`bg-white rounded-2xl border transition-all ${sec.visible ? "border-gray-200 shadow-sm" : "border-gray-100 opacity-60"} ${isEdit ? "ring-2 ring-black" : ""}`}>
+                draggable
+                onDragStart={() => setDragIdx(idx)}
+                onDragOver={(e) => { e.preventDefault(); if (overIdx !== idx) setOverIdx(idx); }}
+                onDrop={(e) => { e.preventDefault(); onDrop(idx); }}
+                onDragEnd={() => { setDragIdx(null); setOverIdx(null); }}
+                className={`bg-white rounded-2xl border transition-all ${sec.visible ? "border-gray-200 shadow-sm" : "border-gray-100 opacity-60"} ${isEdit ? "ring-2 ring-black" : ""} ${dragIdx === idx ? "opacity-40" : ""} ${overIdx === idx && dragIdx !== null && dragIdx !== idx ? "ring-2 ring-blue-400" : ""}`}>
                 {/* Section Header */}
                 <div className="flex items-center gap-3 px-4 py-3">
                   {/* Drag handle */}
@@ -559,6 +636,10 @@ export default function HomepageBuilder() {
                     <button onClick={() => toggle(sec.id)}
                       className={`p-1.5 rounded-lg transition-colors ${sec.visible ? "hover:bg-gray-100 text-gray-600" : "hover:bg-yellow-50 text-yellow-500"}`}>
                       {sec.visible ? <Eye size={14} /> : <EyeOff size={14} />}
+                    </button>
+                    <button onClick={() => duplicate(idx)} title="Duplicate"
+                      className="p-1.5 rounded-lg hover:bg-gray-100 text-gray-600 transition-colors">
+                      <Copy size={14} />
                     </button>
                     {EditForm && (
                       <button onClick={() => setEditId(isEdit ? null : sec.id)}

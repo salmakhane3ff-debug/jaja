@@ -14,6 +14,8 @@ import { useLanguage }   from "@/context/LanguageContext";
 import ShoppableReels      from "@/components/ShoppableReels";
 import BeforeAfterSlider   from "@/components/BeforeAfterSlider";
 import { trackClarity }    from "@/lib/trackClarity";
+import { MapPin, Phone as PhoneIcon, Clock } from "lucide-react";
+import { normalizeStoreMap, buildEmbedUrl, buildDirectionsUrl, telHref } from "@/lib/storeMap";
 
 // ── Countdown section ─────────────────────────────────────────────────────────
 function CountdownTimer({ targetDate }) {
@@ -199,6 +201,7 @@ const RENDERERS = {
   shoppable_reels:    ({ data }) => <ShoppableReels title={data?.title || "In Action"} />,
   before_after:       ({ data }) => <BeforeAfterSlider title={data?.title || ""} />,
   contact:            ({ data }) => <ContactSection data={data} />,
+  store_map:          ({ data }) => <StoreMapSection data={data} />,
 };
 
 // Sections that should be wrapped in the shared Container (max-w-7xl, centered).
@@ -216,7 +219,95 @@ const CONTAINER_SECTIONS = new Set([
   "collection_slider",
   "collection_section",
   "before_after",
+  "store_map",
 ]);
+
+// ── 📍 Store Map section ──────────────────────────────────────────────────────
+// Store info card above an embedded Google Map (red marker comes from the
+// `q=lat,lng` embed), with a directions button below. The iframe URL is built
+// and validated in src/lib/storeMap.js — never taken from raw admin input.
+function StoreMapSection({ data }) {
+  const cfg = normalizeStoreMap(data);
+  const embed = buildEmbedUrl(cfg);
+  const directions = buildDirectionsUrl(cfg);
+  const tel = telHref(cfg.phone);
+  const [loaded, setLoaded] = useState(false);
+
+  const rows = [
+    cfg.address && { icon: MapPin, text: cfg.address },
+    cfg.phone && { icon: PhoneIcon, text: cfg.phone, href: tel },
+    cfg.hours && { icon: Clock, text: cfg.hours },
+  ].filter(Boolean);
+
+  if (!embed && !rows.length && !cfg.storeName) return null;
+
+  return (
+    <section className="w-full">
+      {(cfg.title || cfg.subtitle) && (
+        <div className="text-center mb-5">
+          {cfg.title && <h2 className="text-2xl md:text-3xl font-black text-gray-900">{cfg.title}</h2>}
+          {cfg.subtitle && <p className="text-sm text-gray-500 mt-1.5">{cfg.subtitle}</p>}
+        </div>
+      )}
+
+      <div className="rounded-3xl bg-white border border-gray-100 shadow-lg shadow-gray-100/70 overflow-hidden">
+        {/* Store information card — above the map */}
+        {(cfg.storeName || rows.length > 0) && (
+          <div className="p-5 sm:p-6 border-b border-gray-100">
+            {cfg.storeName && (
+              <div className="flex items-center gap-2.5 mb-3">
+                <span className="w-9 h-9 rounded-full bg-red-50 text-red-500 flex items-center justify-center shrink-0">
+                  <MapPin className="w-4.5 h-4.5" />
+                </span>
+                <h3 className="text-base font-black text-gray-900">{cfg.storeName}</h3>
+              </div>
+            )}
+            <div className="grid sm:grid-cols-3 gap-3">
+              {rows.map(({ icon: Icon, text, href }, i) => (
+                <div key={i} className="flex items-start gap-2 rounded-2xl bg-gray-50 px-3.5 py-3">
+                  <Icon className="w-4 h-4 text-gray-400 shrink-0 mt-0.5" />
+                  {href
+                    ? <a href={href} className="text-xs font-semibold text-gray-700 hover:text-black break-words">{text}</a>
+                    : <span className="text-xs font-semibold text-gray-700 break-words">{text}</span>}
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Embedded map — ~300px on mobile, taller on desktop */}
+        {embed && (
+          <div className="relative w-full h-[300px] md:h-[420px] bg-gray-100">
+            {!loaded && (
+              <div className="absolute inset-0 flex items-center justify-center">
+                <span className="w-6 h-6 border-2 border-gray-300 border-t-transparent rounded-full animate-spin" />
+              </div>
+            )}
+            <iframe
+              src={embed}
+              title={cfg.storeName || cfg.title || "Store map"}
+              onLoad={() => setLoaded(true)}
+              className={`w-full h-full border-0 transition-opacity duration-500 ${loaded ? "opacity-100" : "opacity-0"}`}
+              loading="lazy"
+              referrerPolicy="no-referrer-when-downgrade"
+              allowFullScreen
+            />
+          </div>
+        )}
+
+        {/* Directions button — below the map */}
+        {directions && (
+          <div className="p-5 sm:p-6">
+            <a href={directions} target="_blank" rel="noopener noreferrer"
+              className="w-full inline-flex items-center justify-center gap-2 px-6 py-4 rounded-2xl bg-red-500 hover:bg-red-600 active:scale-[0.98] text-white font-black text-sm shadow-lg shadow-red-200 transition-all">
+              <MapPin className="w-4 h-4" /> {cfg.buttonText}
+            </a>
+          </div>
+        )}
+      </div>
+    </section>
+  );
+}
 
 // ── Main renderer ─────────────────────────────────────────────────────────────
 // PERF: Accepts `sections` as an optional prop.
