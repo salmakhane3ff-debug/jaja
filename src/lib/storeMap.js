@@ -15,6 +15,7 @@
  * No React, no DOM, no I/O → unit-testable.
  * ─────────────────────────────────────────────────────────────────────────────
  */
+import { buildWhatsappUrl } from './whatsappSupport.js';
 
 const ALLOWED_HOSTS = new Set([
   'google.com', 'www.google.com', 'maps.google.com',
@@ -131,6 +132,35 @@ export function buildDirectionsUrl(data = {}) {
   return null;
 }
 
+/**
+ * Normalize a Moroccan phone number to the international digits wa.me needs.
+ *   "0680906050"        → "212680906050"   (leading 0 dropped, 212 prepended)
+ *   "+212 680-906-050"  → "212680906050"
+ *   "(06) 80 90 60 50"  → "212680906050"
+ *   "680906050"         → "212680906050"   (9-digit local form)
+ * A number that already carries another country code is left as-is.
+ * @returns {string|null} digits only, or null when there is nothing usable
+ */
+export function normalizeMoroccanPhone(phone) {
+  let d = str(phone).replace(/\D/g, '');   // drops spaces, dashes, parentheses, +
+  if (!d) return null;
+  if (d.startsWith('00')) d = d.slice(2);   // 00212… → 212…
+  if (d.startsWith('212')) return d;
+  if (d.startsWith('0')) return `212${d.slice(1)}`;
+  if (d.length === 9) return `212${d}`;     // local form without the leading 0
+  return d;                                 // already an international number
+}
+
+/**
+ * WhatsApp link for the store, or null when no phone is configured (the button
+ * is then hidden). Reuses the shared wa.me builder.
+ */
+export function buildStoreWhatsappUrl(data = {}) {
+  const digits = normalizeMoroccanPhone(data?.phone);
+  if (!digits) return null;
+  return buildWhatsappUrl(digits, str(data?.whatsappMessage) || STORE_MAP_DEFAULTS.whatsappMessage);
+}
+
 /** Digits-only tel: href (keeps a leading +), or null. */
 export function telHref(phone) {
   const s = str(phone);
@@ -211,7 +241,8 @@ export const STORE_MAP_DEFAULTS = Object.freeze({
   hours: '',
   rating: '',
   buttonText: '📍 Ouvrir dans Google Maps',
-  callText: '📞 Appeler',
+  whatsappText: 'تواصل معنا عبر WhatsApp',
+  whatsappMessage: 'السلام عليكم، بغيت نستفسر على المحل والمنتجات.',
   buttonUrl: '',
 });
 
@@ -238,8 +269,9 @@ export function normalizeStoreMap(raw = {}) {
     phone:     str(d.phone),
     hours:     str(d.hours),
     rating:    parseRating(d.rating),
-    buttonText: str(d.buttonText) || STORE_MAP_DEFAULTS.buttonText,
-    callText:   str(d.callText) || STORE_MAP_DEFAULTS.callText,
-    buttonUrl:  str(d.buttonUrl),
+    buttonText:      str(d.buttonText) || STORE_MAP_DEFAULTS.buttonText,
+    whatsappText:    str(d.whatsappText) || STORE_MAP_DEFAULTS.whatsappText,
+    whatsappMessage: str(d.whatsappMessage) || STORE_MAP_DEFAULTS.whatsappMessage,
+    buttonUrl:       str(d.buttonUrl),
   };
 }

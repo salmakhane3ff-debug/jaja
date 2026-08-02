@@ -15,7 +15,7 @@
 import {
   parseLat, parseLng, parseRating, isShortMapLink,
   extractLatLng, extractPlaceName, resolveCoordinates, linkCoordStatus, buildDirectionsUrl,
-  telHref, normalizeStoreMap, computeOpenNow, STORE_MAP_DEFAULTS,
+  telHref, normalizeMoroccanPhone, buildStoreWhatsappUrl, normalizeStoreMap, computeOpenNow, STORE_MAP_DEFAULTS,
 } from "../src/lib/storeMap.js";
 
 let pass = 0, fail = 0;
@@ -80,7 +80,25 @@ console.log("6) Directions button:");
   ok("nothing configured → null", buildDirectionsUrl({}) === null);
 }
 
-console.log("7) Phone (Call button visibility) + normalization:");
+console.log("6b) WhatsApp button — Moroccan number normalization:");
+{
+  ok("local 0-prefixed number → 212…", normalizeMoroccanPhone("0680906050") === "212680906050");
+  ok("spaces, dashes and parentheses stripped", normalizeMoroccanPhone(" (06) 80-90 60 50 ") === "212680906050");
+  ok("+212 form kept", normalizeMoroccanPhone("+212 680-906-050") === "212680906050");
+  ok("00212 form normalized", normalizeMoroccanPhone("00212680906050") === "212680906050");
+  ok("9-digit local form gets the country code", normalizeMoroccanPhone("680906050") === "212680906050");
+  ok("already-212 number untouched", normalizeMoroccanPhone("212680906050") === "212680906050");
+  ok("other country code left as-is", normalizeMoroccanPhone("+33612345678") === "33612345678");
+  ok("empty / junk → null", normalizeMoroccanPhone("") === null && normalizeMoroccanPhone("abc") === null);
+
+  const url = buildStoreWhatsappUrl({ phone: "0680906050" });
+  ok("wa.me link uses the normalized number", url.startsWith("https://wa.me/212680906050?text="));
+  ok("default Darija message is prefilled + encoded", url.includes(encodeURIComponent(STORE_MAP_DEFAULTS.whatsappMessage)));
+  ok("admin can override the message", buildStoreWhatsappUrl({ phone: "0680906050", whatsappMessage: "Bonjour" }).endsWith("?text=Bonjour"));
+  ok("no phone → null (button hidden)", buildStoreWhatsappUrl({}) === null && buildStoreWhatsappUrl({ phone: "" }) === null);
+}
+
+console.log("7) Phone (popup tel link) + normalization:");
 {
   ok("formatted phone → tel: digits", telHref("+212 6 12-34-56-78") === "tel:+212612345678");
   ok("no phone → null (Call button hidden)", telHref("") === null && telHref(null) === null);
@@ -90,9 +108,10 @@ console.log("7) Phone (Call button visibility) + normalization:");
   ok("strings trimmed", n.title === "House Electronics");
   ok("numbers coerced", n.phone === "612345678");
   ok("rating normalized to a number", n.rating === 4.9);
-  ok("button texts default", n.buttonText === STORE_MAP_DEFAULTS.buttonText && n.callText === STORE_MAP_DEFAULTS.callText);
+  ok("button texts default", n.buttonText === STORE_MAP_DEFAULTS.buttonText && n.whatsappText === STORE_MAP_DEFAULTS.whatsappText);
+  ok("whatsapp label is the Arabic default", n.whatsappText === "تواصل معنا عبر WhatsApp");
   ok("garbage input never throws", (() => { try { normalizeStoreMap(null); normalizeStoreMap("x"); return true; } catch { return false; } })());
-  ok("all configurable fields present", ["title","subtitle","embedUrl","latitude","longitude","storeName","address","phone","hours","rating","buttonText","callText","buttonUrl"].every((k) => k in n));
+  ok("all configurable fields present", ["title","subtitle","embedUrl","latitude","longitude","storeName","address","phone","hours","rating","buttonText","whatsappText","whatsappMessage","buttonUrl"].every((k) => k in n));
 }
 
 console.log("8) No Google embed/iframe surface remains:");

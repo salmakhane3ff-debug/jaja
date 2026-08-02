@@ -263,9 +263,15 @@ function EditStoreMap({ data, onChange }) {
 
       <div className="grid grid-cols-3 gap-3">
         <Field label="Button Text"><input className="field" value={data.buttonText || ""} onChange={set("buttonText")} /></Field>
-        <Field label="Call Button Text"><input className="field" value={data.callText || ""} onChange={set("callText")} /></Field>
+        <Field label="WhatsApp Button Text"><input className="field" value={data.whatsappText || ""} onChange={set("whatsappText")} /></Field>
         <Field label="Button URL (optional)"><input className="field" placeholder="Auto" value={data.buttonUrl || ""} onChange={set("buttonUrl")} /></Field>
       </div>
+
+      <Field label="Message WhatsApp pré-rempli">
+        <input className="field" dir="rtl" value={data.whatsappMessage ?? ""} onChange={set("whatsappMessage")}
+          placeholder="السلام عليكم، بغيت نستفسر على المحل والمنتجات." />
+        <p className="text-[11px] text-gray-400 mt-1">Le bouton WhatsApp utilise le numéro de téléphone ci-dessus (normalisé au format 212…). Il est masqué si aucun numéro n'est renseigné.</p>
+      </Field>
 
       {/* Preview uses the EXACT storefront renderer — the two can never differ. */}
       <Field label="Aperçu (rendu réel de la boutique)">
