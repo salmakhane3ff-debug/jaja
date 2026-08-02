@@ -32,6 +32,17 @@ function WhatsAppIcon({ className = "w-4 h-4" }) {
   );
 }
 
+/**
+ * Shared style for BOTH action buttons — identical size, radius, shadow, hover
+ * and active animation. Uses the site's red/rose primary palette (the WhatsApp
+ * button deliberately does NOT use WhatsApp green).
+ */
+const ACTION_BTN =
+  "inline-flex items-center justify-center gap-2 w-full min-w-0 h-14 px-3 sm:px-5 rounded-2xl " +
+  "bg-gradient-to-r from-red-500 to-rose-600 hover:from-red-600 hover:to-rose-700 " +
+  "text-white font-black text-xs sm:text-sm shadow-lg shadow-red-200 hover:shadow-xl " +
+  "active:scale-[0.98] transition-all";
+
 /** Red pin rendered as pure markup — no image asset to 404. */
 const RED_PIN_HTML = `
   <span style="position:relative;display:block;width:28px;height:40px">
@@ -224,19 +235,22 @@ export default function StoreMapSection({ data, adminPreview = false }) {
         </div>
       ) : null}
 
-      {/* Two equal actions below the map — WhatsApp hides when no phone is set */}
+      {/* Horizontal action bar — always ONE row, 50/50, never stacks on mobile.
+          Both buttons share the site's red/rose primary style. */}
       {(directions || whatsapp) && (
-        <div className={`grid gap-3 mt-4 ${directions && whatsapp ? "grid-cols-1 sm:grid-cols-2" : "grid-cols-1"}`}>
+        <div className="grid grid-cols-2 gap-3 sm:gap-4 mt-4">
           {directions && (
             <a href={directions} target="_blank" rel="noopener noreferrer"
-              className="inline-flex items-center justify-center gap-2 px-6 py-4 rounded-2xl bg-gradient-to-r from-red-500 to-rose-600 hover:from-red-600 hover:to-rose-700 text-white font-black text-sm shadow-lg shadow-red-200 hover:shadow-xl active:scale-[0.98] transition-all">
-              <MapPin className="w-4 h-4" /> {cfg.buttonText}
+              className={`${ACTION_BTN} ${!whatsapp ? "col-span-2" : ""}`}>
+              <MapPin className="w-4 h-4 shrink-0" />
+              <span className="truncate">{cfg.buttonText}</span>
             </a>
           )}
           {whatsapp && (
             <a href={whatsapp} target="_blank" rel="noopener noreferrer" dir="rtl"
-              className="inline-flex items-center justify-center gap-2 px-6 py-4 rounded-2xl bg-[#25D366] hover:bg-[#1eb855] text-white font-black text-sm shadow-lg shadow-green-200 hover:shadow-xl active:scale-[0.98] transition-all">
-              <WhatsAppIcon /> {cfg.whatsappText}
+              className={`${ACTION_BTN} ${!directions ? "col-span-2" : ""}`}>
+              <WhatsAppIcon className="w-4 h-4 shrink-0" />
+              <span className="truncate">{cfg.whatsappText}</span>
             </a>
           )}
         </div>
