@@ -6,7 +6,7 @@ import {
   Timer, MousePointer, LayoutGrid, Zap, Heart, Phone, Save, Check, MapPin, Copy,
 } from "lucide-react";
 import SingleImageSelect from "@/components/block/ImageSelector";
-import { STORE_MAP_DEFAULTS, linkCoordStatus, extractLatLng, resolveCoordinates } from "@/lib/storeMap";
+import { STORE_MAP_DEFAULTS, linkCoordStatus, extractLatLng } from "@/lib/storeMap";
 import StoreMapSection from "@/components/HomeBuilder/StoreMapSection";
 
 // ── Section type definitions ──────────────────────────────────────────────────
@@ -176,7 +176,6 @@ function EditStoreMap({ data, onChange }) {
   // Any pasted Google Maps link is converted automatically — the admin never
   // has to know what an "embed URL" is.
   const status = linkCoordStatus(data.embedUrl);
-  const coords = resolveCoordinates(data);
   const pasted = (data.embedUrl || "").trim();
 
   // Works for EVERY link shape: coordinates already inside the URL are read
@@ -270,15 +269,9 @@ function EditStoreMap({ data, onChange }) {
 
       {/* Preview uses the EXACT storefront renderer — the two can never differ. */}
       <Field label="Aperçu (rendu réel de la boutique)">
-        {coords ? (
-          <div className="rounded-xl border border-gray-200 bg-white p-4">
-            <StoreMapSection data={data} />
-          </div>
-        ) : (
-          <p className="text-[11px] text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-2 py-1.5">
-            Aucune position définie : collez un lien puis cliquez sur « Localiser automatiquement », ou saisissez la latitude / longitude.
-          </p>
-        )}
+        <div className="rounded-xl border border-gray-200 bg-white p-4">
+          <StoreMapSection data={data} adminPreview />
+        </div>
       </Field>
     </div>
   );

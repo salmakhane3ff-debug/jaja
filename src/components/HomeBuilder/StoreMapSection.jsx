@@ -31,7 +31,28 @@ const RED_PIN_HTML = `
     </svg>
   </span>`;
 
-function LeafletMap({ lat, lng, label }) {
+/** Leaflet popups take an HTML string, so admin-entered text must be escaped. */
+function esc(s) {
+  return String(s ?? "").replace(/[&<>"']/g, (c) => (
+    { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]
+  ));
+}
+
+/** Popup markup: store name, address, working hours, phone (when present). */
+function popupHtml({ storeName, address, hours, phone, tel }) {
+  const rows = [
+    address && `<div style="color:#6b7280;margin-top:2px">${esc(address)}</div>`,
+    hours && `<div style="color:#374151;margin-top:6px">🕘 ${esc(hours)}</div>`,
+    phone && (tel
+      ? `<div style="margin-top:4px">☎️ <a href="${esc(tel)}" style="color:#ef4444;font-weight:700;text-decoration:none">${esc(phone)}</a></div>`
+      : `<div style="margin-top:4px;color:#374151">☎️ ${esc(phone)}</div>`),
+  ].filter(Boolean).join("");
+  const title = storeName ? `<div style="font-weight:800;color:#111827">${esc(storeName)}</div>` : "";
+  if (!title && !rows) return null;
+  return `<div style="min-width:170px;font-size:13px;line-height:1.45">${title}${rows}</div>`;
+}
+
+function LeafletMap({ lat, lng, label, popup }) {
   const holder = useRef(null);
   const mapRef = useRef(null);
   const [ready, setReady] = useState(false);
@@ -61,7 +82,7 @@ function LeafletMap({ lat, lng, label }) {
         attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
       }).addTo(map);
 
-      L.marker([lat, lng], {
+      const marker = L.marker([lat, lng], {
         title: label || undefined,
         icon: L.divIcon({
           html: RED_PIN_HTML,
@@ -70,6 +91,12 @@ function LeafletMap({ lat, lng, label }) {
           iconAnchor: [14, 40],       // tip of the pin sits on the coordinate
         }),
       }).addTo(map);
+
+      // Store details popup — opened by default so the info is visible at once.
+      if (popup) {
+        marker.bindPopup(popup, { offset: [0, -34], closeButton: true, maxWidth: 260 });
+        marker.openPopup();
+      }
 
       // Container starts hidden/sized by CSS — make sure Leaflet measures it.
       setTimeout(() => { try { map.invalidateSize(); } catch {} }, 0);
@@ -80,7 +107,7 @@ function LeafletMap({ lat, lng, label }) {
       cancelled = true;
       if (mapRef.current) { mapRef.current.remove(); mapRef.current = null; }
     };
-  }, [lat, lng, label]);
+  }, [lat, lng, label, popup]);
 
   return (
     <div className="relative w-full h-[300px] md:h-[420px] rounded-[24px] overflow-hidden shadow-lg shadow-gray-200/70 bg-gray-100">
@@ -94,14 +121,20 @@ function LeafletMap({ lat, lng, label }) {
   );
 }
 
-export default function StoreMapSection({ data }) {
+export default function StoreMapSection({ data, adminPreview = false }) {
   const cfg = normalizeStoreMap(data);
   const coords = resolveCoordinates(cfg);
   const directions = buildDirectionsUrl(cfg);
   const tel = telHref(cfg.phone);
   const openNow = computeOpenNow(cfg.hours);
 
-  if (!coords && !cfg.storeName && !cfg.address) return null;
+  // Nothing configured at all → render nothing on the storefront.
+  if (!coords && !cfg.storeName && !cfg.address) return adminPreview ? (
+    <div className="w-full rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 flex items-center gap-2">
+      <MapPin className="w-4 h-4 text-amber-500 shrink-0" />
+      <p className="text-xs font-semibold text-amber-800">Section vide : renseignez au minimum la position du magasin.</p>
+    </div>
+  ) : null;
 
   return (
     <section className="w-full animate-[smIn_0.5s_ease]">
@@ -164,15 +197,20 @@ export default function StoreMapSection({ data }) {
         </div>
       )}
 
-      {/* OpenStreetMap via Leaflet — no Google iframe */}
-      {coords
-        ? <LeafletMap lat={coords.lat} lng={coords.lng} label={cfg.storeName || cfg.title} />
-        : (
-          <div className="w-full rounded-[24px] border border-dashed border-gray-200 bg-gray-50 px-6 py-10 text-center">
-            <MapPin className="w-7 h-7 text-gray-300 mx-auto mb-2" />
-            <p className="text-sm font-semibold text-gray-500">La position du magasin n'est pas encore configurée.</p>
-          </div>
-        )}
+      {/* OpenStreetMap via Leaflet — no Google iframe, ever */}
+      {coords ? (
+        <LeafletMap
+          lat={coords.lat} lng={coords.lng}
+          label={cfg.storeName || cfg.title}
+          popup={popupHtml({ storeName: cfg.storeName, address: cfg.address, hours: cfg.hours, phone: cfg.phone, tel })}
+        />
+      ) : adminPreview ? (
+        // Admin sees WHY there is no map; visitors just get the info card.
+        <div className="w-full rounded-2xl border border-amber-200 bg-amber-50 px-4 py-3 flex items-center gap-2">
+          <MapPin className="w-4 h-4 text-amber-500 shrink-0" />
+          <p className="text-xs font-semibold text-amber-800">Position non configurée : la carte est masquée sur la boutique (latitude / longitude manquantes).</p>
+        </div>
+      ) : null}
 
       {/* Two equal actions below the map — Call hides when no phone is set */}
       {(directions || tel) && (
