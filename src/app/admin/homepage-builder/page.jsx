@@ -6,7 +6,7 @@ import {
   Timer, MousePointer, LayoutGrid, Zap, Heart, Phone, Save, Check, MapPin, Copy,
 } from "lucide-react";
 import SingleImageSelect from "@/components/block/ImageSelector";
-import { STORE_MAP_DEFAULTS, buildEmbedUrl, isSafeMapEmbedUrl } from "@/lib/storeMap";
+import { STORE_MAP_DEFAULTS, buildEmbedUrl, toEmbedUrl } from "@/lib/storeMap";
 
 // ── Section type definitions ──────────────────────────────────────────────────
 const SECTION_TYPES = [
@@ -169,44 +169,85 @@ function EditContact({ data, onChange }) {
 
 function EditStoreMap({ data, onChange }) {
   const set = (k) => (e) => onChange({ ...data, [k]: e.target.value });
+  const [resolving, setResolving] = useState(false);
+  const [resolveMsg, setResolveMsg] = useState(null);
+
+  // Any pasted Google Maps link is converted automatically; the admin never has
+  // to know what an "embed URL" is.
+  const conv = toEmbedUrl(data.embedUrl);
   const preview = buildEmbedUrl(data);
-  const embedInvalid = !!(data.embedUrl || "").trim() && !isSafeMapEmbedUrl(data.embedUrl);
+
+  const resolveShortLink = async () => {
+    setResolving(true); setResolveMsg(null);
+    try {
+      const r = await fetch("/api/admin/store-map/resolve", {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url: data.embedUrl }),
+      });
+      const d = await r.json();
+      if (!r.ok) { setResolveMsg({ ok: false, t: d?.error || "Échec de la résolution." }); return; }
+      onChange({ ...data, latitude: d.latitude, longitude: d.longitude });
+      setResolveMsg({ ok: true, t: `Position trouvée : ${d.latitude}, ${d.longitude}` });
+    } catch { setResolveMsg({ ok: false, t: "Erreur réseau." }); }
+    finally { setResolving(false); }
+  };
+
+  const STATUS = {
+    ok:            { cls: "text-green-700 bg-green-50 border-green-200", t: "✓ Lien reconnu — la carte s'affichera correctement." },
+    needs_resolve: { cls: "text-amber-800 bg-amber-50 border-amber-200", t: "Lien court détecté. Cliquez sur « Localiser » pour récupérer la position." },
+    unsupported:   { cls: "text-red-700 bg-red-50 border-red-200",       t: "Ce lien n'est pas un lien Google Maps exploitable. La carte utilisera la latitude / longitude ci-dessous." },
+  }[conv.status];
+
   return (
     <div className="space-y-3">
       <Field label="Section Title"><input className="field" value={data.title || ""} onChange={set("title")} /></Field>
       <Field label="Subtitle"><input className="field" value={data.subtitle || ""} onChange={set("subtitle")} /></Field>
 
-      <Field label="Google Maps Embed URL (optional)">
-        <input className="field" placeholder="https://www.google.com/maps/embed?pb=…" value={data.embedUrl || ""} onChange={set("embedUrl")} />
-        {embedInvalid && (
-          <p className="text-[11px] text-red-600 mt-1">
-            URL refusée : seules les URL Google Maps sont autorisées dans la carte. Les coordonnées ci-dessous seront utilisées à la place.
-          </p>
-        )}
-        <p className="text-[11px] text-gray-400 mt-1">Laissez vide pour générer la carte depuis la latitude / longitude.</p>
+      <Field label="Lien Google Maps">
+        <div className="flex gap-2">
+          <input className="field flex-1" placeholder="Collez n'importe quel lien Google Maps…" value={data.embedUrl || ""} onChange={set("embedUrl")} />
+          {conv.status === "needs_resolve" && (
+            <button type="button" onClick={resolveShortLink} disabled={resolving}
+              className="text-xs px-3 py-1.5 rounded-md bg-black text-white font-semibold disabled:opacity-50 shrink-0">
+              {resolving ? "…" : "Localiser"}
+            </button>
+          )}
+        </div>
+        <p className="text-[11px] text-gray-400 mt-1">
+          Ouvrez votre magasin dans Google Maps → Partager → Copier le lien. Tous les formats sont acceptés
+          (maps.app.goo.gl, /maps/place/…, ou un lien d'intégration).
+        </p>
+        {STATUS && <p className={`text-[11px] mt-1.5 border rounded-md px-2 py-1.5 ${STATUS.cls}`}>{STATUS.t}</p>}
+        {resolveMsg && <p className={`text-[11px] mt-1.5 ${resolveMsg.ok ? "text-green-700" : "text-red-600"}`}>{resolveMsg.t}</p>}
       </Field>
 
       <div className="grid grid-cols-2 gap-3">
-        <Field label="Latitude"><input className="field" placeholder="33.5731" value={data.latitude || ""} onChange={set("latitude")} /></Field>
-        <Field label="Longitude"><input className="field" placeholder="-7.5898" value={data.longitude || ""} onChange={set("longitude")} /></Field>
+        <Field label="Latitude (secours)"><input className="field" placeholder="33.5731" value={data.latitude || ""} onChange={set("latitude")} /></Field>
+        <Field label="Longitude (secours)"><input className="field" placeholder="-7.5898" value={data.longitude || ""} onChange={set("longitude")} /></Field>
       </div>
 
       <Field label="Store Name"><input className="field" value={data.storeName || ""} onChange={set("storeName")} /></Field>
       <Field label="Store Address"><input className="field" value={data.address || ""} onChange={set("address")} /></Field>
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-3 gap-3">
         <Field label="Phone Number"><input className="field" value={data.phone || ""} onChange={set("phone")} /></Field>
-        <Field label="Working Hours"><input className="field" placeholder="Lun–Sam : 9h–20h" value={data.hours || ""} onChange={set("hours")} /></Field>
+        <Field label="Working Hours"><input className="field" placeholder="Lun–Sam • 09:00–20:00" value={data.hours || ""} onChange={set("hours")} /></Field>
+        <Field label="Rating (0–5)"><input className="field" placeholder="4.9" value={data.rating ?? ""} onChange={set("rating")} /></Field>
       </div>
 
-      <div className="grid grid-cols-2 gap-3">
+      <div className="grid grid-cols-3 gap-3">
         <Field label="Button Text"><input className="field" value={data.buttonText || ""} onChange={set("buttonText")} /></Field>
-        <Field label="Button URL (optional)"><input className="field" placeholder="Auto depuis les coordonnées" value={data.buttonUrl || ""} onChange={set("buttonUrl")} /></Field>
+        <Field label="Call Button Text"><input className="field" value={data.callText || ""} onChange={set("callText")} /></Field>
+        <Field label="Button URL (optional)"><input className="field" placeholder="Auto" value={data.buttonUrl || ""} onChange={set("buttonUrl")} /></Field>
       </div>
 
-      {preview && (
-        <Field label="Preview">
-          <iframe src={preview} title="Store map preview" className="w-full h-40 rounded-xl border border-gray-200" loading="lazy" />
+      {preview ? (
+        <Field label="Aperçu de la carte">
+          <iframe src={preview} title="Store map preview" className="w-full h-44 rounded-xl border border-gray-200" loading="lazy" />
         </Field>
+      ) : (
+        <p className="text-[11px] text-amber-700 bg-amber-50 border border-amber-200 rounded-md px-2 py-1.5">
+          Aucune carte à afficher pour l'instant : collez un lien Google Maps, ou renseignez la latitude / longitude (ou une adresse).
+        </p>
       )}
     </div>
   );

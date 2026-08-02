@@ -2,81 +2,115 @@
 /**
  * scripts/storeMap.test.mjs
  * ─────────────────────────────────────────────────────────────────────────────
- * 📍 Store Map homepage section — URL building + the iframe security gate.
- * The embed URL is rendered inside an <iframe src>, so anything that is not a
- * Google Maps URL must be rejected (and the section must fall back to the
- * configured coordinates) rather than embedded.
+ * 📍 Store Map — automatic Google-Maps-link conversion + the iframe safety gate.
+ *
+ * THE BUG THIS PINS: a normal `/maps/place/…` link CANNOT be iframed (Google
+ * refuses to render it), so pasting one used to produce a broken frame. Such a
+ * link must be CONVERTED into an embeddable `?output=embed` URL — and anything
+ * that cannot be converted must never reach the iframe at all.
  * Run: node scripts/storeMap.test.mjs
  * ─────────────────────────────────────────────────────────────────────────────
  */
 import {
-  parseLat, parseLng, isSafeMapEmbedUrl, buildEmbedUrl, buildDirectionsUrl,
+  parseLat, parseLng, parseRating, isSafeMapEmbedUrl, isShortMapLink,
+  extractLatLng, extractPlaceName, toEmbedUrl, buildEmbedUrl, buildDirectionsUrl,
   telHref, normalizeStoreMap, STORE_MAP_DEFAULTS,
 } from "../src/lib/storeMap.js";
 
 let pass = 0, fail = 0;
 const ok = (n, c) => { if (c) { pass++; console.log("  PASS ", n); } else { fail++; console.log("  FAIL ", n); } };
 
-console.log("1) Coordinate parsing:");
+const PLACE = "https://www.google.com/maps/place/House+Electronics/@32.7644,-6.3986,17z/data=!3m1!4b1!4m6!3m5!1s0xda!8m2!3d32.7644!4d-6.3986";
+const SHORT = "https://maps.app.goo.gl/aBcDeF123";
+const EMBED = "https://www.google.com/maps/embed?pb=!1m18!1m12!1m3";
+
+console.log("1) Coordinate & rating parsing:");
 {
   ok("numeric string accepted", parseLat("33.5731") === 33.5731);
   ok("negative longitude accepted", parseLng("-7.5898") === -7.5898);
-  ok("zero is a valid coordinate", parseLat(0) === 0 && parseLng(0) === 0);
+  ok("zero is valid", parseLat(0) === 0);
   ok("empty → null", parseLat("") === null && parseLng(null) === null);
-  ok("non-numeric → null", parseLat("abc") === null);
-  ok("latitude out of range → null", parseLat(91) === null && parseLat(-91) === null);
-  ok("longitude out of range → null", parseLng(181) === null);
-  ok("latitude 90 / longitude 180 are in range", parseLat(90) === 90 && parseLng(-180) === -180);
+  ok("out of range → null", parseLat(91) === null && parseLng(181) === null);
+  ok("rating parsed and rounded", parseRating("4.94") === 4.9);
+  ok("rating out of range → null", parseRating(6) === null && parseRating(0) === null && parseRating("") === null);
 }
 
-console.log("2) SECURITY — only Google Maps URLs may be embedded:");
+console.log("2) SECURITY — only genuinely embeddable Google URLs pass:");
 {
-  ok("google.com/maps embed accepted", isSafeMapEmbedUrl("https://www.google.com/maps/embed?pb=!1m18"));
-  ok("maps.google.com accepted", isSafeMapEmbedUrl("https://maps.google.com/maps?q=1,2&output=embed"));
-  ok("arbitrary third-party host rejected", isSafeMapEmbedUrl("https://evil.example.com/track?x=1") === false);
-  ok("javascript: URL rejected", isSafeMapEmbedUrl("javascript:alert(1)") === false);
-  ok("data: URL rejected", isSafeMapEmbedUrl("data:text/html,<script>alert(1)</script>") === false);
-  ok("lookalike host rejected", isSafeMapEmbedUrl("https://google.com.evil.net/maps") === false);
-  ok("garbage / empty rejected", isSafeMapEmbedUrl("not a url") === false && isSafeMapEmbedUrl("") === false);
+  ok("official /maps/embed accepted", isSafeMapEmbedUrl(EMBED));
+  ok("?output=embed accepted", isSafeMapEmbedUrl("https://maps.google.com/maps?q=1,2&output=embed"));
+  ok("/maps/place on a Google host REJECTED (cannot be iframed)", isSafeMapEmbedUrl(PLACE) === false);
+  ok("third-party host rejected", isSafeMapEmbedUrl("https://evil.example.com/x") === false);
+  ok("javascript: rejected", isSafeMapEmbedUrl("javascript:alert(1)") === false);
+  ok("data: rejected", isSafeMapEmbedUrl("data:text/html,<script>") === false);
+  ok("lookalike host rejected", isSafeMapEmbedUrl("https://google.com.evil.net/maps?output=embed") === false);
+  ok("short link recognised", isShortMapLink(SHORT) && isShortMapLink("https://goo.gl/maps/x"));
+  ok("normal link is not a short link", isShortMapLink(PLACE) === false);
 }
 
-console.log("3) Embed URL priority: valid admin URL → coordinates → address:");
+console.log("3) Coordinate / place-name extraction from real link shapes:");
 {
-  const admin = "https://www.google.com/maps/embed?pb=!1m18!custom";
-  ok("valid admin embed URL wins", buildEmbedUrl({ embedUrl: admin, latitude: 1, longitude: 2 }) === admin);
-  ok("UNSAFE admin URL is ignored, coordinates used instead", (() => {
-    const u = buildEmbedUrl({ embedUrl: "https://evil.example.com/x", latitude: 33.5731, longitude: -7.5898 });
-    return u.includes("google.com/maps") && u.includes("q=33.5731,-7.5898");
+  ok("!3d/!4d preferred (exact pin)", (() => { const c = extractLatLng(PLACE); return c.lat === 32.7644 && c.lng === -6.3986; })());
+  ok("@lat,lng viewport form", (() => { const c = extractLatLng("https://www.google.com/maps/@33.5731,-7.5898,15z"); return c.lat === 33.5731 && c.lng === -7.5898; })());
+  ok("?q=lat,lng form", (() => { const c = extractLatLng("https://maps.google.com/?q=34.02,-6.83"); return c.lat === 34.02 && c.lng === -6.83; })());
+  ok("no coordinates → null", extractLatLng("https://www.google.com/maps/place/Some+Shop/") === null);
+  ok("place name decoded", extractPlaceName("https://www.google.com/maps/place/House+Electronics/@1,2,17z") === "House Electronics");
+  ok("place name url-decoded", extractPlaceName("https://www.google.com/maps/place/Caf%C3%A9%20Central/") === "Café Central");
+  ok("no place segment → null", extractPlaceName("https://www.google.com/maps/@1,2,15z") === null);
+}
+
+console.log("4) toEmbedUrl converts ANY pasted link (the broken-map fix):");
+{
+  ok("already an embed → passed through", toEmbedUrl(EMBED).status === "ok" && toEmbedUrl(EMBED).url === EMBED);
+  const conv = toEmbedUrl(PLACE);
+  ok("/maps/place CONVERTED to an embeddable url", conv.status === "ok" && conv.source === "coords");
+  ok("converted url is embeddable", isSafeMapEmbedUrl(conv.url) && conv.url.includes("q=32.7644,-6.3986"));
+  const placeOnly = toEmbedUrl("https://www.google.com/maps/place/House+Electronics/");
+  ok("place without coords → query embed", placeOnly.status === "ok" && placeOnly.source === "place" && isSafeMapEmbedUrl(placeOnly.url));
+  ok("short link → needs_resolve (never a broken iframe)", toEmbedUrl(SHORT).status === "needs_resolve" && toEmbedUrl(SHORT).url === null);
+  ok("empty → empty", toEmbedUrl("").status === "empty");
+  ok("third-party link → unsupported, no url", (() => { const r = toEmbedUrl("https://evil.example.com/maps"); return r.status === "unsupported" && r.url === null; })());
+  ok("javascript: → unsupported", toEmbedUrl("javascript:alert(1)").status === "unsupported");
+}
+
+console.log("5) buildEmbedUrl priority + never renders a broken frame:");
+{
+  ok("converted link wins", buildEmbedUrl({ embedUrl: PLACE }).includes("q=32.7644,-6.3986"));
+  ok("unresolvable short link falls back to coordinates", (() => {
+    const u = buildEmbedUrl({ embedUrl: SHORT, latitude: 33.5731, longitude: -7.5898 });
+    return u.includes("q=33.5731,-7.5898") && isSafeMapEmbedUrl(u);
   })());
-  ok("coordinate embed uses q= (renders the red marker) + output=embed", (() => {
-    const u = buildEmbedUrl({ latitude: 33.5731, longitude: -7.5898 });
-    return u.startsWith("https://www.google.com/maps?q=33.5731,-7.5898") && u.includes("output=embed");
-  })());
-  ok("address fallback is URL-encoded", buildEmbedUrl({ address: "12 Rue Hassan II, Casablanca" }).includes("12%20Rue%20Hassan%20II"));
-  ok("nothing configured → null (section hides the map)", buildEmbedUrl({}) === null);
-  ok("partial coordinates → falls through, not a broken embed", buildEmbedUrl({ latitude: 33.5 }) === null);
+  ok("unsupported link falls back to coordinates", buildEmbedUrl({ embedUrl: "https://evil.example.com", latitude: 1, longitude: 2 }).includes("q=1,2"));
+  ok("address fallback encoded", buildEmbedUrl({ address: "12 Rue Hassan II, Casablanca" }).includes("12%20Rue%20Hassan%20II"));
+  ok("nothing usable → null (map hidden, not broken)", buildEmbedUrl({ embedUrl: SHORT }) === null);
+  ok("every produced url is iframe-safe", [
+    buildEmbedUrl({ embedUrl: PLACE }), buildEmbedUrl({ latitude: 1, longitude: 2 }), buildEmbedUrl({ address: "X" }),
+  ].every((u) => isSafeMapEmbedUrl(u)));
 }
 
-console.log("4) Directions button URL:");
+console.log("6) Directions button:");
 {
-  ok("explicit admin button URL wins", buildDirectionsUrl({ buttonUrl: "https://maps.app.goo.gl/abc", latitude: 1, longitude: 2 }) === "https://maps.app.goo.gl/abc");
+  ok("explicit button URL wins", buildDirectionsUrl({ buttonUrl: "https://x.test/a", latitude: 1, longitude: 2 }) === "https://x.test/a");
+  ok("short link opens directly (works outside an iframe)", buildDirectionsUrl({ embedUrl: SHORT }) === SHORT);
+  ok("place link opens directly", buildDirectionsUrl({ embedUrl: PLACE }) === PLACE);
   ok("coordinates build a search link", buildDirectionsUrl({ latitude: 33.5731, longitude: -7.5898 }) === "https://www.google.com/maps/search/?api=1&query=33.5731,-7.5898");
   ok("address fallback encoded", buildDirectionsUrl({ address: "Rue A, Casa" }).includes("query=Rue%20A%2C%20Casa"));
-  ok("nothing configured → null (button hidden)", buildDirectionsUrl({}) === null);
+  ok("nothing configured → null", buildDirectionsUrl({}) === null);
 }
 
-console.log("5) Phone link + normalization:");
+console.log("7) Phone (Call button visibility) + normalization:");
 {
   ok("formatted phone → tel: digits", telHref("+212 6 12-34-56-78") === "tel:+212612345678");
-  ok("empty phone → null", telHref("") === null && telHref(null) === null);
-  ok("non-numeric phone → null", telHref("---") === null);
+  ok("no phone → null (Call button hidden)", telHref("") === null && telHref(null) === null);
+  ok("non-numeric → null", telHref("---") === null);
 
-  const n = normalizeStoreMap({ title: "  Notre magasin  ", phone: 612345678, latitude: 33.5 });
-  ok("strings trimmed", n.title === "Notre magasin");
-  ok("numbers coerced to strings", n.phone === "612345678" && n.latitude === "33.5");
-  ok("button text falls back to the default", n.buttonText === STORE_MAP_DEFAULTS.buttonText);
-  ok("null/garbage input never throws", (() => { try { normalizeStoreMap(null); normalizeStoreMap("x"); return true; } catch { return false; } })());
-  ok("every configurable field is present", ["title","subtitle","embedUrl","latitude","longitude","storeName","address","phone","hours","buttonText","buttonUrl"].every((k) => k in n));
+  const n = normalizeStoreMap({ title: "  House Electronics  ", phone: 612345678, rating: "4.9" });
+  ok("strings trimmed", n.title === "House Electronics");
+  ok("numbers coerced", n.phone === "612345678");
+  ok("rating normalized to a number", n.rating === 4.9);
+  ok("button texts default", n.buttonText === STORE_MAP_DEFAULTS.buttonText && n.callText === STORE_MAP_DEFAULTS.callText);
+  ok("garbage input never throws", (() => { try { normalizeStoreMap(null); normalizeStoreMap("x"); return true; } catch { return false; } })());
+  ok("all configurable fields present", ["title","subtitle","embedUrl","latitude","longitude","storeName","address","phone","hours","rating","buttonText","callText","buttonUrl"].every((k) => k in n));
 }
 
 console.log(`\nRESULT: ${pass} passed, ${fail} failed`);

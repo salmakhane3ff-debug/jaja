@@ -14,7 +14,7 @@ import { useLanguage }   from "@/context/LanguageContext";
 import ShoppableReels      from "@/components/ShoppableReels";
 import BeforeAfterSlider   from "@/components/BeforeAfterSlider";
 import { trackClarity }    from "@/lib/trackClarity";
-import { MapPin, Phone as PhoneIcon, Clock } from "lucide-react";
+import { MapPin, Phone as PhoneIcon, Clock, Star } from "lucide-react";
 import { normalizeStoreMap, buildEmbedUrl, buildDirectionsUrl, telHref } from "@/lib/storeMap";
 
 // ── Countdown section ─────────────────────────────────────────────────────────
@@ -223,9 +223,9 @@ const CONTAINER_SECTIONS = new Set([
 ]);
 
 // ── 📍 Store Map section ──────────────────────────────────────────────────────
-// Store info card above an embedded Google Map (red marker comes from the
-// `q=lat,lng` embed), with a directions button below. The iframe URL is built
-// and validated in src/lib/storeMap.js — never taken from raw admin input.
+// Title + subtitle, a compact store info card, then the MAP as the hero element,
+// then two equal actions. The iframe URL is built/validated in lib/storeMap.js —
+// a link that cannot be converted never reaches the iframe (no broken frame).
 function StoreMapSection({ data }) {
   const cfg = normalizeStoreMap(data);
   const embed = buildEmbedUrl(cfg);
@@ -233,78 +233,94 @@ function StoreMapSection({ data }) {
   const tel = telHref(cfg.phone);
   const [loaded, setLoaded] = useState(false);
 
-  const rows = [
-    cfg.address && { icon: MapPin, text: cfg.address },
-    cfg.phone && { icon: PhoneIcon, text: cfg.phone, href: tel },
-    cfg.hours && { icon: Clock, text: cfg.hours },
-  ].filter(Boolean);
-
-  if (!embed && !rows.length && !cfg.storeName) return null;
+  if (!embed && !cfg.storeName && !cfg.address) return null;
 
   return (
-    <section className="w-full">
+    <section className="w-full animate-[smIn_0.5s_ease]">
       {(cfg.title || cfg.subtitle) && (
         <div className="text-center mb-5">
-          {cfg.title && <h2 className="text-2xl md:text-3xl font-black text-gray-900">{cfg.title}</h2>}
+          {cfg.title && <h2 className="text-2xl md:text-3xl font-black tracking-tight text-gray-900">{cfg.title}</h2>}
           {cfg.subtitle && <p className="text-sm text-gray-500 mt-1.5">{cfg.subtitle}</p>}
         </div>
       )}
 
-      <div className="rounded-3xl bg-white border border-gray-100 shadow-lg shadow-gray-100/70 overflow-hidden">
-        {/* Store information card — above the map */}
-        {(cfg.storeName || rows.length > 0) && (
-          <div className="p-5 sm:p-6 border-b border-gray-100">
-            {cfg.storeName && (
-              <div className="flex items-center gap-2.5 mb-3">
-                <span className="w-9 h-9 rounded-full bg-red-50 text-red-500 flex items-center justify-center shrink-0">
-                  <MapPin className="w-4.5 h-4.5" />
-                </span>
-                <h3 className="text-base font-black text-gray-900">{cfg.storeName}</h3>
-              </div>
-            )}
-            <div className="grid sm:grid-cols-3 gap-3">
-              {rows.map(({ icon: Icon, text, href }, i) => (
-                <div key={i} className="flex items-start gap-2 rounded-2xl bg-gray-50 px-3.5 py-3">
-                  <Icon className="w-4 h-4 text-gray-400 shrink-0 mt-0.5" />
-                  {href
-                    ? <a href={href} className="text-xs font-semibold text-gray-700 hover:text-black break-words">{text}</a>
-                    : <span className="text-xs font-semibold text-gray-700 break-words">{text}</span>}
+      {/* Compact store information card */}
+      {(cfg.storeName || cfg.address || cfg.hours || cfg.phone || cfg.rating) && (
+        <div className="mb-4 rounded-3xl bg-gradient-to-br from-white to-gray-50 border border-gray-100 shadow-sm hover:shadow-md transition-shadow p-4 sm:p-5">
+          <div className="flex items-start gap-3">
+            <span className="w-11 h-11 rounded-2xl bg-gradient-to-br from-red-500 to-rose-600 text-white flex items-center justify-center shrink-0 shadow-lg shadow-red-200">
+              <MapPin className="w-5 h-5" />
+            </span>
+            <div className="min-w-0 flex-1">
+              {cfg.storeName && <h3 className="text-base sm:text-lg font-black text-gray-900 leading-tight truncate">{cfg.storeName}</h3>}
+              {cfg.address && <p className="text-sm text-gray-500 mt-0.5 break-words">{cfg.address}</p>}
+
+              {cfg.rating !== null && (
+                <div className="flex items-center gap-1.5 mt-2">
+                  <span className="flex" aria-label={`Note ${cfg.rating} sur 5`}>
+                    {[1, 2, 3, 4, 5].map((i) => (
+                      <Star key={i} className={`w-3.5 h-3.5 ${i <= Math.round(cfg.rating) ? "fill-amber-400 text-amber-400" : "text-gray-200"}`} />
+                    ))}
+                  </span>
+                  <span className="text-xs font-black text-gray-800">{cfg.rating.toFixed(1)}</span>
                 </div>
-              ))}
+              )}
+
+              <div className="flex flex-wrap gap-x-4 gap-y-1.5 mt-2.5">
+                {cfg.hours && (
+                  <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-gray-600">
+                    <Clock className="w-3.5 h-3.5 text-gray-400" />{cfg.hours}
+                  </span>
+                )}
+                {cfg.phone && (
+                  tel
+                    ? <a href={tel} className="inline-flex items-center gap-1.5 text-xs font-semibold text-gray-600 hover:text-red-600 transition-colors"><PhoneIcon className="w-3.5 h-3.5 text-gray-400" />{cfg.phone}</a>
+                    : <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-gray-600"><PhoneIcon className="w-3.5 h-3.5 text-gray-400" />{cfg.phone}</span>
+                )}
+              </div>
             </div>
           </div>
-        )}
+        </div>
+      )}
 
-        {/* Embedded map — ~300px on mobile, taller on desktop */}
-        {embed && (
-          <div className="relative w-full h-[300px] md:h-[420px] bg-gray-100">
-            {!loaded && (
-              <div className="absolute inset-0 flex items-center justify-center">
-                <span className="w-6 h-6 border-2 border-gray-300 border-t-transparent rounded-full animate-spin" />
-              </div>
-            )}
-            <iframe
-              src={embed}
-              title={cfg.storeName || cfg.title || "Store map"}
-              onLoad={() => setLoaded(true)}
-              className={`w-full h-full border-0 transition-opacity duration-500 ${loaded ? "opacity-100" : "opacity-0"}`}
-              loading="lazy"
-              referrerPolicy="no-referrer-when-downgrade"
-              allowFullScreen
-            />
-          </div>
-        )}
+      {/* The map is the main visual element */}
+      {embed && (
+        <div className="relative w-full h-[300px] md:h-[420px] rounded-[24px] overflow-hidden shadow-lg shadow-gray-200/70 bg-gray-100">
+          {!loaded && (
+            <div className="absolute inset-0 animate-pulse bg-gradient-to-br from-gray-100 via-gray-200 to-gray-100 flex items-center justify-center">
+              <MapPin className="w-8 h-8 text-gray-300" />
+            </div>
+          )}
+          <iframe
+            src={embed}
+            title={cfg.storeName || cfg.title || "Store map"}
+            onLoad={() => setLoaded(true)}
+            className={`w-full h-full border-0 transition-opacity duration-700 ${loaded ? "opacity-100" : "opacity-0"}`}
+            loading="lazy"
+            referrerPolicy="no-referrer-when-downgrade"
+            allowFullScreen
+          />
+        </div>
+      )}
 
-        {/* Directions button — below the map */}
-        {directions && (
-          <div className="p-5 sm:p-6">
+      {/* Two equal actions below the map — Call hides when no phone is set */}
+      {(directions || tel) && (
+        <div className={`grid gap-3 mt-4 ${directions && tel ? "grid-cols-1 sm:grid-cols-2" : "grid-cols-1"}`}>
+          {directions && (
             <a href={directions} target="_blank" rel="noopener noreferrer"
-              className="w-full inline-flex items-center justify-center gap-2 px-6 py-4 rounded-2xl bg-red-500 hover:bg-red-600 active:scale-[0.98] text-white font-black text-sm shadow-lg shadow-red-200 transition-all">
+              className="inline-flex items-center justify-center gap-2 px-6 py-4 rounded-2xl bg-gradient-to-r from-red-500 to-rose-600 hover:from-red-600 hover:to-rose-700 text-white font-black text-sm shadow-lg shadow-red-200 hover:shadow-xl active:scale-[0.98] transition-all">
               <MapPin className="w-4 h-4" /> {cfg.buttonText}
             </a>
-          </div>
-        )}
-      </div>
+          )}
+          {tel && (
+            <a href={tel}
+              className="inline-flex items-center justify-center gap-2 px-6 py-4 rounded-2xl bg-white border-2 border-gray-200 hover:border-gray-900 hover:bg-gray-50 text-gray-900 font-black text-sm active:scale-[0.98] transition-all">
+              <PhoneIcon className="w-4 h-4" /> {cfg.callText}
+            </a>
+          )}
+        </div>
+      )}
+      <style>{`@keyframes smIn{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}`}</style>
     </section>
   );
 }
