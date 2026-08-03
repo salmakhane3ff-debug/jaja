@@ -33,15 +33,23 @@ function WhatsAppIcon({ className = "w-4 h-4" }) {
 }
 
 /**
- * Shared style for BOTH action buttons — identical size, radius, shadow, hover
- * and active animation. Uses the site's red/rose primary palette (the WhatsApp
- * button deliberately does NOT use WhatsApp green).
+ * Site primary brand colour (the same #6e57b2 already used by the checkout
+ * summary, cart drawer and product bundle selectors) — no new red is
+ * introduced, and the WhatsApp button deliberately does NOT use WhatsApp green.
  */
-const ACTION_BTN =
+const BRAND = "#6e57b2";
+const BRAND_DARK = "#5c4899";   // hover: slightly darker, no glow
+
+/** Geometry shared by BOTH buttons — identical size, radius, spacing, motion. */
+const ACTION_BASE =
   "inline-flex items-center justify-center gap-2 w-full min-w-0 h-14 px-3 sm:px-5 rounded-2xl " +
-  "bg-gradient-to-r from-red-500 to-rose-600 hover:from-red-600 hover:to-rose-700 " +
-  "text-white font-black text-xs sm:text-sm shadow-lg shadow-red-200 hover:shadow-xl " +
-  "active:scale-[0.98] transition-all";
+  "font-black text-xs sm:text-sm shadow-sm hover:shadow-md active:scale-[0.98] " +
+  "transition-all duration-200";
+
+/** Outlined: white background, 2px brand border, brand text + icon. */
+const ACTION_OUTLINE = `${ACTION_BASE} bg-white border-2`;
+/** Filled: solid brand background, white text + icon. */
+const ACTION_FILLED = `${ACTION_BASE} text-white border-2 border-transparent`;
 
 /** Red pin rendered as pure markup — no image asset to 404. */
 const RED_PIN_HTML = `
@@ -241,14 +249,20 @@ export default function StoreMapSection({ data, adminPreview = false }) {
         <div className="grid grid-cols-2 gap-3 sm:gap-4 mt-4">
           {directions && (
             <a href={directions} target="_blank" rel="noopener noreferrer"
-              className={`${ACTION_BTN} ${!whatsapp ? "col-span-2" : ""}`}>
+              className={`${ACTION_OUTLINE} ${!whatsapp ? "col-span-2" : ""}`}
+              style={{ borderColor: BRAND, color: BRAND }}
+              onMouseEnter={(e) => { e.currentTarget.style.borderColor = BRAND_DARK; e.currentTarget.style.color = BRAND_DARK; }}
+              onMouseLeave={(e) => { e.currentTarget.style.borderColor = BRAND; e.currentTarget.style.color = BRAND; }}>
               <MapPin className="w-4 h-4 shrink-0" />
               <span className="truncate">{cfg.buttonText}</span>
             </a>
           )}
           {whatsapp && (
             <a href={whatsapp} target="_blank" rel="noopener noreferrer" dir="rtl"
-              className={`${ACTION_BTN} ${!directions ? "col-span-2" : ""}`}>
+              className={`${ACTION_FILLED} ${!directions ? "col-span-2" : ""}`}
+              style={{ backgroundColor: BRAND }}
+              onMouseEnter={(e) => { e.currentTarget.style.backgroundColor = BRAND_DARK; }}
+              onMouseLeave={(e) => { e.currentTarget.style.backgroundColor = BRAND; }}>
               <WhatsAppIcon className="w-4 h-4 shrink-0" />
               <span className="truncate">{cfg.whatsappText}</span>
             </a>
