@@ -41,6 +41,7 @@ const DEFAULT_FB_SETTINGS = {
   // Which reviews the product page lists. Defaults to the established
   // behaviour: only this product's feedback (see lib/feedbackDisplay.js).
   productFeedbackSource: DEFAULT_PRODUCT_FEEDBACK_SOURCE,
+  productFeedbackLayout: "default",
 };
 
 export default function Product({ data }) {
@@ -718,6 +719,8 @@ export default function Product({ data }) {
             <FeedbackSection
               productId={data._id || data.id}
               filterProductId={feedbackFilterProductId(fbSettings, data._id || data.id)}
+              displayStyle={fbSettings.productFeedbackLayout || "default"}
+              carouselSettings={fbSettings}
               productName={data.title}
               showForm
               formDisplay={fbSettings.formDisplay}

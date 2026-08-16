@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import { Save, Star, RotateCcw } from "lucide-react";
 import { DEFAULT_PRODUCT_FEEDBACK_SOURCE } from "@/lib/feedbackDisplay";
+import { CAROUSEL_DEFAULTS } from "@/lib/feedbackCarousel";
 
 const DEFAULTS = {
   // Product page
@@ -12,6 +13,7 @@ const DEFAULTS = {
   starClickAction: "scrollToFeedback",
   formDisplay: "modal",
   productFeedbackSource: DEFAULT_PRODUCT_FEEDBACK_SOURCE,
+  productFeedbackLayout: "default",
   // Global page
   enableGlobalFeedback: true,
   // Homepage
@@ -19,6 +21,11 @@ const DEFAULTS = {
   layout: "grid",
   maxItems: 6,
   position: "bottom",
+  // Auto-carousel display options (shared by both placements).
+  carouselRows: CAROUSEL_DEFAULTS.rows,
+  carouselSpeed: CAROUSEL_DEFAULTS.speed,
+  carouselShadow: CAROUSEL_DEFAULTS.shadow,
+  carouselPauseOnInteract: CAROUSEL_DEFAULTS.pauseOnInteract,
 };
 
 export default function FeedbackSettingsPage() {
@@ -142,6 +149,14 @@ export default function FeedbackSettingsPage() {
             </p>
           </div>
 
+          <div className="py-3 border-b border-gray-50">
+            <p className="text-sm font-medium text-gray-800 mb-2">طريقة عرض التقييمات</p>
+            <div className="flex flex-col gap-2 mr-2">
+              <Radio k="productFeedbackLayout" value="default"      label="القائمة الافتراضية" />
+              <Radio k="productFeedbackLayout" value="autoCarousel" label="سلايدر متحرك تلقائياً" />
+            </div>
+          </div>
+
           <div className="py-3">
             <p className="text-sm font-medium text-gray-800 mb-2">طريقة عرض النموذج</p>
             <div className="flex gap-6 mr-2">
@@ -169,6 +184,7 @@ export default function FeedbackSettingsPage() {
               <Radio k="layout" value="grid"    label="شبكة (Grid)" />
               <Radio k="layout" value="slider"  label="سلايدر أفقي (Slider)" />
               <Radio k="layout" value="stacked" label="مكدّس عمودي (Stacked)" />
+              <Radio k="layout" value="autoCarousel" label="سلايدر متحرك تلقائياً" />
             </div>
           </div>
 
@@ -186,6 +202,36 @@ export default function FeedbackSettingsPage() {
             />
           </div>
         </div>
+
+        {/* ─── Auto carousel options (only when the mode is selected) ───────── */}
+        {(form.layout === "autoCarousel" || form.productFeedbackLayout === "autoCarousel") && (
+          <div className="bg-white rounded-2xl border border-gray-100 p-5 mb-4">
+            <h2 className="text-sm font-bold text-gray-900 mb-4 pb-2 border-b border-gray-100">
+              🎠 إعدادات السلايدر المتحرك
+            </h2>
+
+            <div className="py-3 border-b border-gray-50">
+              <p className="text-sm font-medium text-gray-800 mb-2">عدد الصفوف</p>
+              <div className="flex gap-6 mr-2">
+                <Radio k="carouselRows" value={1} label="صف واحد" />
+                <Radio k="carouselRows" value={2} label="صفين" />
+              </div>
+            </div>
+
+            <div className="py-3 border-b border-gray-50">
+              <p className="text-sm font-medium text-gray-800 mb-2">سرعة الحركة</p>
+              <div className="flex gap-6 mr-2">
+                <Radio k="carouselSpeed" value="slow"   label="بطيئة" />
+                <Radio k="carouselSpeed" value="medium" label="متوسطة" />
+                <Radio k="carouselSpeed" value="fast"   label="سريعة" />
+              </div>
+            </div>
+
+            <Toggle k="carouselShadow" label="الظل" hint="إظهار ظل خفيف حول البطاقات" />
+            <Toggle k="carouselPauseOnInteract" label="إيقاف الحركة عند التفاعل"
+              hint="تتوقف الحركة مؤقتاً عند مرور المؤشر أو اللمس" />
+          </div>
+        )}
 
         {/* ─── Global Page ──────────────────────────────────────────────────── */}
         <div className="bg-white rounded-2xl border border-gray-100 p-5 mb-6">

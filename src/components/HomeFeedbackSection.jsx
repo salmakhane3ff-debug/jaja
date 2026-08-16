@@ -6,6 +6,7 @@ import Link from "next/link";
 import formatDate from "@/utils/formatDate";
 import { useLanguage } from "@/context/LanguageContext";
 import { useSetting } from "@/context/SettingsContext";
+import FeedbackCarousel from "@/components/FeedbackCarousel";
 import { fetchCached } from "@/lib/dataCache";
 
 // ── VoicePlayerMini ───────────────────────────────────────────────────────────
@@ -293,7 +294,9 @@ export default function HomeFeedbackSection({ slot = "bottom", forceShow = false
         </div>
 
         {/* Layout */}
-        {layout === "slider" ? (
+        {layout === "autoCarousel" ? (
+          <FeedbackCarousel items={items} settings={settings} />
+        ) : layout === "slider" ? (
           <SliderLayout items={items} />
         ) : layout === "stacked" ? (
           <div className="flex flex-col gap-4 max-w-2xl mx-auto">

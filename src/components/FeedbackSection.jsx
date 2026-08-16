@@ -10,6 +10,7 @@ import formatDate from "@/utils/formatDate";
 import FeedbackForm from "@/components/FeedbackForm";
 import { useLanguage } from "@/context/LanguageContext";
 import { fetchCached, invalidateCache } from "@/lib/dataCache";
+import FeedbackCarousel from "@/components/FeedbackCarousel";
 
 // ── VoicePlayerMini ───────────────────────────────────────────────────────────
 
@@ -181,7 +182,7 @@ function ImageViewer({ images, startIndex = 0, onClose }) {
 
 // ── ImageStrip ────────────────────────────────────────────────────────────────
 
-function ImageStrip({ images }) {
+export function ImageStrip({ images }) {
   const [viewerIdx, setViewerIdx] = useState(null);
   if (!images || images.length === 0) return null;
 
@@ -350,6 +351,10 @@ function FeedbackSection({
   showForm = false,
   formDisplay = "inline",
   onStatsLoaded = null,
+  // Presentation only: "autoCarousel" renders the moving rows instead of the
+  // default list. Anything else keeps the existing rendering untouched.
+  displayStyle = "default",
+  carouselSettings = null,
 }) {
   const listProductId = filterProductId === undefined ? productId : filterProductId;
   const { t } = useLanguage();
@@ -462,6 +467,10 @@ function FeedbackSection({
           <p className="text-sm">{t("feedback_empty_title")}</p>
           {showForm && <p className="text-xs mt-1 text-gray-400">{t("feedback_empty_sub")}</p>}
         </div>
+      ) : displayStyle === "autoCarousel" ? (
+        // Presentation-only alternative: the same `items` the default list would
+        // render, moving instead of stacked. Filtering/moderation are unchanged.
+        <FeedbackCarousel items={items} settings={carouselSettings} />
       ) : (
         <>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
