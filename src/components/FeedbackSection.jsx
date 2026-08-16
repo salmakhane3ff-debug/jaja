@@ -339,6 +339,11 @@ function FeedbackModal({ open, onClose, children }) {
 
 function FeedbackSection({
   productId = null,
+  // Which productId the LIST is filtered by. `undefined` (the default) keeps the
+  // historical behaviour of filtering by `productId`; pass `null` to show every
+  // publishable review. It never affects the review FORM, which always stays
+  // linked to `productId`.
+  filterProductId,
   productName: productNameProp = null,
   title = null,
   maxItems = 6,
@@ -346,6 +351,7 @@ function FeedbackSection({
   formDisplay = "inline",
   onStatsLoaded = null,
 }) {
+  const listProductId = filterProductId === undefined ? productId : filterProductId;
   const { t } = useLanguage();
   const sectionRef = useRef(null);
   const [items,          setItems]          = useState([]);
@@ -364,7 +370,7 @@ function FeedbackSection({
       // PERF: fetchCached dedups identical requests for 60s — if RatingBadge
       // or HomeFeedbackSection already fetched /api/feedback, we reuse that
       // response instead of firing a second 6+ MB request.
-      const url = productId ? `/api/feedback?productId=${productId}` : "/api/feedback";
+      const url = listProductId ? `/api/feedback?productId=${listProductId}` : "/api/feedback";
       const data = await fetchCached(url);
       const list = Array.isArray(data) ? data : [];
       setItems(list);
@@ -374,19 +380,19 @@ function FeedbackSection({
       }
     } catch { /* silently fail */ }
     finally  { setLoading(false); }
-  }, [productId]); // removed onStatsLoaded from deps — using ref instead
+  }, [listProductId]); // removed onStatsLoaded from deps — using ref instead
 
   useEffect(() => { fetchData(); }, [fetchData]);
 
   const handleSuccess = useCallback(() => {
     setFormOpen(false);
     // Evict stale cache so the refresh fetch actually hits the server.
-    const url = productId ? `/api/feedback?productId=${productId}` : "/api/feedback";
+    const url = listProductId ? `/api/feedback?productId=${listProductId}` : "/api/feedback";
     invalidateCache(url);
     fetchData();
     setSuccessVisible(true);
     setTimeout(() => setSuccessVisible(false), 3500);
-  }, [fetchData, productId]);
+  }, [fetchData, listProductId]);
 
   const displayed = showAll ? items : items.slice(0, maxItems);
   const avgRating = items.length > 0

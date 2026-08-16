@@ -21,6 +21,7 @@ import { applyGiftsToItems } from "@/lib/giftUtils";
 import { useProductScarcity } from "@/hooks/useProductScarcity";
 import { useDiscountRules } from "@/hooks/useDiscountRules";
 import { fetchCached } from "@/lib/dataCache";
+import { feedbackFilterProductId, DEFAULT_PRODUCT_FEEDBACK_SOURCE } from "@/lib/feedbackDisplay";
 
 // ── Lazy-loaded non-critical components ───────────────────────────────────────
 const ConversionBadges  = lazy(() => import("@/components/ConversionBadges"));
@@ -37,6 +38,9 @@ const DEFAULT_FB_SETTINGS = {
   showFeedbackCount: true,
   starClickAction: "scrollToFeedback",
   formDisplay: "modal",
+  // Which reviews the product page lists. Defaults to the established
+  // behaviour: only this product's feedback (see lib/feedbackDisplay.js).
+  productFeedbackSource: DEFAULT_PRODUCT_FEEDBACK_SOURCE,
 };
 
 export default function Product({ data }) {
@@ -713,6 +717,7 @@ export default function Product({ data }) {
           <Suspense fallback={null}>
             <FeedbackSection
               productId={data._id || data.id}
+              filterProductId={feedbackFilterProductId(fbSettings, data._id || data.id)}
               productName={data.title}
               showForm
               formDisplay={fbSettings.formDisplay}

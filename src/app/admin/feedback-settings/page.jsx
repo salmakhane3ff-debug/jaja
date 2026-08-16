@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { Save, Star, RotateCcw } from "lucide-react";
+import { DEFAULT_PRODUCT_FEEDBACK_SOURCE } from "@/lib/feedbackDisplay";
 
 const DEFAULTS = {
   // Product page
@@ -10,6 +11,7 @@ const DEFAULTS = {
   showFeedbackCount: true,
   starClickAction: "scrollToFeedback",
   formDisplay: "modal",
+  productFeedbackSource: DEFAULT_PRODUCT_FEEDBACK_SOURCE,
   // Global page
   enableGlobalFeedback: true,
   // Homepage
@@ -127,6 +129,17 @@ export default function FeedbackSettingsPage() {
               <Radio k="starClickAction" value="goToFeedbackPage"  label="الانتقال إلى صفحة /feedback" />
               <Radio k="starClickAction" value="disabled"          label="بدون إجراء (معطّل)" />
             </div>
+          </div>
+
+          <div className="py-3 border-b border-gray-50">
+            <p className="text-sm font-medium text-gray-800 mb-2">التقييمات المعروضة في صفحة المنتج</p>
+            <div className="flex flex-col gap-2 mr-2">
+              <Radio k="productFeedbackSource" value="currentProduct" label="تقييمات هذا المنتج فقط" />
+              <Radio k="productFeedbackSource" value="allProducts"    label="تقييمات جميع المنتجات" />
+            </div>
+            <p className="text-xs text-gray-500 mt-2 mr-2">
+              اختر ما إذا كانت صفحة المنتج تعرض تقييمات المنتج الحالي فقط أو جميع تقييمات المتجر.
+            </p>
           </div>
 
           <div className="py-3">
