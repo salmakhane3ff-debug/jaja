@@ -7,16 +7,19 @@
  * already fetched (product page → `productFeedbackSource` filtering, homepage →
  * its own query) and never fetches, filters or moderates anything itself.
  *
- * MOTION: a pure CSS marquee. Each row is an INDEPENDENT viewport + track (never
- * one tall shared track, which is what produced the huge vertical gaps). The
- * group is rendered twice and the track animates `translate3d(0 → -50%)`.
+ * MOTION: a CSS marquee driven by a MEASURED distance. Each row is an
+ * INDEPENDENT viewport + track (never one tall shared track). Group A holds the
+ * full repeated sequence, group B is an exact aria-hidden duplicate placed
+ * immediately after it, and the track animates
+ *     translate3d(0 → calc(-1 * var(--marquee-distance)))
+ * where `--marquee-distance` is group A's REAL rendered width, re-measured by a
+ * ResizeObserver only when something actually resizes. CSS still performs the
+ * animation — there is no per-frame JavaScript.
  *
- * The gap lives on each CARD (`margin-inline-end`), NOT on the track: with a
- * track `gap` the 2N flat siblings only have 2N−1 gaps, so `-50%` fell exactly
- * half a gap short of the duplicate and the seam jumped every loop. Giving each
- * card its own trailing margin makes one card occupy `W + G`, so the track is
- * `2N·(W + G)` and `-50%` is exactly one period — see the geometry note in
- * lib/feedbackCarousel.js.
+ * Percentage transforms were tried twice and both failed: `-50%` is only exact
+ * while every card renders at precisely the assumed width, which real cards
+ * (vw rounding, scrollbars, image strips, fonts) do not guarantee. Any drift
+ * reopened a blank stretch. Measuring removes the assumption entirely.
  *
  * The track is `dir="ltr"` so the seam is deterministic (transforms are not
  * direction-aware) while each CARD stays `dir="rtl"` for Arabic. The translate
@@ -31,8 +34,8 @@ import { Star, BadgeCheck } from "lucide-react";
 import formatDate from "@/utils/formatDate";
 import { ImageStrip } from "@/components/FeedbackSection";
 import {
-  normalizeCarouselSettings, carouselDurationSec, splitIntoRows, shouldAnimate,
-  repeatToFill, CARD_GAP_CLASS,
+  normalizeCarouselSettings, carouselDurationFromDistance, splitIntoRows, shouldAnimate,
+  repeatToFill, requiredGroupCards, MIN_GROUP_CARDS, CARD_GAP_CLASS,
 } from "@/lib/feedbackCarousel";
 
 const TEXT_PREVIEW = 180;   // characters shown before "عرض المزيد"
@@ -117,10 +120,53 @@ function ReviewCard({ item, shadow, duplicate = false }) {
   );
 }
 
-function MarqueeRow({ items, durationSec, animate, paused, shadow }) {
-  // Density: a 1–3 review store would otherwise animate a mostly-empty track.
-  // Visual repetition only — the review data itself is untouched.
-  const group = useMemo(() => repeatToFill(items), [items]);
+function MarqueeRow({ items, speed, rowIndex, animate, paused, shadow, onDiagnostics }) {
+  const viewportRef = useRef(null);
+  const groupRef = useRef(null);
+  // Measured geometry. `need` only ever grows, so re-measuring can never
+  // oscillate (a bigger group would otherwise shrink the required count).
+  const [geo, setGeo] = useState({ distance: 0, need: MIN_GROUP_CARDS });
+
+  const group = useMemo(() => repeatToFill(items, geo.need), [items, geo.need]);
+
+  useEffect(() => {
+    const vp = viewportRef.current;
+    const gp = groupRef.current;
+    if (!vp || !gp || !animate) return;
+
+    const measure = () => {
+      const viewportW = vp.clientWidth || 0;
+      const card = gp.firstElementChild;
+      // Card outer width must include its gap margin, which offsetWidth omits.
+      const cardBox = card ? card.getBoundingClientRect().width : 0;
+      const cardMargin = card
+        ? parseFloat(getComputedStyle(card).marginInlineEnd || "0") +
+          parseFloat(getComputedStyle(card).marginInlineStart || "0")
+        : 0;
+      const cardOuter = cardBox + cardMargin;
+      // Group A's own width already sums its children's outer widths.
+      const distance = gp.getBoundingClientRect().width;
+
+      setGeo((prev) => {
+        const want = requiredGroupCards(viewportW, cardOuter);
+        const need = Math.max(prev.need, want);        // grow-only
+        if (Math.abs(prev.distance - distance) < 0.5 && need === prev.need) return prev;
+        return { distance, need };
+      });
+
+      if (typeof onDiagnostics === "function") {
+        onDiagnostics({ rowIndex, viewportW, cardOuter, distance, groupCards: gp.childElementCount });
+      }
+    };
+
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(vp);
+    ro.observe(gp);
+    // Late-loading webfonts/images change card width after first paint.
+    if (document.fonts?.ready) document.fonts.ready.then(measure).catch(() => {});
+    return () => ro.disconnect();
+  }, [animate, items, geo.need, rowIndex, onDiagnostics]);
 
   // `items-start` is essential: flex would otherwise stretch every card to the
   // tallest one, so a single expanded/image-heavy review inflated the whole row.
@@ -137,25 +183,40 @@ function MarqueeRow({ items, durationSec, animate, paused, shadow }) {
     );
   }
 
-  // Rendered inline (not as a nested component): a nested definition would get a
-  // fresh identity on every pause/resume render, remounting the cards and
-  // resetting any expanded "عرض المزيد" state.
+  // Keys are unique per PHYSICAL copy (`copy-index`), so a repeated review is
+  // never collapsed or remounted by React reconciliation.
   const renderGroup = (duplicate) => (
-    <div dir="ltr" className="flex items-start w-max flex-none" aria-hidden={duplicate || undefined}>
+    <div
+      ref={duplicate ? undefined : groupRef}
+      dir="ltr"
+      className="flex items-start w-max flex-none"
+      aria-hidden={duplicate || undefined}
+    >
       {group.map((it, i) => (
-        <ReviewCard key={`${it._id || it.id || "i"}-${i}`} item={it} shadow={shadow} duplicate={duplicate} />
+        <ReviewCard
+          key={`${duplicate ? "b" : "a"}-${i}-${it._id || it.id || "x"}`}
+          item={it}
+          shadow={shadow}
+          duplicate={duplicate}
+        />
       ))}
     </div>
   );
 
+  const distance = geo.distance;
+  const durationSec = carouselDurationFromDistance(distance, speed, rowIndex);
+
   return (
     // Only this element clips the moving overflow.
-    <div className="overflow-hidden">
+    <div ref={viewportRef} className="w-full overflow-hidden">
       <div
         dir="ltr"
-        className={`${trackBase} will-change-transform`}
+        className={`${trackBase} flex-none will-change-transform`}
         style={{
-          animation: `fbMarquee ${durationSec}s linear infinite`,
+          "--marquee-distance": `${distance}px`,
+          // Wait for the first measurement so the row never animates against a
+          // 0px distance (which would look like a frozen or empty track).
+          animation: distance > 0 ? `fbMarquee ${durationSec}s linear infinite` : "none",
           animationPlayState: paused ? "paused" : "running",
         }}
       >
@@ -215,7 +276,8 @@ export default function FeedbackCarousel({ items = [], settings = null }) {
             key={i}
             items={rowItems}
             shadow={cfg.shadow}
-            durationSec={carouselDurationSec(cfg.speed, repeatToFill(rowItems).length, i)}
+            speed={cfg.speed}
+            rowIndex={i}
             animate={shouldAnimate({ cardCount: repeatToFill(rowItems).length, reducedMotion: reduced })}
             paused={tabHidden || interacting}
           />
@@ -224,7 +286,7 @@ export default function FeedbackCarousel({ items = [], settings = null }) {
       <style>{`
         @keyframes fbMarquee {
           from { transform: translate3d(0, 0, 0); }
-          to   { transform: translate3d(-50%, 0, 0); }
+          to   { transform: translate3d(calc(-1 * var(--marquee-distance)), 0, 0); }
         }
         @media (prefers-reduced-motion: reduce) {
           [style*="fbMarquee"] { animation: none !important; }

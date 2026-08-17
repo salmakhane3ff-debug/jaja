@@ -17,8 +17,12 @@
 export const FEEDBACK_LAYOUTS = Object.freeze(['grid', 'slider', 'stacked', 'autoCarousel']);
 export const CAROUSEL_SPEEDS  = Object.freeze(['slow', 'medium', 'fast']);
 
-/** Seconds each card spends crossing the viewport — bigger = slower. */
-const SPEED_SECONDS_PER_CARD = Object.freeze({ slow: 6, medium: 4, fast: 2.5 });
+/**
+ * Constant scroll speed in PIXELS PER SECOND. Duration is derived from the
+ * measured travel distance, so adding reviews makes the loop LONGER instead of
+ * making the cards fly faster — every review always gets its turn on screen.
+ */
+const SPEED_PX_PER_SEC = Object.freeze({ slow: 28, medium: 42, fast: 60 });
 
 /** Row 2 runs ~15% slower so the two rows never lock into a distracting sync. */
 export const SECOND_ROW_SLOWDOWN = 1.15;
@@ -54,61 +58,73 @@ export function normalizeCarouselSettings(settings) {
 }
 
 /**
- * Animation duration for one full loop of a row, in seconds.
- * Scales with the number of cards so the perceived speed stays constant whether
- * a row holds 3 reviews or 30.
- *
- * @param {'slow'|'medium'|'fast'} speed
- * @param {number} cardCount  cards in this row (before the seamless duplicate)
- * @param {number} rowIndex   0 = first row, 1 = second (slightly slower)
- * @returns {number} seconds (never 0 — a 0s duration would freeze the animation)
- */
-export function carouselDurationSec(speed, cardCount, rowIndex = 0) {
-  const per = SPEED_SECONDS_PER_CARD[speed] ?? SPEED_SECONDS_PER_CARD.medium;
-  const count = Math.max(1, int(cardCount, 1));
-  const base = per * count;
-  return Math.round((rowIndex === 1 ? base * SECOND_ROW_SLOWDOWN : base) * 100) / 100;
-}
-
-/**
- * Split reviews across the rows, preserving order (row 0 takes the first half).
- * With one row every item stays in a single track.
+ * Distribute reviews across the rows DETERMINISTICALLY by alternating, so both
+ * rows advance through the whole catalogue together and no review is ever
+ * dropped: 11 reviews -> row 1 = #1,3,5,7,9,11 (6), row 2 = #2,4,6,8,10 (5).
  * @returns {Array<Array>} one array per row, empty rows removed
  */
 export function splitIntoRows(items, rows) {
-  const list = Array.isArray(items) ? items : [];
-  if (rows !== 2 || list.length < 2) return list.length ? [list] : [];
-  const half = Math.ceil(list.length / 2);
-  return [list.slice(0, half), list.slice(half)].filter((r) => r.length > 0);
+  const list = Array.isArray(items) ? items.filter(Boolean) : [];
+  if (list.length === 0) return [];
+  if (rows !== 2 || list.length < 2) return [list];
+  const a = [], b = [];
+  list.forEach((it, i) => (i % 2 === 0 ? a : b).push(it));
+  return [a, b].filter((r) => r.length > 0);
+}
+
+/** Fallback minimum when the viewport width is not known yet (SSR/first paint). */
+export const MIN_GROUP_CARDS = 8;
+
+/** Group A should span this many viewport widths so blank space is impossible. */
+export const TARGET_VIEWPORTS = 2.5;
+
+/**
+ * How many CARDS group A needs so it spans ~TARGET_VIEWPORTS screens.
+ * @param {number} viewportPx  measured row viewport width (0 = unknown)
+ * @param {number} cardOuterPx measured outer width of one card incl. its gap
+ */
+export function requiredGroupCards(viewportPx, cardOuterPx) {
+  const vw = Number(viewportPx) || 0;
+  const cw = Number(cardOuterPx) || 0;
+  if (vw <= 0 || cw <= 0) return MIN_GROUP_CARDS;
+  return Math.max(2, Math.ceil((vw * TARGET_VIEWPORTS) / cw));
 }
 
 /**
- * Minimum cards a marquee group needs so the row is never visually empty.
- * Mobile cards are ~82vw (≈1.2 per screen) and desktop ~320px (≈3.5 per screen),
- * so 8 covers roughly two viewport widths in both cases.
- */
-export const MIN_GROUP_CARDS = 8;
-
-/**
- * Repeat a small review set until the group is dense enough to fill the row.
- * VISUAL ONLY — the underlying review data is never modified, and the returned
- * array holds references to the same objects.
+ * Repeat a row's reviews until the group is wide enough for a seamless marquee.
  *
- * A 1–3 review store would otherwise animate a mostly-empty track (or, with one
- * card per row, show a single motionless card).
- *
- * @param {Array} items
- * @param {number} minCount
- * @returns {Array} at least `minCount` entries while items is non-empty
+ * NEVER discards a review: the source sequence is emitted whole, over and over,
+ * so [1,3,5] becomes [1,3,5,1,3,5,...] and never [1,3]. When the row already has
+ * enough cards it is returned untouched. Repetition is VISUAL only - the same
+ * object references are reused and no review data is modified.
  */
 export function repeatToFill(items, minCount = MIN_GROUP_CARDS) {
   const list = Array.isArray(items) ? items.filter(Boolean) : [];
   if (list.length === 0) return [];
   const target = Math.max(1, int(minCount, MIN_GROUP_CARDS));
-  if (list.length >= target) return list;
+  if (list.length >= target) return list;          // every review kept as-is
   const out = [];
-  while (out.length < target) out.push(...list);
+  while (out.length < target) out.push(...list);   // whole cycles only
   return out;
+}
+
+/**
+ * Loop duration from the MEASURED travel distance and a constant px/s speed.
+ * distance = group A's real rendered width, so the seam is exact and the speed
+ * is independent of card count, card width, images, fonts or viewport.
+ * @returns {number} seconds (never 0 - that would freeze the animation)
+ */
+export function carouselDurationFromDistance(distancePx, speed, rowIndex = 0) {
+  const pps = SPEED_PX_PER_SEC[speed] ?? SPEED_PX_PER_SEC.medium;
+  const dist = Math.max(1, Number(distancePx) || 0);
+  const secs = dist / pps;
+  return Math.round((rowIndex === 1 ? secs * SECOND_ROW_SLOWDOWN : secs) * 100) / 100;
+}
+
+/** Effective px/s for a row (row 2 is ~15% slower). Exposed for tests. */
+export function carouselPxPerSec(speed, rowIndex = 0) {
+  const pps = SPEED_PX_PER_SEC[speed] ?? SPEED_PX_PER_SEC.medium;
+  return rowIndex === 1 ? Math.round((pps / SECOND_ROW_SLOWDOWN) * 100) / 100 : pps;
 }
 
 /**
@@ -121,22 +137,20 @@ export function shouldAnimate({ cardCount, reducedMotion }) {
 }
 
 /**
- * GEOMETRY NOTE — why the gap lives on the card, not on the track.
+ * GEOMETRY - measured, not assumed.
  *
- * The first implementation laid 2N cards out as flat flex siblings with
- * `gap: G`, giving a track of `2N·W + (2N−1)·G` and animating to `-50%`:
+ * Two earlier attempts animated to a PERCENTAGE of the track width. Both were
+ * assumption-bound:
+ *   1. `gap` on the track: 2N flat siblings have only 2N-1 gaps, so `-50%` fell
+ *      exactly G/2 short of the duplicate.
+ *   2. gap moved onto the card: algebraically exact, but `-50%` is still only
+ *      correct while EVERY card renders at exactly the assumed width. Real cards
+ *      vary with vw rounding, scrollbars, image strips, font metrics and
+ *      container padding, and any drift reopens a blank stretch.
  *
- *     50% of track = N·W + (N − 0.5)·G      but one period = N·W + N·G
- *
- * so every loop fell exactly G/2 (8px) short of the duplicate — a visible jump,
- * and the row drifted out of density.
- *
- * The fix is to give each card `margin-inline-end: G` and NO gap on the track.
- * Each card then occupies `W + G`, so:
- *
- *     track = 2N·(W + G)   →   50% = N·(W + G) = exactly one period
- *
- * `-50%` becomes mathematically exact for any card count, with no measurement,
- * no ResizeObserver and no JS animation loop.
+ * The animation now translates by group A's REAL rendered width, measured once
+ * per size change with a ResizeObserver and published as the CSS variable
+ * `--marquee-distance`. CSS still runs the animation (no per-frame JS), so the
+ * seam is exact by construction whatever the cards actually measure.
  */
 export const CARD_GAP_CLASS = 'me-3 sm:me-4';   // 12px mobile / 16px desktop
