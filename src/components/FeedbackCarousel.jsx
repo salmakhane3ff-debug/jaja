@@ -21,9 +21,13 @@
  * (vw rounding, scrollbars, image strips, fonts) do not guarantee. Any drift
  * reopened a blank stretch. Measuring removes the assumption entirely.
  *
- * The track is `dir="ltr"` so the seam is deterministic (transforms are not
- * direction-aware) while each CARD stays `dir="rtl"` for Arabic. The translate
- * is negative, so cards always enter from the RIGHT and leave to the LEFT.
+ * DIRECTION: the marquee geometry is explicitly LTR at EVERY level — viewport,
+ * track and both groups — regardless of the site language. This matters most on
+ * the VIEWPORT, because an RTL overflow container anchors an oversized child to
+ * its RIGHT edge and overflows LEFTWARD; on the Arabic storefront that left the
+ * tail of group B in view at translateX(0) and walked the whole track out of the
+ * viewport, producing an empty carousel. Only the CONTENT of each card is RTL.
+ * The translate is negative, so cards always enter from the RIGHT and leave LEFT.
  *
  * Animation is paused (never torn down) when: the tab is hidden, the user
  * hovers/touches (optional), or `prefers-reduced-motion` is set — in which case
@@ -149,13 +153,32 @@ function MarqueeRow({ items, speed, rowIndex, animate, paused, shadow, onDiagnos
 
       setGeo((prev) => {
         const want = requiredGroupCards(viewportW, cardOuter);
-        const need = Math.max(prev.need, want);        // grow-only
-        if (Math.abs(prev.distance - distance) < 0.5 && need === prev.need) return prev;
+        const need = Math.max(prev.need, want);        // grow-only, cannot oscillate
+        // Only a MEANINGFUL width change may update state. Images loading change
+        // card HEIGHT (cards have a fixed width), which fires the observer but
+        // must never restart the animation.
+        const widthChanged = Math.abs(prev.distance - distance) > 1;
+        if (!widthChanged && need === prev.need) return prev;
         return { distance, need };
       });
 
       if (typeof onDiagnostics === "function") {
         onDiagnostics({ rowIndex, viewportW, cardOuter, distance, groupCards: gp.childElementCount });
+      }
+
+      // DEV-only geometry assertions. Silent in production builds.
+      if (process.env.NODE_ENV !== "production") {
+        const groupB = gp.nextElementSibling;
+        if (groupB) {
+          const a = gp.getBoundingClientRect();
+          const b = groupB.getBoundingClientRect();
+          if (Math.abs(b.left - a.right) > 1) {
+            console.warn("[FeedbackCarousel] group B is not adjacent to group A", { gap: b.left - a.right });
+          }
+        }
+        if (viewportW > 0 && distance < viewportW * 2) {
+          console.warn("[FeedbackCarousel] group A narrower than 2 viewports", { distance, viewportW });
+        }
       }
     };
 
@@ -170,13 +193,17 @@ function MarqueeRow({ items, speed, rowIndex, animate, paused, shadow, onDiagnos
 
   // `items-start` is essential: flex would otherwise stretch every card to the
   // tallest one, so a single expanded/image-heavy review inflated the whole row.
-  const trackBase = "flex items-start w-max";
+  // No `gap` anywhere on the track or groups: the card carries its own trailing
+  // margin, so group A's width already includes the seam spacing.
+  const trackBase = "flex flex-row items-start w-max min-w-max";
 
   if (!animate) {
     // Reduced motion / single card: a normal swipeable row, no animation.
     return (
-      <div className="overflow-x-auto overflow-y-hidden" style={{ scrollbarWidth: "none" }}>
-        <div dir="ltr" className={trackBase}>
+      // Also an overflow container, so it is explicitly LTR too.
+      <div dir="ltr" className="w-full overflow-x-auto overflow-y-hidden"
+        style={{ direction: "ltr", scrollbarWidth: "none" }}>
+        <div dir="ltr" style={{ direction: "ltr" }} className={trackBase}>
           {items.map((it, i) => <ReviewCard key={it._id || it.id || i} item={it} shadow={shadow} />)}
         </div>
       </div>
@@ -189,7 +216,8 @@ function MarqueeRow({ items, speed, rowIndex, animate, paused, shadow, onDiagnos
     <div
       ref={duplicate ? undefined : groupRef}
       dir="ltr"
-      className="flex items-start w-max flex-none"
+      style={{ direction: "ltr" }}
+      className="flex flex-row items-start w-max min-w-max flex-none"
       aria-hidden={duplicate || undefined}
     >
       {group.map((it, i) => (
@@ -208,11 +236,17 @@ function MarqueeRow({ items, speed, rowIndex, animate, paused, shadow, onDiagnos
 
   return (
     // Only this element clips the moving overflow.
-    <div ref={viewportRef} className="w-full overflow-hidden">
+    // dir="ltr" HERE is load-bearing, not cosmetic: this is the overflow
+    // container, and an RTL overflow container anchors an oversized child to its
+    // RIGHT edge and overflows LEFTWARD. On the Arabic storefront that put the
+    // tail of group B in view at translateX(0) with group A off-screen left, so
+    // translating negative walked the whole track out of the viewport -> empty.
+    <div ref={viewportRef} dir="ltr" style={{ direction: "ltr" }} className="w-full overflow-hidden">
       <div
         dir="ltr"
         className={`${trackBase} flex-none will-change-transform`}
         style={{
+          direction: "ltr",
           "--marquee-distance": `${distance}px`,
           // Wait for the first measurement so the row never animates against a
           // 0px distance (which would look like a frozen or empty track).

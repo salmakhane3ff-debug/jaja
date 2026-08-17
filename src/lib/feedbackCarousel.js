@@ -153,4 +153,7 @@ export function shouldAnimate({ cardCount, reducedMotion }) {
  * `--marquee-distance`. CSS still runs the animation (no per-frame JS), so the
  * seam is exact by construction whatever the cards actually measure.
  */
-export const CARD_GAP_CLASS = 'me-3 sm:me-4';   // 12px mobile / 16px desktop
+// PHYSICAL margin-right, deliberately not the logical `me-*`: the card renders
+// dir="rtl" for Arabic text, where margin-inline-end resolves to margin-LEFT.
+// The marquee geometry must be identical in every site language.
+export const CARD_GAP_CLASS = 'mr-3 sm:mr-4';   // 12px mobile / 16px desktop

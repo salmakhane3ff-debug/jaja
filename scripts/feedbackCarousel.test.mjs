@@ -136,7 +136,11 @@ console.log("11) MEASURED loop distance replaces percentage guesswork:");
   ok("row 2 px/s is ~15% slower", Math.abs(carouselPxPerSec("medium", 0) / carouselPxPerSec("medium", 1) - SECOND_ROW_SLOWDOWN) < 0.02);
   ok("each speed level is a distinct px/s", new Set(CAROUSEL_SPEEDS.map((sp) => carouselPxPerSec(sp, 0))).size === 3);
   ok("speeds sit in a sane range (25-65 px/s)", CAROUSEL_SPEEDS.every((sp) => { const v = carouselPxPerSec(sp, 0); return v >= 25 && v <= 65; }));
-  ok("the gap is on the card, not the track", CARD_GAP_CLASS.includes("me-"));
+  // PHYSICAL margin-right, not logical `me-*`: the card is dir="rtl" for Arabic,
+  // where margin-inline-end resolves to margin-LEFT. Geometry must not depend on
+  // the site language.
+  ok("the gap is a physical margin on the card", CARD_GAP_CLASS.startsWith("mr-"));
+  ok("the gap is never a logical margin", !CARD_GAP_CLASS.includes("me-"));
   ok("group A targets >= 2 viewport widths", TARGET_VIEWPORTS >= 2);
   ok("needed cards actually cover the target width", (() => {
     const vw = 375, card = 323;
