@@ -7,13 +7,20 @@
  * already fetched (product page → `productFeedbackSource` filtering, homepage →
  * its own query) and never fetches, filters or moderates anything itself.
  *
- * MOTION: a pure CSS marquee. The row is rendered twice and the track animates
- * `translate3d(0 → -50%)` on a linear infinite loop, so the second copy is
- * exactly where the first started — no visible jump, no JS animation loop, and
- * the whole thing runs on the compositor. The track is forced `dir="ltr"` so
- * the duplication seam is deterministic (transforms are not direction-aware),
- * while each CARD stays `dir="rtl"` for Arabic text. translateX is negative, so
- * cards always enter from the RIGHT and leave to the LEFT.
+ * MOTION: a pure CSS marquee. Each row is an INDEPENDENT viewport + track (never
+ * one tall shared track, which is what produced the huge vertical gaps). The
+ * group is rendered twice and the track animates `translate3d(0 → -50%)`.
+ *
+ * The gap lives on each CARD (`margin-inline-end`), NOT on the track: with a
+ * track `gap` the 2N flat siblings only have 2N−1 gaps, so `-50%` fell exactly
+ * half a gap short of the duplicate and the seam jumped every loop. Giving each
+ * card its own trailing margin makes one card occupy `W + G`, so the track is
+ * `2N·(W + G)` and `-50%` is exactly one period — see the geometry note in
+ * lib/feedbackCarousel.js.
+ *
+ * The track is `dir="ltr"` so the seam is deterministic (transforms are not
+ * direction-aware) while each CARD stays `dir="rtl"` for Arabic. The translate
+ * is negative, so cards always enter from the RIGHT and leave to the LEFT.
  *
  * Animation is paused (never torn down) when: the tab is hidden, the user
  * hovers/touches (optional), or `prefers-reduced-motion` is set — in which case
@@ -25,6 +32,7 @@ import formatDate from "@/utils/formatDate";
 import { ImageStrip } from "@/components/FeedbackSection";
 import {
   normalizeCarouselSettings, carouselDurationSec, splitIntoRows, shouldAnimate,
+  repeatToFill, CARD_GAP_CLASS,
 } from "@/lib/feedbackCarousel";
 
 const TEXT_PREVIEW = 180;   // characters shown before "عرض المزيد"
@@ -53,7 +61,7 @@ function Avatar({ name }) {
   );
 }
 
-function ReviewCard({ item, shadow }) {
+function ReviewCard({ item, shadow, duplicate = false }) {
   const [expanded, setExpanded] = useState(false);
   const text = item.textContent || item.text || "";
   const long = text.length > TEXT_PREVIEW;
@@ -62,7 +70,7 @@ function ReviewCard({ item, shadow }) {
   return (
     <article
       dir="rtl"
-      className={`shrink-0 w-[280px] sm:w-[320px] min-h-[190px] flex flex-col rounded-[20px] bg-white border border-gray-100 p-4 ${shadow ? "shadow-[0_4px_20px_rgba(0,0,0,0.06)]" : ""}`}
+      className={`${CARD_GAP_CLASS} shrink-0 self-start w-[82vw] max-w-[340px] sm:w-[320px] min-h-[190px] flex flex-col rounded-[20px] bg-white border border-gray-100 p-4 ${shadow ? "shadow-[0_4px_20px_rgba(0,0,0,0.06)]" : ""}`}
     >
       <header className="flex items-center gap-2.5">
         <Avatar name={item.authorName || item.name} />
@@ -87,6 +95,10 @@ function ReviewCard({ item, shadow }) {
             <button
               type="button"
               onClick={() => setExpanded((v) => !v)}
+              // The duplicate group is decorative: keep it out of the tab order
+              // so "عرض المزيد" never produces a doubled keyboard stop.
+              tabIndex={duplicate ? -1 : 0}
+              aria-hidden={duplicate || undefined}
               className="ms-1 text-[12px] font-bold text-blue-600 hover:text-blue-800 focus:outline-none focus:underline"
             >
               {expanded ? "عرض أقل" : "عرض المزيد"}
@@ -106,33 +118,49 @@ function ReviewCard({ item, shadow }) {
 }
 
 function MarqueeRow({ items, durationSec, animate, paused, shadow }) {
-  // Rendered twice — the minimum duplication a seamless -50% loop needs.
-  const loop = useMemo(() => [...items, ...items], [items]);
+  // Density: a 1–3 review store would otherwise animate a mostly-empty track.
+  // Visual repetition only — the review data itself is untouched.
+  const group = useMemo(() => repeatToFill(items), [items]);
+
+  // `items-start` is essential: flex would otherwise stretch every card to the
+  // tallest one, so a single expanded/image-heavy review inflated the whole row.
+  const trackBase = "flex items-start w-max";
 
   if (!animate) {
-    // Reduced motion / single card: a plain scrollable row, no animation.
+    // Reduced motion / single card: a normal swipeable row, no animation.
     return (
-      <div className="overflow-x-auto pb-2 -mx-1 px-1" style={{ scrollbarWidth: "none" }}>
-        <div dir="ltr" className="flex gap-4 w-max">
+      <div className="overflow-x-auto overflow-y-hidden" style={{ scrollbarWidth: "none" }}>
+        <div dir="ltr" className={trackBase}>
           {items.map((it, i) => <ReviewCard key={it._id || it.id || i} item={it} shadow={shadow} />)}
         </div>
       </div>
     );
   }
 
+  // Rendered inline (not as a nested component): a nested definition would get a
+  // fresh identity on every pause/resume render, remounting the cards and
+  // resetting any expanded "عرض المزيد" state.
+  const renderGroup = (duplicate) => (
+    <div dir="ltr" className="flex items-start w-max flex-none" aria-hidden={duplicate || undefined}>
+      {group.map((it, i) => (
+        <ReviewCard key={`${it._id || it.id || "i"}-${i}`} item={it} shadow={shadow} duplicate={duplicate} />
+      ))}
+    </div>
+  );
+
   return (
+    // Only this element clips the moving overflow.
     <div className="overflow-hidden">
       <div
         dir="ltr"
-        className="flex gap-4 w-max will-change-transform"
+        className={`${trackBase} will-change-transform`}
         style={{
           animation: `fbMarquee ${durationSec}s linear infinite`,
           animationPlayState: paused ? "paused" : "running",
         }}
       >
-        {loop.map((it, i) => (
-          <ReviewCard key={`${it._id || it.id || "i"}-${i}`} item={it} shadow={shadow} />
-        ))}
+        {renderGroup(false)}
+        {renderGroup(true)}
       </div>
     </div>
   );
@@ -181,14 +209,14 @@ export default function FeedbackCarousel({ items = [], settings = null }) {
       onTouchStart={hold}
       onTouchEnd={release}
     >
-      <div className="flex flex-col gap-4">
+      <div className="flex flex-col gap-3 sm:gap-4">
         {rows.map((rowItems, i) => (
           <MarqueeRow
             key={i}
             items={rowItems}
             shadow={cfg.shadow}
-            durationSec={carouselDurationSec(cfg.speed, rowItems.length, i)}
-            animate={shouldAnimate({ cardCount: rowItems.length, reducedMotion: reduced })}
+            durationSec={carouselDurationSec(cfg.speed, repeatToFill(rowItems).length, i)}
+            animate={shouldAnimate({ cardCount: repeatToFill(rowItems).length, reducedMotion: reduced })}
             paused={tabHidden || interacting}
           />
         ))}

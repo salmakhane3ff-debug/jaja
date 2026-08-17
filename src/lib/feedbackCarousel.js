@@ -83,6 +83,35 @@ export function splitIntoRows(items, rows) {
 }
 
 /**
+ * Minimum cards a marquee group needs so the row is never visually empty.
+ * Mobile cards are ~82vw (≈1.2 per screen) and desktop ~320px (≈3.5 per screen),
+ * so 8 covers roughly two viewport widths in both cases.
+ */
+export const MIN_GROUP_CARDS = 8;
+
+/**
+ * Repeat a small review set until the group is dense enough to fill the row.
+ * VISUAL ONLY — the underlying review data is never modified, and the returned
+ * array holds references to the same objects.
+ *
+ * A 1–3 review store would otherwise animate a mostly-empty track (or, with one
+ * card per row, show a single motionless card).
+ *
+ * @param {Array} items
+ * @param {number} minCount
+ * @returns {Array} at least `minCount` entries while items is non-empty
+ */
+export function repeatToFill(items, minCount = MIN_GROUP_CARDS) {
+  const list = Array.isArray(items) ? items.filter(Boolean) : [];
+  if (list.length === 0) return [];
+  const target = Math.max(1, int(minCount, MIN_GROUP_CARDS));
+  if (list.length >= target) return list;
+  const out = [];
+  while (out.length < target) out.push(...list);
+  return out;
+}
+
+/**
  * Should the track animate at all?
  * A single card has nothing to scroll past, and reduced-motion users must get a
  * static list rather than perpetual movement.
@@ -90,3 +119,24 @@ export function splitIntoRows(items, rows) {
 export function shouldAnimate({ cardCount, reducedMotion }) {
   return !reducedMotion && int(cardCount, 0) > 1;
 }
+
+/**
+ * GEOMETRY NOTE — why the gap lives on the card, not on the track.
+ *
+ * The first implementation laid 2N cards out as flat flex siblings with
+ * `gap: G`, giving a track of `2N·W + (2N−1)·G` and animating to `-50%`:
+ *
+ *     50% of track = N·W + (N − 0.5)·G      but one period = N·W + N·G
+ *
+ * so every loop fell exactly G/2 (8px) short of the duplicate — a visible jump,
+ * and the row drifted out of density.
+ *
+ * The fix is to give each card `margin-inline-end: G` and NO gap on the track.
+ * Each card then occupies `W + G`, so:
+ *
+ *     track = 2N·(W + G)   →   50% = N·(W + G) = exactly one period
+ *
+ * `-50%` becomes mathematically exact for any card count, with no measurement,
+ * no ResizeObserver and no JS animation loop.
+ */
+export const CARD_GAP_CLASS = 'me-3 sm:me-4';   // 12px mobile / 16px desktop
