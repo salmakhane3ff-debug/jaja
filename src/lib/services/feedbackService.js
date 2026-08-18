@@ -64,6 +64,7 @@ export async function getPublicFeedback({ productId = null, featuredOnly = false
       publishAt:   true,
       isFeatured:  true,
       createdAt:   true,
+      reviewDate:  true,   // admin display-date override (null -> createdAt)
       type:        true,
       rating:      true,
       authorName:  true,
@@ -173,6 +174,7 @@ export async function createFeedbackByAdmin({
   status      = 'PENDING',
   isVerified  = false,
   publishAt   = null,
+  reviewDate  = null,
 }) {
   const data = {
     type,
@@ -187,6 +189,13 @@ export async function createFeedbackByAdmin({
     isVerified: Boolean(isVerified),
     productId:  productId || null,
   };
+
+  // Optional admin DISPLAY date. Left out entirely when null so the column stays
+  // NULL and the UI keeps falling back to createdAt.
+  if (reviewDate) {
+    const d = new Date(reviewDate);
+    if (!Number.isNaN(d.getTime())) data.reviewDate = d;
+  }
 
   if (status === 'SCHEDULED' && publishAt) {
     data.publishAt = new Date(publishAt);

@@ -33,10 +33,11 @@
  * hovers/touches (optional), or `prefers-reduced-motion` is set — in which case
  * the rows render as a normal scrollable list instead.
  */
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Star, BadgeCheck } from "lucide-react";
-import formatDate from "@/utils/formatDate";
 import { ImageStrip } from "@/components/FeedbackSection";
+import { useLanguage } from "@/context/LanguageContext";
+import { resolveReviewDate, relativeDateLabel } from "@/lib/feedbackDate";
 import {
   normalizeCarouselSettings, carouselDurationFromDistance, splitIntoRows, shouldAnimate,
   repeatToFill, requiredGroupCards, MIN_GROUP_CARDS, CARD_GAP_CLASS,
@@ -54,45 +55,65 @@ function Stars({ value }) {
   );
 }
 
-function Avatar({ name }) {
+function Avatar({ name, src }) {
+  const [broken, setBroken] = useState(false);
   const colors = [
     "from-blue-400 to-blue-600", "from-purple-400 to-purple-600",
     "from-green-400 to-green-600", "from-orange-400 to-orange-600",
     "from-pink-400 to-pink-600", "from-teal-400 to-teal-600",
   ];
   const idx = (name?.charCodeAt(0) || 0) % colors.length;
+
+  // Existing avatar image when present; the initial circle stays the fallback.
+  if (src && !broken) {
+    return (
+      // eslint-disable-next-line @next/next/no-img-element
+      <img src={src} alt="" loading="lazy" onError={() => setBroken(true)}
+        className="w-10 h-10 rounded-full object-cover shrink-0" />
+    );
+  }
   return (
-    <div className={`w-9 h-9 rounded-full bg-gradient-to-br ${colors[idx]} flex items-center justify-center text-white font-bold text-xs shrink-0`}>
+    <div className={`w-10 h-10 rounded-full bg-gradient-to-br ${colors[idx]} flex items-center justify-center text-white font-bold text-sm shrink-0`}>
       {(name || "?")[0].toUpperCase()}
     </div>
   );
 }
 
-function ReviewCard({ item, shadow, duplicate = false }) {
+function ReviewCard({ item, shadow, duplicate = false, locale = "ar" }) {
   const [expanded, setExpanded] = useState(false);
   const text = item.textContent || item.text || "";
   const long = text.length > TEXT_PREVIEW;
   const images = Array.isArray(item.images) ? item.images : [];
+  const name = item.authorName || item.name || "—";
+
+  // displayDate = reviewDate ?? createdAt (admin override, else creation date).
+  const date = resolveReviewDate(item);
+  const dateLabel = date ? relativeDateLabel(date, { locale }) : "";
 
   return (
     <article
       dir="rtl"
-      className={`${CARD_GAP_CLASS} shrink-0 self-start w-[82vw] max-w-[340px] sm:w-[320px] min-h-[190px] flex flex-col rounded-[20px] bg-white border border-gray-100 p-4 ${shadow ? "shadow-[0_4px_20px_rgba(0,0,0,0.06)]" : ""}`}
+      className={`${CARD_GAP_CLASS} shrink-0 self-start w-[82vw] max-w-[340px] sm:w-[320px] min-h-[186px] flex flex-col rounded-[18px] bg-gray-50/80 border border-gray-200/80 p-4 ${shadow ? "shadow-[0_2px_10px_rgba(16,24,40,0.05)]" : ""}`}
     >
-      <header className="flex items-center gap-2.5">
-        <Avatar name={item.authorName || item.name} />
+      <header className="flex items-start gap-3">
+        <Avatar name={name} src={item.avatarUrl || item.authorAvatar || null} />
         <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-1">
-            <p className="text-sm font-bold text-gray-900 truncate">{item.authorName || item.name || "—"}</p>
-            {item.isVerified && <BadgeCheck size={14} className="text-blue-500 shrink-0" aria-label="موثّق" />}
-          </div>
-          <div className="flex items-center gap-2 mt-0.5">
-            <Stars value={item.rating || 0} />
-            {item.createdAt && (
-              <time className="text-[11px] text-gray-400">{formatDate(item.createdAt)}</time>
+          <div className="flex items-center gap-1.5">
+            <p className="text-sm font-bold text-gray-900 truncate">{name}</p>
+            {item.isVerified && (
+              <BadgeCheck size={15} className="text-blue-500 shrink-0" aria-label="verified" />
             )}
           </div>
+          {dateLabel && (
+            <time
+              className="block text-[11px] text-gray-400 mt-0.5"
+              dateTime={date ? date.toISOString() : undefined}
+            >
+              {dateLabel}
+            </time>
+          )}
         </div>
+        <Stars value={item.rating || 0} />
       </header>
 
       {text && (
@@ -103,7 +124,7 @@ function ReviewCard({ item, shadow, duplicate = false }) {
               type="button"
               onClick={() => setExpanded((v) => !v)}
               // The duplicate group is decorative: keep it out of the tab order
-              // so "عرض المزيد" never produces a doubled keyboard stop.
+              // so the expand control never produces a doubled keyboard stop.
               tabIndex={duplicate ? -1 : 0}
               aria-hidden={duplicate || undefined}
               className="ms-1 text-[12px] font-bold text-blue-600 hover:text-blue-800 focus:outline-none focus:underline"
@@ -124,9 +145,14 @@ function ReviewCard({ item, shadow, duplicate = false }) {
   );
 }
 
-function MarqueeRow({ items, speed, rowIndex, animate, paused, shadow, onDiagnostics }) {
+function MarqueeRow({ items, speed, rowIndex, animate, paused, shadow, pauseOnInteract, locale, onDiagnostics }) {
   const viewportRef = useRef(null);
   const groupRef = useRef(null);
+  const trackRef = useRef(null);
+  // PER-ROW interaction state: hovering or dragging THIS row must never touch
+  // the other row. `paused` (tab hidden) is the only shared input.
+  const [interacting, setInteracting] = useState(false);
+  const drag = useRef({ active: false, startX: 0, offset: 0, pointerId: null });
   // Measured geometry. `need` only ever grows, so re-measuring can never
   // oscillate (a bigger group would otherwise shrink the required count).
   const [geo, setGeo] = useState({ distance: 0, need: MIN_GROUP_CARDS });
@@ -204,7 +230,7 @@ function MarqueeRow({ items, speed, rowIndex, animate, paused, shadow, onDiagnos
       <div dir="ltr" className="w-full overflow-x-auto overflow-y-hidden"
         style={{ direction: "ltr", scrollbarWidth: "none" }}>
         <div dir="ltr" style={{ direction: "ltr" }} className={trackBase}>
-          {items.map((it, i) => <ReviewCard key={it._id || it.id || i} item={it} shadow={shadow} />)}
+          {items.map((it, i) => <ReviewCard key={it._id || it.id || i} item={it} shadow={shadow} locale={locale} />)}
         </div>
       </div>
     );
@@ -226,6 +252,7 @@ function MarqueeRow({ items, speed, rowIndex, animate, paused, shadow, onDiagnos
           item={it}
           shadow={shadow}
           duplicate={duplicate}
+          locale={locale}
         />
       ))}
     </div>
@@ -234,6 +261,46 @@ function MarqueeRow({ items, speed, rowIndex, animate, paused, shadow, onDiagnos
   const distance = geo.distance;
   const durationSec = carouselDurationFromDistance(distance, speed, rowIndex);
 
+  // ── Interaction ────────────────────────────────────────────────────────────
+  // Pause is ONLY `animation-play-state`. The track, its groups, the card count
+  // and the measured distance are never touched, so the loop resumes from the
+  // exact position it held — no reset, no rebuild, no restart from 0.
+  const hold = useCallback(() => { if (pauseOnInteract) setInteracting(true); }, [pauseOnInteract]);
+  const release = useCallback(() => { if (pauseOnInteract) setInteracting(false); }, [pauseOnInteract]);
+
+  /**
+   * Drag: the finger offset is applied as a SEPARATE translate on a wrapper-free
+   * basis via `--drag-offset`, composed with the paused animation transform. The
+   * animation itself is only paused, so releasing resumes from where it was.
+   */
+  const onPointerDown = useCallback((e) => {
+    if (!animate || e.pointerType === "mouse" && e.button !== 0) return;
+    drag.current = { active: true, startX: e.clientX, offset: drag.current.offset || 0, pointerId: e.pointerId };
+    hold();
+  }, [animate, hold]);
+
+  const onPointerMove = useCallback((e) => {
+    const d = drag.current;
+    if (!d.active || d.pointerId !== e.pointerId) return;
+    const dx = e.clientX - d.startX;
+    const next = d.offset + dx;
+    if (trackRef.current) {
+      trackRef.current.style.setProperty("--drag-offset", `${next}px`);
+    }
+  }, []);
+
+  const endDrag = useCallback((e) => {
+    const d = drag.current;
+    if (d.active && (e == null || d.pointerId === e.pointerId)) {
+      const dx = e ? e.clientX - d.startX : 0;
+      d.offset += dx;
+      d.active = false;
+      d.pointerId = null;
+    }
+    // Resume IMMEDIATELY — no timeout, no debounce.
+    release();
+  }, [release]);
+
   return (
     // Only this element clips the moving overflow.
     // dir="ltr" HERE is load-bearing, not cosmetic: this is the overflow
@@ -241,17 +308,31 @@ function MarqueeRow({ items, speed, rowIndex, animate, paused, shadow, onDiagnos
     // RIGHT edge and overflows LEFTWARD. On the Arabic storefront that put the
     // tail of group B in view at translateX(0) with group A off-screen left, so
     // translating negative walked the whole track out of the viewport -> empty.
-    <div ref={viewportRef} dir="ltr" style={{ direction: "ltr" }} className="w-full overflow-hidden">
+    <div
+      ref={viewportRef}
+      dir="ltr"
+      style={{ direction: "ltr", touchAction: "pan-y" }}
+      className="w-full overflow-hidden"
+      // Row-scoped: hovering/dragging THIS row pauses only THIS row.
+      onMouseEnter={hold}
+      onMouseLeave={() => { endDrag(null); }}
+      onPointerDown={onPointerDown}
+      onPointerMove={onPointerMove}
+      onPointerUp={endDrag}
+      onPointerCancel={endDrag}
+    >
       <div
+        ref={trackRef}
         dir="ltr"
         className={`${trackBase} flex-none will-change-transform`}
         style={{
           direction: "ltr",
           "--marquee-distance": `${distance}px`,
+          "--drag-offset": "0px",
           // Wait for the first measurement so the row never animates against a
           // 0px distance (which would look like a frozen or empty track).
           animation: distance > 0 ? `fbMarquee ${durationSec}s linear infinite` : "none",
-          animationPlayState: paused ? "paused" : "running",
+          animationPlayState: paused || interacting ? "paused" : "running",
         }}
       >
         {renderGroup(false)}
@@ -263,10 +344,11 @@ function MarqueeRow({ items, speed, rowIndex, animate, paused, shadow, onDiagnos
 
 export default function FeedbackCarousel({ items = [], settings = null }) {
   const cfg = normalizeCarouselSettings(settings);
+  // Reuse the site's own language for relative dates - nothing hardcoded.
+  const { language } = useLanguage() || {};
+  const locale = language || "ar";
   const [reduced, setReduced] = useState(false);
   const [tabHidden, setTabHidden] = useState(false);
-  const [interacting, setInteracting] = useState(false);
-  const resumeTimer = useRef(null);
 
   useEffect(() => {
     const mq = window.matchMedia?.("(prefers-reduced-motion: reduce)");
@@ -282,28 +364,16 @@ export default function FeedbackCarousel({ items = [], settings = null }) {
     return () => {
       mq?.removeEventListener?.("change", onMq);
       document.removeEventListener("visibilitychange", onVis);
-      clearTimeout(resumeTimer.current);
     };
   }, []);
 
   const rows = splitIntoRows(items, cfg.rows);
   if (rows.length === 0) return null;   // empty feedback → render nothing
 
-  const hold = () => { if (cfg.pauseOnInteract) { clearTimeout(resumeTimer.current); setInteracting(true); } };
-  const release = () => {
-    if (!cfg.pauseOnInteract) return;
-    clearTimeout(resumeTimer.current);
-    resumeTimer.current = setTimeout(() => setInteracting(false), 1200);
-  };
-
   return (
-    <div
-      className="relative"
-      onMouseEnter={hold}
-      onMouseLeave={release}
-      onTouchStart={hold}
-      onTouchEnd={release}
-    >
+    // No interaction handlers here on purpose: pause is PER ROW, so a wrapper
+    // handler would pause both rows at once.
+    <div className="relative">
       <div className="flex flex-col gap-3 sm:gap-4">
         {rows.map((rowItems, i) => (
           <MarqueeRow
@@ -313,14 +383,16 @@ export default function FeedbackCarousel({ items = [], settings = null }) {
             speed={cfg.speed}
             rowIndex={i}
             animate={shouldAnimate({ cardCount: repeatToFill(rowItems).length, reducedMotion: reduced })}
-            paused={tabHidden || interacting}
+            paused={tabHidden}
+            pauseOnInteract={cfg.pauseOnInteract}
+            locale={locale}
           />
         ))}
       </div>
       <style>{`
         @keyframes fbMarquee {
-          from { transform: translate3d(0, 0, 0); }
-          to   { transform: translate3d(calc(-1 * var(--marquee-distance)), 0, 0); }
+          from { transform: translate3d(var(--drag-offset, 0px), 0, 0); }
+          to   { transform: translate3d(calc(var(--drag-offset, 0px) - var(--marquee-distance)), 0, 0); }
         }
         @media (prefers-reduced-motion: reduce) {
           [style*="fbMarquee"] { animation: none !important; }

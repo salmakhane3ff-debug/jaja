@@ -252,6 +252,12 @@ model Feedback {
   phone         String?
   productName   String?
   voiceUrl      String?
+  /// Admin-editable DISPLAY date for the review ("this feedback happened 2 months
+  /// ago"). Nullable and additive: when NULL the UI falls back to createdAt, so
+  /// every existing feedback is unaffected. Deliberately NOT createdAt (stripped
+  /// by updateFeedback as an audit field), publishAt (drives SCHEDULED
+  /// visibility) or publishedAt (overwritten on every approve).
+  reviewDate    DateTime?
   product       Product?       @relation(fields: [productId], references: [id])
   user          User?          @relation(fields: [userId], references: [id])
 

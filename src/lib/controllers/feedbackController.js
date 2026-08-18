@@ -112,6 +112,7 @@ export async function adminCreateFeedbackHandler(req) {
       status:      body.status      || 'PENDING',
       isVerified:  body.isVerified  ?? false,
       publishAt:   body.publishAt   || null,
+      reviewDate:  body.reviewDate  || null,   // display-date override (optional)
     });
 
     return Response.json(feedback, { status: 201 });

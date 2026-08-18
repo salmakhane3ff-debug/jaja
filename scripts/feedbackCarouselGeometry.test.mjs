@@ -32,7 +32,8 @@ const MARQUEE = SRC.slice(SRC.indexOf("const distance = geo.distance;"));
 
 console.log("1) DIRECTION — marquee geometry is explicitly LTR at every level:");
 {
-  const viewport = SRC.match(/<div ref=\{viewportRef\}[^>]*>/)?.[0] || "";
+  // Multi-line tag now (it carries the per-row interaction handlers too).
+  const viewport = SRC.match(/<div\s+ref=\{viewportRef\}[\s\S]*?>/)?.[0] || "";
   ok("the overflow container (viewport) is found", viewport.length > 0);
   ok("VIEWPORT carries dir=\"ltr\" (the production bug)", /dir="ltr"/.test(viewport));
   ok("VIEWPORT also sets direction:ltr in CSS", /direction:\s*"ltr"/.test(viewport));
@@ -73,7 +74,8 @@ console.log("2) STRUCTURE — viewport > track > groupA + groupB, nothing betwee
 
 console.log("3) PAUSE only toggles play-state (never rebuilds the track):");
 {
-  ok("pause maps to animationPlayState", /animationPlayState:\s*paused \? "paused" : "running"/.test(MARQUEE));
+  ok("pause maps to animationPlayState (tab-hidden OR this row's own interaction)",
+    /animationPlayState:\s*paused \|\| interacting \? "paused" : "running"/.test(MARQUEE));
   ok("pause does not gate group B rendering", !/paused\s*&&[\s\S]{0,80}renderGroup/.test(MARQUEE));
   ok("pause does not appear in the transform/animation name", !/paused[\s\S]{0,40}translate3d/.test(MARQUEE));
   ok("group count is not derived from pause state", !/paused[\s\S]{0,60}repeatToFill/.test(SRC));

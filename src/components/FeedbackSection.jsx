@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useRef, useCallback, memo } from "react";
+import { createPortal } from "react-dom";
 import {
   Star, BadgeCheck, Play, Pause, ChevronDown, ChevronUp,
   ChevronLeft, ChevronRight, MessageSquare, X, PenLine, CheckCircle2,
@@ -90,9 +91,22 @@ function Avatar({ name }) {
 
 // ── ImageViewer ───────────────────────────────────────────────────────────────
 
+/**
+ * Full-screen image viewer.
+ *
+ * PORTALLED TO document.body ON PURPOSE. A `position: fixed` element is
+ * positioned relative to its nearest TRANSFORMED ancestor, not the viewport —
+ * and inside the auto-carousel this viewer's ancestor track carries
+ * `transform: translate3d(...)`. Rendering it in place made `inset-0` resolve
+ * against the moving track (2x group A wide, one card tall), which is why the
+ * zoom appeared as a large misplaced black area. The portal escapes that
+ * containing block so `inset-0` means the real viewport again.
+ */
 function ImageViewer({ images, startIndex = 0, onClose }) {
   const [idx, setIdx] = useState(startIndex);
   const touchStartX   = useRef(null);
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => { setMounted(true); }, []);
 
   useEffect(() => {
     document.body.style.overflow = "hidden";
@@ -119,9 +133,13 @@ function ImageViewer({ images, startIndex = 0, onClose }) {
     touchStartX.current = null;
   };
 
-  return (
+  if (!mounted || typeof document === "undefined") return null;
+
+  return createPortal(
     <div
-      className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/92"
+      className="fixed inset-0 z-[9999] flex items-center justify-center bg-black/70 backdrop-blur-sm p-4 overflow-hidden"
+      role="dialog"
+      aria-modal="true"
       onClick={onClose}
       onTouchStart={onTouchStart}
       onTouchEnd={onTouchEnd}
@@ -139,10 +157,13 @@ function ImageViewer({ images, startIndex = 0, onClose }) {
       <img
         src={images[idx]}
         alt={`image-${idx + 1}`}
-        loading="lazy"
+        /* eager: the overlay is already open, so lazy loading only showed the
+           bare backdrop while the file was still being fetched. */
+        loading="eager"
+        decoding="async"
         draggable={false}
         onClick={(e) => e.stopPropagation()}
-        className="max-w-[90vw] max-h-[85vh] object-contain rounded-xl select-none shadow-2xl"
+        className="max-w-[95vw] max-h-[90vh] w-auto h-auto object-contain rounded-xl select-none shadow-2xl"
         style={{ animation: "scaleIn 0.2s ease" }}
       />
       {idx > 0 && (
@@ -176,7 +197,8 @@ function ImageViewer({ images, startIndex = 0, onClose }) {
         @keyframes fadeIn  { from { opacity:0 } to { opacity:1 } }
         @keyframes scaleIn { from { opacity:0; transform:scale(0.92) } to { opacity:1; transform:scale(1) } }
       `}</style>
-    </div>
+    </div>,
+    document.body,
   );
 }
 

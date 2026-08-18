@@ -24,6 +24,7 @@ import {
   ChevronUp,
 } from "lucide-react";
 import toast from "react-hot-toast";
+import { resolveReviewDate, toDatetimeLocalValue, parseAdminReviewDate, relativeDateLabel } from "@/lib/feedbackDate";
 import { Spinner, Pagination, Chip } from "@heroui/react";
 import formatDate from "@/utils/formatDate";
 import DeleteConfirmationModal from "@/components/block/DeleteConfirmationModal";
@@ -222,6 +223,7 @@ export default function AdminFeedbackPage() {
     voiceUrl: "",
     images: [],
     isVerified: false,
+    reviewDate: "",   // display date override; "" = keep using createdAt
     status: "PENDING",
     publishAt: "",
   };
@@ -406,6 +408,9 @@ export default function AdminFeedbackPage() {
       isVerified: item.isVerified || false,
       status: item.status || "PENDING",
       publishAt: item.publishAt ? item.publishAt.slice(0, 16) : "",
+      // Prefilled with the CURRENT display date (reviewDate ?? createdAt) so
+      // leaving the field alone preserves exactly what is already shown.
+      reviewDate: toDatetimeLocalValue(resolveReviewDate(item)),
     });
     setVoicePreview(item.voiceUrl || null);
     setModalOpen(true);
@@ -434,6 +439,10 @@ export default function AdminFeedbackPage() {
           publishAt: form.publishAt
             ? new Date(form.publishAt).toISOString()
             : null,
+          // parseAdminReviewDate returns undefined for an unparseable value, and
+          // an undefined key is dropped by JSON.stringify, so the stored date is
+          // left untouched rather than being wiped by a typo.
+          reviewDate: parseAdminReviewDate(form.reviewDate),
         };
         const res = await fetch("/api/feedback", {
           method: "PUT",
@@ -464,6 +473,10 @@ export default function AdminFeedbackPage() {
           publishAt: form.publishAt
             ? new Date(form.publishAt).toISOString()
             : null,
+          // parseAdminReviewDate returns undefined for an unparseable value, and
+          // an undefined key is dropped by JSON.stringify, so the stored date is
+          // left untouched rather than being wiped by a typo.
+          reviewDate: parseAdminReviewDate(form.reviewDate),
         };
         const res = await fetch("/api/feedback?admin=true", {
           method: "POST",
@@ -1093,6 +1106,29 @@ export default function AdminFeedbackPage() {
                   }
                   className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
                 />
+              </div>
+
+              {/* Review date (display date shown to customers) */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Review Date (displayed to customers)
+                </label>
+                <input
+                  type="datetime-local"
+                  value={form.reviewDate}
+                  onChange={(e) =>
+                    setForm((f) => ({ ...f, reviewDate: e.target.value }))
+                  }
+                  className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500"
+                />
+                <p className="text-xs text-gray-400 mt-1">
+                  Set a past date to make this review look older.
+                  {form.reviewDate && (
+                    <> Shown as <strong>{relativeDateLabel(form.reviewDate, { locale: "ar" })}</strong>.</>
+                  )}
+                  {" "}Clear the field to fall back to the creation date. The real
+                  creation date is never modified.
+                </p>
               </div>
 
               {/* Submit */}
