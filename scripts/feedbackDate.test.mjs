@@ -177,7 +177,7 @@ console.log("6) THE CARD renders the resolved date, not createdAt directly:");
   ok("the card resolves through the shared helper", /const date = resolveReviewDate\(item\)/.test(CARD));
   ok("the card labels it through relativeDateLabel", /relativeDateLabel\(date, \{ locale \}\)/.test(CARD));
   ok("the locale comes from the site's LanguageContext, not a literal",
-    /useLanguage\(\)/.test(CARD) && /const locale = language \|\| "ar"/.test(CARD));
+    /const \{ t, lang, dir \} = useLanguage\(\)/.test(CARD) && /const locale = lang \|\| "ar"/.test(CARD));
   ok("the date is machine-readable <time dateTime>",
     /<time[\s\S]{0,160}dateTime=\{date \? date\.toISOString\(\) : undefined\}/.test(CARD));
   ok("a missing date renders nothing rather than 'Invalid Date'", /\{dateLabel && \(/.test(CARD));

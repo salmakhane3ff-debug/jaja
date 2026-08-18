@@ -43,7 +43,7 @@ import {
   repeatToFill, requiredGroupCards, MIN_GROUP_CARDS, CARD_GAP_CLASS,
 } from "@/lib/feedbackCarousel";
 
-const TEXT_PREVIEW = 180;   // characters shown before "عرض المزيد"
+const TEXT_PREVIEW = 180;   // characters shown before the localized show-more toggle
 
 function Stars({ value }) {
   return (
@@ -79,31 +79,49 @@ function Avatar({ name, src }) {
   );
 }
 
-function ReviewCard({ item, shadow, duplicate = false, locale = "ar" }) {
+/**
+ * One review card.
+ *
+ * LAYOUT (top to bottom, deliberately compact):
+ *   1. avatar + customer name, with the relative date directly under the name
+ *   2. the 5 stars, with the blue verified badge beside them
+ *   3. the review text (+ localized show-more toggle)
+ *   4. the image strip, when the review has photos
+ *
+ * The WIDTH is fixed and identical for text-only and image reviews, so the
+ * measured marquee distance never depends on a card's content.
+ *
+ * LANGUAGE: everything the card ADDS (date, show-more, badge label) comes from
+ * the site's own LanguageContext. The customer's review text is rendered
+ * verbatim and is never translated.
+ */
+function ReviewCard({ item, shadow, duplicate = false }) {
   const [expanded, setExpanded] = useState(false);
+  const { t, lang, dir } = useLanguage();
+  const locale = lang || "ar";
+
   const text = item.textContent || item.text || "";
   const long = text.length > TEXT_PREVIEW;
   const images = Array.isArray(item.images) ? item.images : [];
-  const name = item.authorName || item.name || "—";
+  const name = item.authorName || item.name || t("feedback_anonymous");
 
-  // displayDate = reviewDate ?? createdAt (admin override, else creation date).
+  // displayDate = reviewDate ?? createdAt (admin override, else creation date),
+  // labelled by Intl in the ACTIVE storefront locale.
   const date = resolveReviewDate(item);
   const dateLabel = date ? relativeDateLabel(date, { locale }) : "";
 
   return (
+    // Card CONTENT follows the site language; the marquee geometry around it
+    // stays LTR (the gap is a physical margin, so this cannot move the track).
     <article
-      dir="rtl"
-      className={`${CARD_GAP_CLASS} shrink-0 self-start w-[82vw] max-w-[340px] sm:w-[320px] min-h-[186px] flex flex-col rounded-[18px] bg-gray-50/80 border border-gray-200/80 p-4 ${shadow ? "shadow-[0_2px_10px_rgba(16,24,40,0.05)]" : ""}`}
+      dir={dir}
+      className={`${CARD_GAP_CLASS} shrink-0 self-start w-[82vw] max-w-[340px] sm:w-[320px] min-h-[168px] flex flex-col rounded-[18px] bg-gray-50/80 border border-gray-200/80 p-3.5 ${shadow ? "shadow-[0_2px_10px_rgba(16,24,40,0.05)]" : ""}`}
     >
-      <header className="flex items-start gap-3">
+      {/* 1 — avatar, name, and the date directly beneath the name */}
+      <header className="flex items-center gap-2.5">
         <Avatar name={name} src={item.avatarUrl || item.authorAvatar || null} />
         <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-1.5">
-            <p className="text-sm font-bold text-gray-900 truncate">{name}</p>
-            {item.isVerified && (
-              <BadgeCheck size={15} className="text-blue-500 shrink-0" aria-label="verified" />
-            )}
-          </div>
+          <p className="text-sm font-bold text-gray-900 truncate leading-tight">{name}</p>
           {dateLabel && (
             <time
               className="block text-[11px] text-gray-400 mt-0.5"
@@ -113,11 +131,19 @@ function ReviewCard({ item, shadow, duplicate = false, locale = "ar" }) {
             </time>
           )}
         </div>
-        <Stars value={item.rating || 0} />
       </header>
 
+      {/* 2 — stars, with the verified badge beside them */}
+      <div className="flex items-center gap-1.5 mt-2.5">
+        <Stars value={item.rating || 0} />
+        {item.isVerified && (
+          <BadgeCheck size={14} className="text-blue-500 shrink-0" aria-label={t("feedback_verified")} />
+        )}
+      </div>
+
+      {/* 3 — the customer's own words, verbatim */}
       {text && (
-        <p className="text-[13px] leading-relaxed text-gray-600 mt-3 flex-1">
+        <p className="text-[13px] leading-relaxed text-gray-600 mt-2">
           {expanded || !long ? text : `${text.slice(0, TEXT_PREVIEW).trimEnd()}…`}
           {long && (
             <button
@@ -129,14 +155,15 @@ function ReviewCard({ item, shadow, duplicate = false, locale = "ar" }) {
               aria-hidden={duplicate || undefined}
               className="ms-1 text-[12px] font-bold text-blue-600 hover:text-blue-800 focus:outline-none focus:underline"
             >
-              {expanded ? "عرض أقل" : "عرض المزيد"}
+              {expanded ? t("feedback_show_less") : t("feedback_show_more")}
             </button>
           )}
         </p>
       )}
 
+      {/* 4 — photos, fixed-size thumbnails so the card width never changes */}
       {images.length > 0 && (
-        <div className="mt-3">
+        <div className="mt-2.5">
           {/* Reuses the existing feedback lightbox — no duplicate viewer logic. */}
           <ImageStrip images={images} />
         </div>
@@ -145,7 +172,7 @@ function ReviewCard({ item, shadow, duplicate = false, locale = "ar" }) {
   );
 }
 
-function MarqueeRow({ items, speed, rowIndex, animate, paused, shadow, pauseOnInteract, locale, onDiagnostics }) {
+function MarqueeRow({ items, speed, rowIndex, animate, paused, shadow, pauseOnInteract, onDiagnostics }) {
   const viewportRef = useRef(null);
   const groupRef = useRef(null);
   const trackRef = useRef(null);
@@ -230,7 +257,7 @@ function MarqueeRow({ items, speed, rowIndex, animate, paused, shadow, pauseOnIn
       <div dir="ltr" className="w-full overflow-x-auto overflow-y-hidden"
         style={{ direction: "ltr", scrollbarWidth: "none" }}>
         <div dir="ltr" style={{ direction: "ltr" }} className={trackBase}>
-          {items.map((it, i) => <ReviewCard key={it._id || it.id || i} item={it} shadow={shadow} locale={locale} />)}
+          {items.map((it, i) => <ReviewCard key={it._id || it.id || i} item={it} shadow={shadow} />)}
         </div>
       </div>
     );
@@ -252,7 +279,6 @@ function MarqueeRow({ items, speed, rowIndex, animate, paused, shadow, pauseOnIn
           item={it}
           shadow={shadow}
           duplicate={duplicate}
-          locale={locale}
         />
       ))}
     </div>
@@ -344,9 +370,6 @@ function MarqueeRow({ items, speed, rowIndex, animate, paused, shadow, pauseOnIn
 
 export default function FeedbackCarousel({ items = [], settings = null }) {
   const cfg = normalizeCarouselSettings(settings);
-  // Reuse the site's own language for relative dates - nothing hardcoded.
-  const { language } = useLanguage() || {};
-  const locale = language || "ar";
   const [reduced, setReduced] = useState(false);
   const [tabHidden, setTabHidden] = useState(false);
 
@@ -385,7 +408,6 @@ export default function FeedbackCarousel({ items = [], settings = null }) {
             animate={shouldAnimate({ cardCount: repeatToFill(rowItems).length, reducedMotion: reduced })}
             paused={tabHidden}
             pauseOnInteract={cfg.pauseOnInteract}
-            locale={locale}
           />
         ))}
       </div>

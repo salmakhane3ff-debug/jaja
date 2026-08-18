@@ -68,6 +68,10 @@ export async function getPublicFeedback({ productId = null, featuredOnly = false
       type:        true,
       rating:      true,
       authorName:  true,
+      // The admin "Verify" action writes this flag; the storefront card renders
+      // the blue badge from it. Omitting it here made every public review look
+      // unverified no matter what the admin had set.
+      isVerified:  true,
       textContent: true,
       mediaUrl:    true,
       voiceUrl:    true,

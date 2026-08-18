@@ -25,11 +25,18 @@ import {
   resolveProductFeedbackSource, feedbackFilterProductId,
   DEFAULT_PRODUCT_FEEDBACK_SOURCE,
 } from "../src/lib/feedbackDisplay.js";
+import { relativeDateLabel, resolveReviewDate } from "../src/lib/feedbackDate.js";
 
 let pass = 0, fail = 0;
 const ok = (n, c) => { if (c) { pass++; console.log("  PASS ", n); } else { fail++; console.log("  FAIL ", n); } };
 
 const CAR     = readFileSync("src/components/FeedbackCarousel.jsx", "utf8");
+const SERVICE = readFileSync("src/lib/services/feedbackService.js", "utf8");
+const ADMIN   = readFileSync("src/app/admin/feedback/page.jsx", "utf8");
+const SCHEMA  = readFileSync("prisma/schema.prisma", "utf8");
+const CTX     = readFileSync("src/context/LanguageContext.jsx", "utf8");
+const AR      = JSON.parse(readFileSync("src/locales/ar.json", "utf8"));
+const FR      = JSON.parse(readFileSync("src/locales/fr.json", "utf8"));
 const SECTION = readFileSync("src/components/FeedbackSection.jsx", "utf8");
 // The MarqueeRow component only — the parent must not be searched for row state.
 const ROW     = CAR.slice(CAR.indexOf("function MarqueeRow"), CAR.indexOf("export default function FeedbackCarousel"));
@@ -246,15 +253,23 @@ console.log("7) THE REDESIGNED CARD:");
     /shadow \? "shadow-\[0_2px_10px_rgba\(16,24,40,0\.05\)\]" : ""/.test(CAR));
   ok("consistent card width across every card",
     /w-\[82vw\] max-w-\[340px\] sm:w-\[320px\]/.test(CAR));
-  ok("a stable minimum height keeps the row even", /min-h-\[186px\]/.test(CAR));
+  ok("a stable minimum height keeps the row even", /min-h-\[168px\]/.test(CAR));
   ok("cards never shrink or stretch", /shrink-0 self-start/.test(CAR));
-  ok("header = avatar, then name/date block, then stars",
-    /<Avatar name=\{name\}[\s\S]{0,900}<Stars value=\{item\.rating \|\| 0\} \/>/.test(CAR));
+  // Reference structure: header (avatar + name + date) THEN a stars row.
+  const header = CAR.slice(CAR.indexOf("<header className="), CAR.indexOf("</header>"));
+  ok("row 1 of the header is the avatar", /<Avatar name=\{name\}/.test(header));
+  ok("the name sits beside the avatar", /<p className="text-sm font-bold text-gray-900/.test(header));
+  ok("the date sits DIRECTLY under the name, inside the header",
+    /<time/.test(header) && header.indexOf("<p className=\"text-sm font-bold") < header.indexOf("<time"));
+  ok("the stars are NOT in the header any more (they get their own line)",
+    !/<Stars/.test(header));
+  ok("the stars row comes after the header",
+    CAR.indexOf("</header>") < CAR.indexOf("<Stars value={item.rating || 0} />"));
   ok("the customer name is bold and dark", /text-sm font-bold text-gray-900/.test(CAR));
   ok("the date sits BENEATH the name in muted gray",
     /<time[\s\S]{0,120}text-\[11px\] text-gray-400/.test(CAR));
   ok("5 stars, yellow when filled", /\[1, 2, 3, 4, 5\]/.test(CAR) && /text-yellow-400 fill-yellow-400/.test(CAR));
-  ok("a small BLUE verified badge", /<BadgeCheck size=\{15\} className="text-blue-500/.test(CAR));
+  ok("a small BLUE verified badge", /<BadgeCheck size=\{14\} className="text-blue-500/.test(CAR));
   ok("the badge only renders for actually-verified reviews", /\{item\.isVerified && \(/.test(CAR));
   ok("NO fake Google branding anywhere", !/google/i.test(CAR) && !/\bG\b.*logo/i.test(CAR));
 
@@ -266,7 +281,8 @@ console.log("7) THE REDESIGNED CARD:");
   ok("avatars are lazy-loaded", /<img src=\{src\}[\s\S]{0,80}loading="lazy"/.test(CAR));
 
   ok("long text is clamped to a preview", /const long = text\.length > TEXT_PREVIEW/.test(CAR));
-  ok('the expander is the localized "عرض المزيد" toggle', /عرض المزيد/.test(CAR) && /عرض أقل/.test(CAR));
+  ok("the expander is localized through the translation system, not a literal",
+    /\{expanded \? t\("feedback_show_less"\) : t\("feedback_show_more"\)\}/.test(CAR));
   ok("expanding cannot break the geometry (height grows, width is fixed)",
     /flex flex-col/.test(CAR) && /w-\[82vw\] max-w-\[340px\]/.test(CAR));
   ok("the duplicate group's expander stays out of the tab order",
@@ -274,7 +290,7 @@ console.log("7) THE REDESIGNED CARD:");
   ok("a TEXT-ONLY review renders (text block is conditional, images are optional)",
     /\{text && \(/.test(CAR) && /\{images\.length > 0 && \(/.test(CAR));
   ok("an IMAGE review renders a compact strip below the text",
-    /<div className="mt-3">[\s\S]{0,160}<ImageStrip images=\{images\} \/>/.test(CAR));
+    /<div className="mt-2\.5">[\s\S]{0,160}<ImageStrip images=\{images\} \/>/.test(CAR));
   ok("images cannot change the card width (fixed-size thumbnails)",
     /w-16 h-16 rounded-lg overflow-hidden/.test(SECTION));
   ok("thumbnails are lazy-loaded", /<img src=\{img\} alt="" loading="lazy"/.test(SECTION));
@@ -347,6 +363,113 @@ console.log("9) OUT-OF-SCOPE SYSTEMS ARE UNTOUCHED:");
     !/submitFeedback|approve|reject|isFeatured|prisma/.test(CAR));
   ok("reduced-motion users still get a static, scrollable list",
     /if \(!animate\)/.test(ROW) && /overflow-x-auto/.test(ROW));
+}
+
+// -----------------------------------------------------------------------------
+console.log("10) VERIFIED BADGE - one field, end to end:");
+{
+  // The field the ADMIN actually writes. Named, not assumed.
+  ok("the admin verify action writes `isVerified`",
+    /action: "verify", isVerified: !current/.test(ADMIN));
+  ok("the admin edit form writes the SAME field", /isVerified:\s*form\.isVerified/.test(ADMIN));
+  ok("the admin list renders its badge from the SAME field", /\{item\.isVerified && \(/.test(ADMIN));
+  ok("`isVerified` is the only verification column in the schema",
+    /isVerified\s+Boolean\s+@default\(false\)/.test(SCHEMA) &&
+    (SCHEMA.match(/verified/gi) || []).length === 1);
+  ok("no SECOND verified field was invented",
+    !/verifiedBadge|isCustomerVerified|showVerified/.test(CAR + SERVICE + SCHEMA));
+
+  // THE BUG: the perf `select` in getPublicFeedback stripped it, so the public
+  // payload never carried the flag and every card looked unverified.
+  const publicSelect = SERVICE.slice(
+    SERVICE.indexOf("const rows = await prisma.feedback.findMany"),
+    SERVICE.indexOf("orderBy: [{ isFeatured: 'desc' }"));
+  ok("the PUBLIC select now ships isVerified", /isVerified:\s*true/.test(publicSelect));
+  ok("it still ships everything else the card needs",
+    ["rating", "authorName", "textContent", "images", "createdAt", "reviewDate"]
+      .every((f) => new RegExp(f + ":\\s*true").test(publicSelect)));
+  ok("the admin read is unaffected (it uses include, not select)",
+    /include:\s+\{ product: \{ select: \{ id: true, title: true \} \} \}/.test(SERVICE));
+  ok("verifyFeedback still toggles the same column",
+    /data:\s+\{ isVerified: Boolean\(isVerified\) \}/.test(SERVICE));
+  ok("nothing fakes verification client-side", !/isVerified:\s*true/.test(CAR));
+
+  // The rendering condition, exercised on both branches.
+  const renders = (item) => Boolean(item.isVerified);
+  ok("a VERIFIED review renders the badge", renders({ isVerified: true }) === true);
+  ok("a NON-verified review renders no badge", renders({ isVerified: false }) === false);
+  ok("a review missing the field renders no badge", renders({}) === false);
+  ok("the card gates the badge on exactly that field", /\{item\.isVerified && \(/.test(CAR));
+  ok("the badge reuses the project's existing blue BadgeCheck icon",
+    /<BadgeCheck size=\{14\} className="text-blue-500 shrink-0"/.test(CAR) &&
+    /BadgeCheck size=\{14\} className="text-blue-500/.test(SECTION));
+  ok("the badge sits beside the stars, not beside the name",
+    CAR.indexOf("<Stars value={item.rating || 0} />") < CAR.indexOf("{item.isVerified && (") &&
+    CAR.indexOf("{item.isVerified && (") < CAR.indexOf("{text && ("));
+}
+
+// -----------------------------------------------------------------------------
+console.log("11) LOCALIZATION - the carousel follows the storefront language:");
+{
+  // THE BUG: the context exposes `lang`; the card destructured `language`,
+  // which was always undefined, so the locale silently fell back to "ar".
+  ok("LanguageContext exposes `lang` (not `language`)",
+    /value=\{\{ lang, setLang, t, dir, formatPrice, mounted \}\}/.test(CTX));
+  ok("the card reads `lang` from the context", /const \{ t, lang, dir \} = useLanguage\(\)/.test(CAR));
+  ok("the stale `language` destructure is gone", !/const \{ language \}/.test(CAR));
+  ok("the active locale is what reaches Intl", /relativeDateLabel\(date, \{ locale \}\)/.test(CAR));
+  ok("the card direction follows the site language", /dir=\{dir\}/.test(CAR));
+
+  const NOW = new Date("2026-08-18T12:00:00Z");
+  const hoursAgo = (h) => new Date(NOW.getTime() - h * 3_600_000);
+  const daysAgo  = (d) => new Date(NOW.getTime() - d * 86_400_000);
+
+  const fr21h = relativeDateLabel(hoursAgo(21), { locale: "fr", now: NOW });
+  const fr2m  = relativeDateLabel(daysAgo(61),  { locale: "fr", now: NOW });
+  const fr1m  = relativeDateLabel(daysAgo(31),  { locale: "fr", now: NOW });
+  const fr1y  = relativeDateLabel(daysAgo(400), { locale: "fr", now: NOW });
+  ok("fr 21h -> " + fr21h, /il y a 21 heures/.test(fr21h));
+  ok("fr 2mo -> " + fr2m,  /il y a 2 mois/.test(fr2m));
+  ok("fr 1mo -> " + fr1m,  /mois dernier/.test(fr1m));
+  ok("fr 1yr -> " + fr1y,  /an dernier|année dernière/.test(fr1y));
+  ok("NO Arabic characters leak into French labels",
+    ![fr21h, fr2m, fr1m, fr1y].some((x) => /[؀-ۿ]/.test(x)));
+
+  const ar21h = relativeDateLabel(hoursAgo(21), { locale: "ar", now: NOW });
+  const ar2m  = relativeDateLabel(daysAgo(61),  { locale: "ar", now: NOW });
+  const ar1m  = relativeDateLabel(daysAgo(31),  { locale: "ar", now: NOW });
+  const ar1y  = relativeDateLabel(daysAgo(400), { locale: "ar", now: NOW });
+  ok("ar 21h -> " + ar21h, /21/.test(ar21h) && /[؀-ۿ]/.test(ar21h));
+  ok("ar 2mo -> " + ar2m,  /[؀-ۿ]/.test(ar2m));
+  ok("ar 1mo -> " + ar1m,  /الشهر الماضي/.test(ar1m));
+  ok("ar 1yr -> " + ar1y,  /السنة الماضية/.test(ar1y));
+  ok("fr and ar really differ for the same instant", fr2m !== ar2m && fr21h !== ar21h);
+
+  ok("show-more/less come from the translation files, not literals",
+    !/عرض المزيد|عرض أقل|Voir plus|Voir moins/.test(CAR));
+  ok("both locales define feedback_show_more",
+    Boolean(AR.feedback_show_more) && Boolean(FR.feedback_show_more));
+  ok("both locales define feedback_show_less",
+    Boolean(AR.feedback_show_less) && Boolean(FR.feedback_show_less));
+  ok("fr show-more is French -> " + FR.feedback_show_more, !/[؀-ۿ]/.test(FR.feedback_show_more));
+  ok("ar show-more is Arabic -> " + AR.feedback_show_more, /[؀-ۿ]/.test(AR.feedback_show_more));
+  ok("the verified label is translated in both locales",
+    Boolean(AR.feedback_verified) && Boolean(FR.feedback_verified) &&
+    !/[؀-ۿ]/.test(FR.feedback_verified) && /[؀-ۿ]/.test(AR.feedback_verified));
+  ok("the anonymous-author fallback is translated too", /t\("feedback_anonymous"\)/.test(CAR));
+
+  // The customer's own words must be rendered verbatim.
+  ok("the review text is rendered raw, never through t()",
+    /const text = item\.textContent \|\| item\.text \|\| "";/.test(CAR) &&
+    !/t\(text\)|t\(item\.textContent\)|translate\(/.test(CAR));
+  ok("only the truncation ellipsis ever touches the text",
+    /\{expanded \|\| !long \? text : `\$\{text\.slice\(0, TEXT_PREVIEW\)\.trimEnd\(\)\}…`\}/.test(CAR));
+  ok("the author name is rendered raw", /const name = item\.authorName \|\| item\.name \|\|/.test(CAR));
+  ok("the date is the ONLY value derived from a locale",
+    (CAR.match(/relativeDateLabel\(/g) || []).length === 1);
+  ok("resolveReviewDate still drives the label, unchanged",
+    resolveReviewDate({ createdAt: "2026-06-18T12:00:00.000Z" }) !== null &&
+    /const date = resolveReviewDate\(item\)/.test(CAR));
 }
 
 console.log(`\nRESULT: ${pass} passed, ${fail} failed`);

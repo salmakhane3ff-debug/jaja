@@ -47,7 +47,11 @@ console.log("1) DIRECTION — marquee geometry is explicitly LTR at every level:
   ok("every overflow container in the file is explicitly ltr",
     (SRC.match(/overflow-hidden|overflow-x-auto/g) || []).length ===
     (SRC.match(/dir="ltr"[^>]*(overflow-hidden|overflow-x-auto)|(overflow-hidden|overflow-x-auto)[^>]*dir="ltr"/g) || []).length);
-  ok("only the CARD content stays rtl", /<article\s+dir="rtl"/.test(SRC) || /dir="rtl"/.test(SRC));
+  // The card's own direction now follows the storefront language (rtl for ar,
+  // ltr for fr). That is CONTENT only - the gap is a physical margin, so the
+  // track geometry is identical either way.
+  ok("only the CARD direction follows the language; geometry does not",
+    /<article\s+dir=\{dir\}/.test(SRC) && !/dir="rtl"/.test(SRC));
   ok("the gap is a PHYSICAL margin, not a logical one", CARD_GAP_CLASS.startsWith("mr-") && !CARD_GAP_CLASS.includes("me-"));
 }
 
