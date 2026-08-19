@@ -5,7 +5,7 @@ import { useSearchParams } from "next/navigation";
 import Link from "next/link";
 import dynamic from "next/dynamic";
 import { Input, Select, SelectItem, Textarea, Switch } from "@heroui/react";
-import { ArrowLeft, Package, Plus, X, Save, ExternalLink, AlertTriangle } from "lucide-react";
+import { ArrowLeft, Package, Plus, X, Save, ExternalLink, AlertTriangle, Link2, Loader2, Check, CircleAlert } from "lucide-react";
 import CustomButton from "@/components/block/CustomButton";
 import ImageSelector from "@/components/block/ImageSelector";
 import { useStoreCurrency } from "@/hooks/useStoreCurrency";
@@ -359,6 +359,184 @@ function detectCollection(title, collections) {
   return electronic || null;
 }
 
+// ── Import from URL ──────────────────────────────────────────────────────────
+/**
+ * Compact importer for ONE manually pasted marketplace listing URL.
+ *
+ * It only POSTs to /api/admin/products/import-url and hands the result back to
+ * the parent form. It never calls /api/products, so importing can never publish
+ * or even create a product — the admin still reviews every field and presses
+ * Save. A failure here is contained: the form stays fully usable.
+ */
+function ImportFromUrl({ storeCurrency, currencyLoading, onImported, categoryDetected }) {
+  const [url, setUrl]       = useState("");
+  const [state, setState]   = useState("idle"); // idle | importing | success | partial | error
+  const [steps, setSteps]   = useState([]);     // [{ label, tone }]
+  const [error, setError]   = useState("");
+  const [notes, setNotes]   = useState([]);     // things the admin must fix by hand
+
+  const busy = state === "importing";
+
+  const runImport = async () => {
+    const target = url.trim();
+    if (!target || busy) return;
+
+    setState("importing");
+    setError("");
+    setNotes([]);
+    setSteps([{ label: "Reading product…", tone: "busy" }]);
+
+    try {
+      const res = await fetch("/api/admin/products/import-url", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url: target }),
+      });
+
+      const data = await res.json().catch(() => ({}));
+
+      if (!res.ok) {
+        setState("error");
+        setSteps([]);
+        setError(data?.error || "Could not read this listing.");
+        return;
+      }
+
+      const next = [];
+      const manual = [];
+
+      // Title
+      if (data.title) next.push({ label: `Found title: ${data.title}`, tone: "ok" });
+      else { next.push({ label: "No title found", tone: "warn" }); manual.push("Title could not be read — enter it manually."); }
+
+      // Price: only applied when the listing currency matches the store currency.
+      // There is no conversion mechanism in this store, so a mismatch is shown
+      // to the admin rather than silently converted.
+      let priceForForm = null;
+      if (data.price?.amount != null && data.price?.currency) {
+        if (!currencyLoading && data.price.currency === storeCurrency) {
+          priceForForm = data.price.amount;
+          next.push({ label: `Found price: ${data.price.amount} ${data.price.currency}`, tone: "ok" });
+        } else {
+          next.push({ label: `Price found in ${data.price.currency}, not applied`, tone: "warn" });
+          manual.push(
+            `Listing price is ${data.price.amount} ${data.price.currency} but this store prices in ${storeCurrency || "—"}. ` +
+            "No conversion was applied — enter the price manually."
+          );
+        }
+      } else if (data.price?.amount != null) {
+        next.push({ label: "Price found without a currency, not applied", tone: "warn" });
+        manual.push(`Listing shows ${data.price.amount} but no currency — enter the price manually.`);
+      } else {
+        next.push({ label: "No price found", tone: "warn" });
+        manual.push("Price could not be read — enter it manually.");
+      }
+
+      // Images
+      const got = Array.isArray(data.images) ? data.images.length : 0;
+      const want = Number(data.imagesRequested) || 0;
+      if (got > 0) {
+        next.push({ label: `Imported ${got}/${want} images`, tone: got === want ? "ok" : "warn" });
+      } else if (want > 0) {
+        next.push({ label: `Imported 0/${want} images`, tone: "warn" });
+      } else {
+        next.push({ label: "No images found", tone: "warn" });
+      }
+      if (want > got) manual.push(`${want - got} image(s) could not be imported — add them manually if needed.`);
+
+      next.push({ label: "Detecting category…", tone: "busy" });
+      setSteps(next);
+
+      onImported({ title: data.title, priceForForm, images: data.images || [] });
+
+      setNotes(manual);
+      setState(data.partial || manual.length > 0 ? "partial" : "success");
+    } catch {
+      setState("error");
+      setSteps([]);
+      setError("Could not read this listing.");
+    }
+  };
+
+  // The LAST step mirrors the form's own category detector once it has run.
+  const shownSteps = steps.map((st) =>
+    st.label.startsWith("Detecting category")
+      ? (categoryDetected
+          ? { label: `Category detected: ${categoryDetected}`, tone: "ok" }
+          : st)
+      : st
+  );
+  const ready = state === "success" || state === "partial";
+
+  return (
+    <div className="bg-white rounded-xl p-5 mb-6 border border-dashed border-gray-300">
+      <div className="flex items-center gap-2 mb-1">
+        <Link2 className="w-4 h-4 text-gray-500" />
+        <h2 className="text-base font-semibold text-gray-900">Import from URL</h2>
+      </div>
+      <p className="text-xs text-gray-500 mb-3">
+        Paste one Mercari listing URL. Title, price and images are imported for review —
+        nothing is saved or published until you press Save Product.
+      </p>
+
+      <div className="flex flex-col sm:flex-row gap-2">
+        <input
+          type="url"
+          value={url}
+          disabled={busy}
+          onChange={(e) => setUrl(e.target.value)}
+          onKeyDown={(e) => { if (e.key === "Enter") { e.preventDefault(); runImport(); } }}
+          placeholder="https://www.mercari.com/..."
+          className="flex-1 border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 disabled:bg-gray-50"
+        />
+        <button
+          type="button"
+          onClick={runImport}
+          disabled={busy || !url.trim()}
+          className="inline-flex items-center justify-center gap-2 px-5 py-2 rounded-lg bg-gray-900 text-white text-sm font-medium hover:bg-gray-800 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+        >
+          {busy ? <Loader2 className="w-4 h-4 animate-spin" /> : null}
+          {busy ? "Importing…" : "Import"}
+        </button>
+      </div>
+
+      {shownSteps.length > 0 && (
+        <ul className="mt-3 space-y-1">
+          {shownSteps.map((st, i) => (
+            <li key={i} className="flex items-center gap-2 text-xs">
+              {st.tone === "busy"
+                ? <Loader2 className="w-3.5 h-3.5 text-gray-400 animate-spin shrink-0" />
+                : st.tone === "ok"
+                  ? <Check className="w-3.5 h-3.5 text-green-600 shrink-0" />
+                  : <CircleAlert className="w-3.5 h-3.5 text-amber-500 shrink-0" />}
+              <span className={st.tone === "warn" ? "text-amber-700" : "text-gray-600"}>{st.label}</span>
+            </li>
+          ))}
+        </ul>
+      )}
+
+      {ready && (
+        <p className={`mt-3 text-xs font-medium ${state === "partial" ? "text-amber-700" : "text-green-700"}`}>
+          {state === "partial" ? "Partial import — ready for review." : "Import successful — ready for review."}
+        </p>
+      )}
+
+      {notes.length > 0 && (
+        <ul className="mt-2 space-y-1 text-xs text-amber-700 list-disc list-inside">
+          {notes.map((n, i) => <li key={i}>{n}</li>)}
+        </ul>
+      )}
+
+      {state === "error" && (
+        <p className="mt-3 flex items-center gap-2 text-xs font-medium text-red-600">
+          <CircleAlert className="w-3.5 h-3.5 shrink-0" />
+          {error}
+        </p>
+      )}
+    </div>
+  );
+}
+
 function ProductForm() {
   const searchParams = useSearchParams();
 
@@ -509,6 +687,26 @@ function ProductForm() {
     fetchProductById();
   }, [isUpdate, productId]);
 
+  /**
+   * Apply an imported listing to the EXISTING form state.
+   *
+   * Deliberately additive and non-destructive: images are appended to whatever
+   * the admin already picked, and nothing is saved. Setting `title` here is
+   * also what re-runs the EXISTING category detector — the debounced effect
+   * above watches productData.title, so an imported product goes through the
+   * exact same detectCollection() path as a typed one.
+   */
+  const applyImportedProduct = useCallback(({ title, priceForForm, images }) => {
+    setProductData((prev) => ({
+      ...prev,
+      title: title || prev.title,
+      ...(priceForForm != null ? { salePrice: String(priceForForm) } : {}),
+    }));
+    if (Array.isArray(images) && images.length > 0) {
+      setSelectedImages((prev) => [...prev, ...images.filter((u) => u && !prev.includes(u))]);
+    }
+  }, []);
+
   const handleCategoryChange = (keys) => {
     setCategories(new Set(keys));
     setAutoDetected(null); // admin overrode — clear the badge
@@ -622,6 +820,17 @@ function ProductForm() {
           )}
         </div>
       </div>
+
+      {/* Import from URL — creation only; editing an existing product keeps the
+          form exactly as it was. */}
+      {!isUpdate && (
+        <ImportFromUrl
+          storeCurrency={currencyCode}
+          currencyLoading={currencyLoading}
+          onImported={applyImportedProduct}
+          categoryDetected={autoDetected}
+        />
+      )}
 
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Main Content - 2/3 width */}

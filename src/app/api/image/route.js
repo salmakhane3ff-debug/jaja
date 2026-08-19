@@ -11,15 +11,13 @@
  * ─────────────────────────────────────────────────────────────────────────────
  */
 
-import path from 'path';
 import prisma from '@/lib/prisma';
-import { getWatermarkSettings, applyWatermark } from '@/lib/services/watermarkService.js';
 import { withAdminAuth } from '@/lib/middleware/withAdminAuth';
-import { validateImage, validateVideo } from '@/lib/uploadSecurity';
 import { rateLimit } from '@/lib/rateLimit';
-import { optimizeImageBuffer } from '@/lib/imageOptimize';
-import { writeThumbnails }    from '@/lib/imageThumbnails';
-import { saveMedia }          from '@/lib/cloudinary';
+// The ingest pipeline (validate -> optimize -> watermark -> saveMedia ->
+// thumbnails -> images row) lives in one service so the product-URL importer
+// reuses it instead of growing a second uploader.
+import { ingestImageBuffer, mapImageRow } from '@/lib/services/imageIngestService.js';
 
 // ── Route segment config ──────────────────────────────────────────────────────
 // Raise Next.js body size limit to 200 MB so large video uploads aren't
@@ -30,11 +28,6 @@ export const maxDuration = 120; // seconds — allow time for large uploads
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-function mapImage(row) {
-  if (!row) return null;
-  return { _id: row.id, name: row.name, url: row.url, createdAt: row.createdAt };
-}
-
 // ── GET → list all images ────────────────────────────────────────────────────
 
 export const GET = withAdminAuth(async () => {
@@ -42,7 +35,7 @@ export const GET = withAdminAuth(async () => {
     const rows = await prisma.image.findMany({
       orderBy: { createdAt: 'desc' },
     });
-    return Response.json(rows.map(mapImage));
+    return Response.json(rows.map(mapImageRow));
   } catch (err) {
     console.error('[/api/image GET]', err);
     return Response.json({ error: 'Server error' }, { status: 500 });
@@ -62,59 +55,16 @@ export const POST = withAdminAuth(async (req) => {
       return Response.json({ error: 'No file provided' }, { status: 400 });
     }
 
-    let buffer = Buffer.from(await file.arrayBuffer());
-
-    // ── Security: validate extension + magic bytes + size ─────────────────────
+    const buffer = Buffer.from(await file.arrayBuffer());
     const isVideo = file.type?.startsWith('video/') ||
       /\.(mp4|webm|mov|ogg)$/i.test(file.name);
-    const validation = isVideo
-      ? validateVideo(buffer, file.name)
-      : validateImage(buffer, file.name);
-    if (!validation.ok) {
-      return Response.json({ error: validation.error }, { status: validation.status });
+
+    const res = await ingestImageBuffer(buffer, { originalName: file.name, isVideo });
+    if (!res.ok) {
+      return Response.json({ error: res.error }, { status: res.status });
     }
 
-    const safeName  = file.name.replace(/[^a-zA-Z0-9._-]/g, '-');
-    const fileName  = `${Date.now()}-${safeName}`;
-
-    // Image-only post-processing (skip videos entirely — never re-encode video).
-    if (!isVideo) {
-      // PERF: compress + resize BEFORE watermarking so the watermark is applied
-      // to the final dimensions and not wasted on pixels we're about to drop.
-      buffer = await optimizeImageBuffer(buffer, file.name);
-
-      try {
-        const wm = await getWatermarkSettings();
-        if (wm?.isEnabled) buffer = await applyWatermark(buffer, wm);
-      } catch (wmErr) {
-        console.warn('[watermark] Skipped:', wmErr.message);
-      }
-    }
-
-    // Store via the shared media service (local by default; Cloudinary only when
-    // MEDIA_STORAGE=cloudinary). Returns a URL string either way.
-    const saved = await saveMedia(buffer, {
-      filename:     fileName,
-      folder:       'shopgold/uploads',
-      resourceType: isVideo ? 'video' : 'image',
-    });
-
-    // Local storage only: generate sm/md/lg WebP thumbnails next to the original
-    // (fire-and-forget). Cloudinary serves responsive variants via transformations,
-    // wired in a later phase after migration is verified.
-    if (saved.storage === 'local' && !isVideo) {
-      const uploadDir = path.join(process.cwd(), 'public', 'uploads');
-      writeThumbnails(buffer, fileName, uploadDir).catch((e) =>
-        console.warn('[thumbnails] failed for', fileName, e.message)
-      );
-    }
-
-    const url = saved.url;
-    const row = await prisma.image.create({
-      data: { name: file.name, url },
-    });
-
-    return Response.json(mapImage(row), { status: 201 });
+    return Response.json(res.record, { status: 201 });
   } catch (err) {
     console.error('[/api/image POST]', err);
     return Response.json({ error: 'Upload failed' }, { status: 500 });
