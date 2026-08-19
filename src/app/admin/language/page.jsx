@@ -4,6 +4,9 @@ import { useState, useEffect } from "react";
 import { Languages, Globe, Save, RefreshCw, ChevronDown, ChevronUp, CheckCircle } from "lucide-react";
 import ar from "@/locales/ar.json";
 import fr from "@/locales/fr.json";
+import {
+  LANGUAGE_SETTINGS_TYPE, FALLBACK_LANG, readDefaultLang, defaultLangPayload,
+} from "@/lib/languageSettings";
 
 const LANG_META = {
   ar: { label: "العربية", dir: "rtl", flag: "🇲🇦" },
@@ -18,19 +21,23 @@ export default function AdminLanguagePage() {
   const [expandedGroups, setExpandedGroups] = useState({});
   const [saved, setSaved] = useState(false);
 
-  // Default language state
-  const [defaultLang, setDefaultLang] = useState("ar");
+  // The CONFIGURED store default — server state, not this browser's language.
+  // It is intentionally never seeded from localStorage: this control shows what
+  // new visitors get, which is configuration, not the admin's own preference.
+  const [defaultLang, setDefaultLang] = useState(FALLBACK_LANG);
   const [defaultLangSaved, setDefaultLangSaved] = useState(false);
   const [defaultLangSaving, setDefaultLangSaving] = useState(false);
   const [defaultLangLoading, setDefaultLangLoading] = useState(true);
+  const [defaultLangError, setDefaultLangError] = useState("");
 
   useEffect(() => {
-    fetch("/api/setting?type=language-settings")
+    // cache: "no-store" — the admin must see what is actually persisted, never a
+    // stale copy of the value it just replaced.
+    fetch(`/api/setting?type=${LANGUAGE_SETTINGS_TYPE}`, { cache: "no-store" })
       .then((r) => (r.ok ? r.json() : null))
       .then((data) => {
-        if (data?.defaultLang && ["ar", "fr"].includes(data.defaultLang)) {
-          setDefaultLang(data.defaultLang);
-        }
+        const saved = readDefaultLang(data);
+        if (saved) setDefaultLang(saved);
       })
       .catch(() => {})
       .finally(() => setDefaultLangLoading(false));
@@ -38,17 +45,33 @@ export default function AdminLanguagePage() {
 
   const handleSaveDefaultLang = async () => {
     setDefaultLangSaving(true);
+    setDefaultLangError("");
     try {
-      const res = await fetch("/api/setting?type=language-settings", {
+      // FLAT body. /api/setting persists the posted object AS the row's data, so
+      // a { type, value } wrapper would be stored as the settings themselves and
+      // defaultLang would never be found on read — that was the original bug.
+      const res = await fetch(`/api/setting?type=${LANGUAGE_SETTINGS_TYPE}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ type: "language-settings", value: { defaultLang } }),
+        body: JSON.stringify(defaultLangPayload(defaultLang)),
       });
-      if (res.ok) {
-        setDefaultLangSaved(true);
-        setTimeout(() => setDefaultLangSaved(false), 3000);
+
+      if (!res.ok) {
+        setDefaultLangError("Could not save the default language.");
+        setDefaultLangSaving(false);
+        return;
       }
-    } catch {}
+
+      // Trust what the server actually stored, not what we sent.
+      const body = await res.json().catch(() => null);
+      const persisted = readDefaultLang(body?.data);
+      if (persisted) setDefaultLang(persisted);
+
+      setDefaultLangSaved(true);
+      setTimeout(() => setDefaultLangSaved(false), 3000);
+    } catch {
+      setDefaultLangError("Could not save the default language.");
+    }
     setDefaultLangSaving(false);
   };
 
@@ -186,6 +209,9 @@ export default function AdminLanguagePage() {
                 <p className="text-xs text-green-600">
                   New visitors will now see the site in {LANG_META[defaultLang].label}.
                 </p>
+              )}
+              {defaultLangError && (
+                <p className="text-xs text-red-600">{defaultLangError}</p>
               )}
             </div>
           </div>

@@ -3,12 +3,16 @@
 import { createContext, useContext, useState, useEffect, useCallback } from "react";
 import ar from "@/locales/ar.json";
 import fr from "@/locales/fr.json";
+import {
+  LANGUAGE_SETTINGS_TYPE, FALLBACK_LANG, LANG_STORAGE_KEY,
+  normalizeLang, readDefaultLang,
+} from "@/lib/languageSettings";
 
 const translations = { ar, fr };
 
-const SUPPORTED_LANGS = ["ar", "fr"];
-const DEFAULT_LANG = "ar";
-const STORAGE_KEY = "store_lang";
+// Re-exported names kept local so the rest of this file reads unchanged.
+const DEFAULT_LANG = FALLBACK_LANG;
+const STORAGE_KEY = LANG_STORAGE_KEY;
 
 const LanguageContext = createContext(null);
 
@@ -27,30 +31,30 @@ export function LanguageProvider({ children }) {
   const [mounted, setMounted] = useState(false);
 
   useEffect(() => {
-    const fromDom = document.documentElement.getAttribute("data-lang");
-    if (fromDom && SUPPORTED_LANGS.includes(fromDom)) {
+    // The blocking <head> script only stamps data-lang when this browser HAS a
+    // stored preference, so this branch means "the visitor already chose".
+    const fromDom = normalizeLang(document.documentElement.getAttribute("data-lang"));
+    if (fromDom) {
       setLangState(fromDom);
       setMounted(true);
       return;
     }
 
     try {
-      const saved = localStorage.getItem(STORAGE_KEY);
-      if (saved && SUPPORTED_LANGS.includes(saved)) {
+      const saved = normalizeLang(localStorage.getItem(STORAGE_KEY));
+      if (saved) {
         setLangState(saved);
         setMounted(true);
         return;
       }
     } catch {}
 
-    // No stored user preference — fetch the admin-configured store default
-    fetch("/api/setting?type=language-settings")
+    // No stored visitor preference — use the admin-configured store default.
+    fetch(`/api/setting?type=${LANGUAGE_SETTINGS_TYPE}`)
       .then((r) => (r.ok ? r.json() : null))
       .then((data) => {
-        const adminDefault = data?.defaultLang;
-        if (adminDefault && SUPPORTED_LANGS.includes(adminDefault)) {
-          setLangState(adminDefault);
-        }
+        const storeDefault = readDefaultLang(data);
+        if (storeDefault) setLangState(storeDefault);
       })
       .catch(() => {})
       .finally(() => setMounted(true));
@@ -69,13 +73,23 @@ export function LanguageProvider({ children }) {
     document.documentElement.lang = lang;
     document.documentElement.dir = dir;
     document.documentElement.setAttribute("data-lang", lang);
-    localStorage.setItem(STORAGE_KEY, lang);
+    // NOT persisted here. This effect also runs for a language DERIVED from the
+    // store default (or from the fallback when the fetch fails), and writing
+    // that to localStorage would pin a visitor who never chose anything — after
+    // which a later change to the store default could never reach them.
+    // Only setLang(), an explicit visitor action, writes the preference.
   }, [lang, mounted]);
 
+  /**
+   * An EXPLICIT visitor choice — the only thing that writes the per-browser
+   * preference. Once written it outranks the store default for good, which is
+   * what "existing visitors keep their stored preference" means.
+   */
   const setLang = useCallback((newLang) => {
-    if (SUPPORTED_LANGS.includes(newLang)) {
-      setLangState(newLang);
-    }
+    const code = normalizeLang(newLang);
+    if (!code) return;
+    setLangState(code);
+    try { localStorage.setItem(STORAGE_KEY, code); } catch {}
   }, []);
 
   /**
