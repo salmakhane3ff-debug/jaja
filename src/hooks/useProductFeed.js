@@ -128,17 +128,41 @@ export function useProductFeed({
   }, [signature]);
 
   // ── Infinite scroll sentinel ────────────────────────────────────────────────
-  const sentinelRef = useRef(null);
-  useEffect(() => {
-    const el = sentinelRef.current;
+  // A CALLBACK ref, not useRef + useEffect([]).
+  //
+  // The sentinel element is rendered conditionally (`hasMore && !error`), so it
+  // unmounts whenever a list runs out — a search with few results, or one with
+  // none at all. A mount-time observer kept watching that detached node forever:
+  // the next search remounted a NEW node that nothing observed, so the feed
+  // stopped loading page 2 for the rest of the session and the page showed
+  // "93 results" above 16 cards. Observing from the ref callback re-binds every
+  // time the node changes, including the very first time it appears.
+  const observerRef = useRef(null);
+  const sentinelRef = useCallback((el) => {
+    observerRef.current?.disconnect();
+    observerRef.current = null;
     if (!el || typeof IntersectionObserver === "undefined") return;
     const io = new IntersectionObserver(
       (entries) => { if (entries[0]?.isIntersecting) loadMoreRef.current(); },
       { rootMargin: PREFETCH_MARGIN },
     );
     io.observe(el);
-    return () => io.disconnect();
+    observerRef.current = io;
   }, []);
+  useEffect(() => () => observerRef.current?.disconnect(), []);
+
+  // A page that finished loading while the sentinel was already on screen
+  // produces no new intersection event (the observer only fires on CHANGE), so
+  // re-check once each load settles. Without this the feed can stall after the
+  // first page even though the sentinel is visible.
+  useEffect(() => {
+    if (state.status !== "idle" || !state.hasMore) return;
+    const el = document.querySelector("[data-feed-sentinel]");
+    if (!el) return;
+    const rect = el.getBoundingClientRect();
+    const viewportH = window.innerHeight || 0;
+    if (rect.top <= viewportH + 600) loadMoreRef.current();
+  }, [state.status, state.hasMore, state.items.length]);
 
   // ── Back-navigation restore ─────────────────────────────────────────────────
   // Save on the way out, keyed by collection; restore once on the way back.

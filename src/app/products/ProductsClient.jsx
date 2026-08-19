@@ -43,7 +43,7 @@ export default function ProductsClient({
   // The feed owns the search text (still debounced 300ms, still server-side): on
   // back-navigation it must restore the query together with the list it produced.
   const {
-    items, total, hasMore, loading, error, sentinelRef, retry,
+    items, total, hasMore, loading, error, sentinelRef, retry, loadMore,
     query: searchQuery, setQuery: setSearchQuery, activeQuery,
   } = useProductFeed({
     initialItems: initialProducts,
@@ -163,7 +163,24 @@ export default function ProductsClient({
       </div>
 
       {/* Sentinel: crossing it (600px early) pulls the next page. */}
-      {hasMore && !error && <div ref={sentinelRef} aria-hidden="true" className="h-px w-full" />}
+      {hasMore && !error && (
+        <div ref={sentinelRef} data-feed-sentinel="" aria-hidden="true" className="h-px w-full" />
+      )}
+
+      {/* Explicit Load more — infinite scroll stays the primary path, but every
+          remaining match must be reachable even if the observer never fires
+          (sentinel already on screen, reduced motion, assistive tech). */}
+      {hasMore && !error && !loading && (
+        <div className="flex justify-center py-8">
+          <button
+            type="button"
+            onClick={loadMore}
+            className="inline-flex items-center gap-2 rounded-full border border-gray-200 bg-white px-6 py-2.5 text-sm font-medium text-gray-700 shadow-sm transition-colors hover:bg-gray-50"
+          >
+            {t("page_load_more")}
+          </button>
+        </div>
+      )}
 
       {/* Failure: keep everything already loaded on screen and offer a retry. */}
       {error && (

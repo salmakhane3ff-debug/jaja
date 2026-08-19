@@ -12,6 +12,7 @@ import { getStoreSettings } from './settingsService.js';
 import { destroyManyByUrls, diffRemovedUrls } from '../mediaCleanup.js';
 import { isMediaUrlReferenced } from '../mediaReferences.js';
 import { encodeCursor, decodeCursor, clampLimit, normalizeFilters } from '../productFeed.js';
+import { searchParam } from "../productSearch.js";
 
 // ── Known Prisma product columns ──────────────────────────────────────────────
 // This explicit whitelist prevents Prisma from throwing "Unknown argument"
@@ -166,6 +167,16 @@ export async function getAllProducts(statusFilter) {
 //
 // `description` is searched but never selected: the search bug fix costs nothing
 // in payload (it is ~2 KB/product and product cards never render it).
+//
+// SEARCH IS TOKEN-BASED, not phrase-based. $2 carries the escaped query tokens
+// joined by U+0001 (see lib/productSearch.js); the predicate reads "there is NO
+// token that is missing from the concatenated searchable text", i.e. EVERY token
+// must appear somewhere, in any order. The previous version bound the whole raw
+// query as one `%phrase%` pattern, so "iPhone Apple" could never match
+// "Apple iPhone 14" — the words are not contiguous in that order.
+//
+// One bound scalar (not an array) keeps the statement STATIC: a single prepared
+// plan, no driver-specific array encoding, and no user text in the SQL string.
 const FEED_COLUMNS = `
     id, title, "shortDescription",
     "regularPrice", "salePrice",
@@ -194,10 +205,11 @@ const FEED_WHERE = `
               WHERE lower(t.c) = lower($1::text))
            ELSE false
          END)
-     AND ($2::text IS NULL
-          OR title              ILIKE $2::text
-          OR "shortDescription" ILIKE $2::text
-          OR description        ILIKE $2::text)`;
+     AND ($2::text IS NULL OR NOT EXISTS (
+           SELECT 1
+             FROM unnest(string_to_array($2::text, E'\\x01')) AS tok
+            WHERE concat_ws(' ', title, "shortDescription", description)
+                  NOT ILIKE ('%' || tok || '%')))`;
 
 const FEED_SQL = `
   SELECT ${FEED_COLUMNS}
@@ -209,13 +221,6 @@ const FEED_SQL = `
    LIMIT $5::int`;
 
 const FEED_COUNT_SQL = `SELECT count(*)::int AS total FROM products ${FEED_WHERE}`;
-
-// Escape LIKE wildcards so a literal % or _ typed into search stays literal —
-// matching the substring semantics the old client-side .includes() filter had.
-function likeParam(q) {
-  if (!q) return null;
-  return `%${q.replace(/([\\%_])/g, '\\$1')}%`;
-}
 
 /**
  * One page of the Active product feed, newest first.
@@ -236,14 +241,14 @@ export async function getProductsPage({ cursor = null, limit, collection = null,
   const key     = decodeCursor(cursor); // tampered/stale cursor → first page, never an error
 
   const collectionParam = filters.collection;
-  const searchParam     = likeParam(filters.q);
+  const searchTokens    = searchParam(filters.q);   // null → search filter off
 
   const [rows, storeSettings, totalRows] = await Promise.all([
     // take size + 1: the extra row tells us hasMore without a second query.
     prisma.$queryRawUnsafe(
       FEED_SQL,
       collectionParam,
-      searchParam,
+      searchTokens,
       key ? new Date(key.createdAt) : null,
       key ? key.id : null,
       size + 1,
@@ -251,7 +256,7 @@ export async function getProductsPage({ cursor = null, limit, collection = null,
     getStoreSettings(),
     key
       ? Promise.resolve(null)
-      : prisma.$queryRawUnsafe(FEED_COUNT_SQL, collectionParam, searchParam),
+      : prisma.$queryRawUnsafe(FEED_COUNT_SQL, collectionParam, searchTokens),
   ]);
 
   const hasMore = rows.length > size;
