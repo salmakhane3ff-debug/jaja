@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useEffect, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Image from "next/image"; // PERF: Next.js Image for automatic WebP/AVIF + responsive sizing
 import { Swiper, SwiperSlide } from "swiper/react";
 import { Autoplay, Pagination, Navigation } from "swiper/modules";
@@ -8,6 +8,11 @@ import "swiper/css";
 import "swiper/css/pagination";
 import "swiper/css/navigation";
 import { Skeleton } from "@heroui/skeleton";
+import { useLanguage } from "@/context/LanguageContext";
+import {
+  activePromoMessages, repeatMessages, requiredPromoCopies,
+  promoDuration, PROMO_SPEED,
+} from "@/lib/promoMarquee";
 
 const COLLECTION       = "slider-image";
 const PROMO_COLLECTION = "promo-text";
@@ -30,7 +35,149 @@ function getYouTubeEmbedUrl(url) {
 
 // ── Component ─────────────────────────────────────────────────────────────────
 
+// ── Promotional text bar ──────────────────────────────────────────────────────
+/**
+ * Seamless promo marquee.
+ *
+ * GEOMETRY: group A holds every active message (repeated in WHOLE cycles only,
+ * when one pass is narrower than the viewport), group B is an exact aria-hidden
+ * duplicate placed immediately after it, and the track animates
+ *     translate3d(0 -> calc(-1 * var(--promo-distance)))
+ * where `--promo-distance` is group A's REAL rendered width, re-measured by a
+ * ResizeObserver. Translating by the measured width makes the seam exact, so no
+ * blank frame can appear at any point of the cycle. This replaces the previous
+ * Array(500) of identical spans translated by a hardcoded -100%.
+ *
+ * DIRECTION: the viewport, the track and both groups are explicitly LTR. This
+ * matters most on the VIEWPORT: an RTL overflow container anchors an oversized
+ * child to its RIGHT edge and overflows LEFTWARD, which on the Arabic storefront
+ * would put the tail of group B on screen at translateX(0) and walk the whole
+ * track out of view. Only each MESSAGE keeps the site's natural text direction.
+ */
+function PromoMarquee({ items, dir }) {
+  const viewportRef = useRef(null);
+  const groupRef    = useRef(null);
+  const [geo, setGeo] = useState({ distance: 0, copies: 1 });
+  const [pxPerSec, setPxPerSec] = useState(PROMO_SPEED.desktop);
+  // Per-bar interaction state. Pause is ONLY animation-play-state, so releasing
+  // resumes from the exact position — no timer, no reset, no rebuild.
+  const [interacting, setInteracting] = useState(false);
+
+  const messages = useMemo(() => activePromoMessages(items), [items]);
+  const group    = useMemo(() => repeatMessages(messages, geo.copies), [messages, geo.copies]);
+
+  // Desktop stays slow, mobile runs faster.
+  useEffect(() => {
+    const mq = window.matchMedia?.("(max-width: 768px)");
+    const apply = () => setPxPerSec(mq?.matches ? PROMO_SPEED.mobile : PROMO_SPEED.desktop);
+    apply();
+    mq?.addEventListener?.("change", apply);
+    return () => mq?.removeEventListener?.("change", apply);
+  }, []);
+
+  useEffect(() => {
+    const vp = viewportRef.current;
+    const gp = groupRef.current;
+    if (!vp || !gp || messages.length === 0) return;
+
+    const measure = () => {
+      const viewportW = vp.clientWidth || 0;
+      const groupW    = gp.getBoundingClientRect().width;
+
+      setGeo((prev) => {
+        const cycleW = groupW / Math.max(1, prev.copies);
+        const want   = requiredPromoCopies(viewportW, cycleW);
+        // Grow-only: a wider group can never shrink the required count, so
+        // re-measuring cannot oscillate.
+        const copies = Math.max(prev.copies, want);
+        const widthChanged = Math.abs(prev.distance - groupW) > 1;
+        if (!widthChanged && copies === prev.copies) return prev;
+        return { distance: groupW, copies };
+      });
+    };
+
+    measure();
+    const ro = new ResizeObserver(measure);
+    ro.observe(vp);
+    ro.observe(gp);
+    if (document.fonts?.ready) document.fonts.ready.then(measure).catch(() => {});
+    return () => ro.disconnect();
+  }, [messages, geo.copies]);
+
+  const hold    = useCallback(() => setInteracting(true), []);
+  const release = useCallback(() => setInteracting(false), []);
+
+  if (messages.length === 0) return null;      // no Active promos -> no bar
+
+  const renderGroup = (duplicate) => (
+    <div
+      ref={duplicate ? undefined : groupRef}
+      dir="ltr"
+      style={{ direction: "ltr" }}
+      className="flex flex-row items-center w-max min-w-max flex-none"
+      aria-hidden={duplicate || undefined}
+    >
+      {group.map((m) => (
+        <span
+          key={`${duplicate ? "b" : "a"}-${m.key}`}
+          dir={dir}
+          className="text-lg font-bold mx-8 whitespace-nowrap shrink-0"
+        >
+          {m.text}
+        </span>
+      ))}
+    </div>
+  );
+
+  const durationSec = promoDuration(geo.distance, pxPerSec);
+
+  return (
+    <div className="bg-gradient-to-r from-red-500 to-pink-500 text-white py-3 mt-6 relative">
+      {/* The only element that clips the moving overflow — explicitly LTR. */}
+      <div
+        ref={viewportRef}
+        dir="ltr"
+        style={{ direction: "ltr" }}
+        className="w-full overflow-hidden"
+        onMouseEnter={hold}
+        onMouseLeave={release}
+        onPointerDown={hold}
+        onPointerUp={release}
+        onPointerCancel={release}
+      >
+        <div
+          dir="ltr"
+          className="flex flex-row items-center w-max min-w-max flex-none will-change-transform"
+          style={{
+            direction: "ltr",
+            "--promo-distance": `${geo.distance}px`,
+            // Wait for the first measurement so the bar never animates against a
+            // 0px distance (which would look frozen).
+            animation: geo.distance > 0 ? `promoMarquee ${durationSec}s linear infinite` : "none",
+            animationPlayState: interacting ? "paused" : "running",
+          }}
+        >
+          {renderGroup(false)}
+          {renderGroup(true)}
+        </div>
+      </div>
+
+      <style jsx global>{`
+        @keyframes promoMarquee {
+          from { transform: translate3d(0, 0, 0); }
+          to   { transform: translate3d(calc(-1 * var(--promo-distance)), 0, 0); }
+        }
+        @media (prefers-reduced-motion: reduce) {
+          [style*="promoMarquee"] { animation: none !important; }
+        }
+      `}</style>
+    </div>
+  );
+}
+
 export default function StyleOne() {
+  // Message TEXT follows the site language; the marquee geometry stays LTR.
+  const { dir } = useLanguage();
   const [images,     setImages]     = useState([]);
   const [promoTexts, setPromoTexts] = useState([]);
   const [isLoading,  setIsLoading]  = useState(true);
@@ -224,23 +371,8 @@ export default function StyleOne() {
           )}
       </div>
 
-      {/* Promo bar */}
-      {promoTexts.length > 0 && (
-        <div className="bg-gradient-to-r from-red-500 to-pink-500 text-white py-3 mt-6 overflow-hidden relative">
-          <div className="flex animate-marquee whitespace-nowrap">
-            {Array(500)
-              .fill(null)
-              .map((_, i) => (
-                <span key={i} className="text-lg font-bold mx-8 flex items-center">
-                  {promoTexts[0].text ||
-                    `${promoTexts[0].emoji || "🎉"} ${
-                      promoTexts[0].title || promoTexts[0].content
-                    } ${promoTexts[0].emoji || "🎉"}`}
-                </span>
-              ))}
-          </div>
-        </div>
-      )}
+      {/* Promo bar — renders nothing when no record is Active. */}
+      <PromoMarquee items={promoTexts} dir={dir} />
 
       <style jsx global>{`
         .slider-pagination {
@@ -266,16 +398,6 @@ export default function StyleOne() {
         .slider-pagination .swiper-pagination-bullet-active-main { opacity: 1; }
         .slider-pagination .swiper-pagination-bullet-active-prev,
         .slider-pagination .swiper-pagination-bullet-active-next { opacity: 0.7; }
-
-        @keyframes marquee {
-          0%   { transform: translateX(0%); }
-          100% { transform: translateX(-100%); }
-        }
-        .animate-marquee { animation: marquee 120s linear infinite; }
-        .animate-marquee:hover { animation-play-state: paused; }
-        @media (max-width: 768px) {
-          .animate-marquee { animation: marquee 15s linear infinite; }
-        }
       `}</style>
     </div>
   );
