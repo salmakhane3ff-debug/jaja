@@ -63,6 +63,15 @@ export async function generateMetadata() {
     metadataBase: new URL(PROD_ORIGIN),
     title,
     description,
+    // The admin-configured favicon is the PRIMARY icon; /favicon.ico (served
+    // from public/) is only the fallback when Store Settings has none.
+    //
+    // The .ico file must stay in public/ and NEVER move into src/app/. A
+    // favicon.ico inside the app directory is Next.js FILE-BASED metadata:
+    // resolve-metadata.js unshifts it to the FRONT of icons.icon, so it is
+    // emitted before this value and the tab keeps showing the static file no
+    // matter what the admin uploads. A file in public/ is a plain static asset
+    // and injects no <link>, so this stays the only rel="icon" tag.
     icons: {
       icon: settings?.faviconImage || "/favicon.ico",
     },
