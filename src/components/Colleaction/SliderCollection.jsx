@@ -8,8 +8,22 @@ import "swiper/css/pagination";
 import Link from "next/link";
 import { Skeleton } from "@heroui/skeleton";
 import { fetchCached } from "@/lib/dataCache";
+import { useLanguage } from "@/context/LanguageContext";
 
 export default function SliderCollection({ isTitle = true }) {
+  // Swiper resolves RTL vs LTR ONCE, when it mounts: swiper.rtlTranslate is set
+  // in mount() from the element's dir / computed direction and is never
+  // recomputed. Switching the storefront language flips <html dir>, so an
+  // already-mounted Swiper kept applying RTL-signed transforms inside a now-LTR
+  // box (or vice versa) and translated every slide outside its overflow-hidden
+  // viewport — the slider "disappeared" until a refresh remounted it.
+  //
+  // The fix is to remount the SWIPER ONLY when the direction actually changes,
+  // and to tell it the direction explicitly instead of relying on inheritance.
+  // `dir` is keyed on the <Swiper> element, never on this component: the fetched
+  // collections live in state here, so they survive the re-init untouched — no
+  // refetch, no empty frame, no reload.
+  const { dir } = useLanguage();
   const [collections, setCollections] = useState([]);
   const [loading, setLoading] = useState(true);
   const [sectionTitle, setSectionTitle] = useState("");
@@ -122,6 +136,8 @@ export default function SliderCollection({ isTitle = true }) {
           </div>
         )}{" "}
         <Swiper
+          key={dir}
+          dir={dir}
           modules={[Navigation, Pagination, Autoplay]}
           spaceBetween={20}
           loop={false}

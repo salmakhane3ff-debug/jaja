@@ -2,7 +2,7 @@
 
 // PERF: prose.css scoped to this route — not loaded on the homepage or checkout.
 import "@/app/prose.css";
-import React, { useState, useEffect, useRef, useCallback, lazy, Suspense, useMemo } from "react";
+import React, { useState, useEffect, useRef, lazy, Suspense, useMemo } from "react";
 import StickyAddToCart from "@/components/Product/StickyAddToCart";
 import ProductGallery from "@/components/ProductGallery";
 import InlineCodForm from "@/components/Product/InlineCodForm";
@@ -22,6 +22,7 @@ import { useProductScarcity } from "@/hooks/useProductScarcity";
 import { useDiscountRules } from "@/hooks/useDiscountRules";
 import { fetchCached } from "@/lib/dataCache";
 import { feedbackFilterProductId, DEFAULT_PRODUCT_FEEDBACK_SOURCE } from "@/lib/feedbackDisplay";
+import { statsUrl, normalizeSummary, EMPTY_SUMMARY } from "@/lib/feedbackSummary";
 
 // ── Lazy-loaded non-critical components ───────────────────────────────────────
 const ConversionBadges  = lazy(() => import("@/components/ConversionBadges"));
@@ -73,8 +74,10 @@ export default function Product({ data }) {
   // Gift product fetched from specialOfferSlug (ui-control setting)
   const [giftProduct, setGiftProduct] = useState(null);
   const [wishlist, setWishlist] = useState([]);
-  const [feedbackStats, setFeedbackStats] = useState({ avg: 0, count: 0 });
-  const [globalStats, setGlobalStats] = useState({ avg: 0, count: 0 });
+  // The header's rating summary. Two numbers from one aggregate — it must never
+  // wait on the feedback SECTION's full review payload again.
+  const [feedbackStats, setFeedbackStats] = useState({ ...EMPTY_SUMMARY });
+  const [globalStats, setGlobalStats] = useState({ ...EMPTY_SUMMARY });
   const feedbackRef = useRef(null);
   const actionsRef = useRef(null);
 
@@ -128,17 +131,39 @@ export default function Product({ data }) {
     const savedWishlist = JSON.parse(localStorage.getItem("wishlist") || "[]");
     setWishlist(savedWishlist);
 
-    // PERF: fetch only avg+count from the lightweight stats endpoint (~20 bytes)
-    // instead of the full /api/feedback payload (6+ MB with base64 images).
+    // PERF: avg+count come from the lightweight aggregate (~20 bytes), never
+    // from the full /api/feedback payload (megabytes — customer photos are
+    // stored as base64 data URLs).
     if (fbSettings.starClickAction === "goToFeedbackPage") {
       fetchCached("/api/feedback/stats")
-        .then(({ avg, count }) => {
-          if (!count) return;
-          setGlobalStats({ avg, count });
-        })
+        .then((raw) => setGlobalStats(normalizeSummary(raw)))
         .catch(() => {});
     }
   }, [fbSettings.starClickAction]);
+
+  /**
+   * The header rating summary for THIS product.
+   *
+   * WHICH reviews it covers is not decided here: feedbackFilterProductId() —
+   * the same helper the feedback section below uses — maps the existing
+   * `productFeedbackSource` setting to either this product's id or null
+   * ("all products"). The summary therefore always matches the list, and
+   * productFeedbackSource semantics are untouched.
+   *
+   * This replaces onStatsLoaded, which could not report a count until the whole
+   * review payload had downloaded (hence the 2-3 s delay) and was capped at the
+   * section's `take: 50`, under-reporting popular products.
+   */
+  const summaryProductId = feedbackFilterProductId(fbSettings, data._id || data.id);
+
+  useEffect(() => {
+    if (!fbSettings.enableProductFeedback || !fbSettings.showStarsUnderTitle) return;
+    let cancelled = false;
+    fetchCached(statsUrl(summaryProductId))
+      .then((raw) => { if (!cancelled) setFeedbackStats(normalizeSummary(raw)); })
+      .catch(() => {});
+    return () => { cancelled = true; };
+  }, [summaryProductId, fbSettings.enableProductFeedback, fbSettings.showStarsUnderTitle]);
 
   // Fetch a random gift product from the comma-separated IDs in ui-control
   useEffect(() => {
@@ -159,10 +184,6 @@ export default function Product({ data }) {
       })
       .catch(() => {});
   }, [ui.specialOfferSlug]);
-
-  const handleFbStats = useCallback((avg, count) => {
-    setFeedbackStats({ avg, count });
-  }, []);
 
   const handleStarClick = () => {
     if (fbSettings.starClickAction === "scrollToFeedback") {
@@ -724,7 +745,6 @@ export default function Product({ data }) {
               productName={data.title}
               showForm
               formDisplay={fbSettings.formDisplay}
-              onStatsLoaded={handleFbStats}
             />
           </Suspense>
         </div>
