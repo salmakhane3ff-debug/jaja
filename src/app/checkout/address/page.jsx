@@ -11,6 +11,11 @@ import {
 } from "lucide-react";
 import Link from "next/link";
 import { useLanguage } from "@/context/LanguageContext";
+import { metaTrack, pageViewNonce } from "@/lib/meta/browser";
+import { scopedEventId } from "@/lib/meta/events";
+import {
+  STORE_CURRENCY, buildContents, buildContentIds, contentsValue, totalQuantity,
+} from "@/lib/meta/normalize";
 
 // ── Moroccan cities ───────────────────────────────────────────────────────────
 
@@ -334,21 +339,30 @@ export default function CheckoutAddressPage() {
       }
     } catch {}
 
-    // Facebook Pixel — InitiateCheckout (fire once per checkout session)
-    try {
-      if (typeof window.fbq === "function" && validItems.length > 0) {
-        const _total   = validItems.reduce((s, i) => s + i.price * (i.quantity || 1), 0);
-        const _ids     = validItems.map((i) => String(i.productId || i._id || "")).filter(Boolean);
-        const _count   = validItems.reduce((s, i) => s + (i.quantity || 1), 0);
-        window.fbq("track", "InitiateCheckout", {
-          content_ids:  _ids,
-          content_type: "product",
-          value:        parseFloat(_total.toFixed(2)),
-          currency:     "MAD",
-          num_items:    _count,
-        });
+    // Meta InitiateCheckout — the real start of a checkout, i.e. arriving on the
+    // address step with a non-empty cart. The event id is scoped to this page
+    // view AND to the cart contents, so a re-render or a Strict-Mode double
+    // effect sends once, while a genuinely new checkout later sends again.
+    if (validItems.length > 0) {
+      const contents = buildContents(validItems);
+      const ids      = buildContentIds(validItems);
+      const value    = contentsValue(validItems);
+      const numItems = totalQuantity(validItems);
+      if (ids.length > 0) {
+        metaTrack(
+          "InitiateCheckout",
+          {
+            content_ids:  ids,
+            contents,
+            content_type: "product",
+            ...(value === null ? {} : { value }),
+            currency:     STORE_CURRENCY,
+            num_items:    numItems,
+          },
+          { eventId: scopedEventId("InitiateCheckout", ids.join("-"), pageViewNonce()) },
+        );
       }
-    } catch {}
+    }
   }, []);
 
   // Fetch shipping companies

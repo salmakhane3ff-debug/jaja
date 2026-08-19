@@ -7,12 +7,16 @@ import { useState, useEffect } from "react";
  * ScriptInjector — injects third-party tracking scripts into the page.
  *
  * Props:
- *   integrations — fetched server-side in layout.jsx via getIntegrationsSettings().
- *                  Passing it as a prop avoids the client-side fetch to the
- *                  admin-only /api/setting?type=integrations endpoint, which
- *                  returned 401 for unauthenticated visitors and silently
- *                  prevented the Meta Pixel (and GA/GTM) from loading on the
- *                  public storefront.
+ *   integrations — fetched server-side in layout.jsx via getIntegrationsSettings(),
+ *                  which SANITISES the settings row first. Passing it as a prop
+ *                  avoids a client-side fetch to the admin-only
+ *                  /api/setting?type=integrations endpoint, which returned 401
+ *                  for unauthenticated visitors and silently prevented GA/GTM
+ *                  from loading on the public storefront.
+ *
+ *                  This object must never contain a secret: it is a client
+ *                  component prop and therefore ends up in the RSC payload.
+ *                  Meta is handled by <MetaPixel>, not here.
  */
 export default function ScriptInjector({ integrations }) {
   // Guard: only render scripts after the client has mounted.
@@ -43,27 +47,9 @@ export default function ScriptInjector({ integrations }) {
             )
         )}
 
-      {/* Meta Pixel (Facebook) */}
-      {integrations.metaPixel?.enabled &&
-        integrations.metaPixel?.pixelIds?.map(
-          (pixel, index) =>
-            pixel.id && (
-              <Script key={`pixel-${index}`} id={`pixel-${index}`} strategy="afterInteractive">
-                {`
-              !function(f,b,e,v,n,t,s)
-              {if(f.fbq)return;n=f.fbq=function(){n.callMethod?
-              n.callMethod.apply(n,arguments):n.queue.push(arguments)};
-              if(!f._fbq)f._fbq=n;n.push=n;n.loaded=!0;n.version='2.0';
-              n.queue=[];t=b.createElement(e);t.async=!0;
-              t.src=v;s=b.getElementsByTagName(e)[0];
-              s.parentNode.insertBefore(t,s)}(window, document,'script',
-              'https://connect.facebook.net/en_US/fbevents.js');
-              fbq('init', '${pixel.id}');
-              fbq('track', 'PageView');
-            `}
-              </Script>
-            )
-        )}
+      {/* Meta Pixel is NOT injected here. It lives in <MetaPixel>, which needs
+          its own route-change lifecycle for SPA PageView and receives only
+          { enabled, pixelIds } — a shape that cannot carry the CAPI token. */}
 
       {/* Google Tag Manager */}
       {integrations.googleTagManager?.enabled &&

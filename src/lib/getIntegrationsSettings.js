@@ -1,24 +1,28 @@
 import { getSettings } from "./services/settingsService.js";
+import { toPublicIntegrations } from "./meta/config.js";
 
 /**
- * Server-side: reads integrations config directly from DB.
- * Safe to call from layout.jsx (no auth required — server context).
+ * Server-side: reads integrations config from the DB and returns ONLY the
+ * public half.
  *
- * Returns only the fields the storefront needs to inject scripts:
- *   - googleAnalytics.enabled / trackingIds
- *   - metaPixel.enabled / pixelIds
- *   - googleTagManager.enabled / containerIds
- *   - googleAds.enabled / conversionIds
- *   - customCode.enabled / scripts
+ * THE BOUNDARY. layout.jsx passes this result into client components, and
+ * Next.js serialises every client-component prop into the RSC payload embedded
+ * in the HTML. This function previously returned the RAW settings row, so
+ * `metaPixel.accessToken` (the Conversions API token) and `bemob.postbackUrl`
+ * were readable by anyone with View Source.
  *
- * NOTE: This does NOT expose secret API keys — only the public-facing
- * tracking IDs that must be embedded in the page HTML anyway.
+ * toPublicIntegrations() rebuilds the object by ALLOW-LIST, so a secret added
+ * to the settings row later cannot leak by being forgotten here. Server code
+ * that genuinely needs the token calls getMetaServerConfig() instead — never
+ * this function.
+ *
+ * Returns null when nothing is configured.
  */
 export async function getIntegrationsSettings() {
   try {
     const data = await getSettings("integrations");
     if (!data || Object.keys(data).length === 0) return null;
-    return data;
+    return toPublicIntegrations(data);
   } catch {
     return null;
   }

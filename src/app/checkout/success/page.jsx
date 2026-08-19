@@ -5,6 +5,7 @@ import { CheckCircle, Home, MessageCircle, Printer, Clock, AlertCircle, CreditCa
 import Link from "next/link";
 import { useLanguage } from "@/context/LanguageContext";
 import { trackClarity } from "@/lib/trackClarity";
+import { trackPurchase } from "@/lib/meta/purchase";
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -128,43 +129,38 @@ function SuccessContent() {
     fetchAll();
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // ── Facebook Pixel + Conversions API — Purchase event ────────────────────
+  // ── Meta Purchase ──────────────────────────────────────────────────────────
+  // Everything about WHAT is reported now lives in lib/meta/purchase.js, which
+  // both this page and the inline-COD form share. Two guards apply:
+  //   • trackPurchase() refuses orders that are not a Purchase yet — a bank
+  //     transfer awaiting verification must not be booked as revenue just
+  //     because the customer reached this page.
+  //   • the server claims delivery in the database, so refreshing, reopening or
+  //     sharing this URL cannot produce a second conversion. The localStorage
+  //     flag below is only a client-side optimisation on top of that.
   useEffect(() => {
     if (!order?._id) return;
+
     const flag = `fb_purchase_${order._id}`;
-    try { if (localStorage.getItem(flag)) return; } catch {}
-    try { localStorage.setItem(flag, '1'); } catch {}
+    let alreadyLocal = false;
+    try { alreadyLocal = Boolean(localStorage.getItem(flag)); } catch {}
 
-    const _pd    = order.paymentDetails || {};
-    const _items = order.products?.items || [];
-    const _total = _pd.total ?? _items.reduce((s, i) => s + i.price * (i.quantity || 1), 0);
-    const _ids   = _items.map(i => String(i.productId || i._id || i.title || '')).filter(Boolean);
-    const _count = _items.reduce((s, i) => s + (i.quantity || 1), 0);
-    const eventId = `purchase_${order._id}`;
+    const res = trackPurchase({
+      _id:           order._id,
+      status:        order.status,
+      paymentStatus: order.paymentStatus,
+      paymentMethod: order.paymentDetails?.paymentMethod,
+      total:         order.paymentDetails?.total,
+      items:         order.products?.items || [],
+    });
 
-    try {
-      if (typeof window.fbq === 'function') {
-        window.fbq('track', 'Purchase',
-          { value: _total, currency: 'MAD', content_ids: _ids, content_type: 'product', num_items: _count },
-          { eventID: eventId },
-        );
-      }
-    } catch {}
-
-    trackClarity("purchase", order._id);
-
-    try {
-      const getCookie = (name) => {
-        const m = document.cookie.match(new RegExp('(?:^|;\\s*)' + name + '=([^;]*)'));
-        return m ? decodeURIComponent(m[1]) : null;
-      };
-      const contents = _items.map(i => ({ id: String(i.productId || i._id || ''), quantity: i.quantity || 1, item_price: i.price, title: i.title || '' }));
-      fetch('/api/facebook/capi', {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ event_name: 'Purchase', event_id: eventId, event_source_url: window.location.href, fbp: getCookie('_fbp'), fbc: getCookie('_fbc'), user_agent: navigator.userAgent, value: _total, currency: 'MAD', content_ids: _ids, contents, num_items: _count, order_id: order._id, phone: order.phone, city: order.shipping?.address?.city }),
-      }).catch(() => {});
-    } catch {}
-  }, [order?._id]); // eslint-disable-line react-hooks/exhaustive-deps
+    if (res.fired && !alreadyLocal) {
+      try { localStorage.setItem(flag, "1"); } catch {}
+    }
+    if (res.fired) trackClarity("purchase", order._id);
+    // Re-runs when the order transitions (e.g. a bank transfer is verified by
+    // the admin while this page polls), so a later-eligible order still reports.
+  }, [order?._id, order?.status, order?.paymentStatus]);
 
   // ── Live polling — re-fetch order every 8 s until confirmed ─────────────────
   // Stops automatically when order.status === "confirmed" or paymentStatus === "success"

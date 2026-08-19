@@ -23,6 +23,10 @@ import { useDiscountRules } from "@/hooks/useDiscountRules";
 import { fetchCached } from "@/lib/dataCache";
 import { feedbackFilterProductId, DEFAULT_PRODUCT_FEEDBACK_SOURCE } from "@/lib/feedbackDisplay";
 import { statsUrl, normalizeSummary, EMPTY_SUMMARY } from "@/lib/feedbackSummary";
+import { metaTrack, pageViewNonce } from "@/lib/meta/browser";
+import { sendViewContentToCapi } from "@/lib/meta/purchase";
+import { scopedEventId } from "@/lib/meta/events";
+import { STORE_CURRENCY, toNumericValue, contentId } from "@/lib/meta/normalize";
 
 // ── Lazy-loaded non-critical components ───────────────────────────────────────
 const ConversionBadges  = lazy(() => import("@/components/ConversionBadges"));
@@ -108,23 +112,44 @@ export default function Product({ data }) {
       keepalive: true,
     }).catch(() => {});
 
-    // Facebook Pixel — ViewContent
-    try {
-      if (typeof window.fbq === "function") {
-        const price = parseFloat(data.salePrice || data.regularPrice || 0);
-        window.fbq("track", "ViewContent", {
-          content_ids:  [String(data._id)],
-          content_name: data.title || "",
-          content_type: "product",
-          value:        price,
-          currency:     "MAD",
-        });
-      }
-    } catch {}
-
     // First-party funnel event (internal analytics — separate from the pixel)
     fireFunnelEvent({ event: "product_click", productId: data._id });
     trackClarity("view_product", data._id);
+  }, [data._id]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  /**
+   * Meta ViewContent.
+   *
+   * Deliberately NOT inside the effect above: that one carries a 24-hour
+   * localStorage guard for the internal track-click counter, and its early
+   * `return` was swallowing ViewContent too — so a repeat view of the same
+   * product within a day produced no ViewContent at all, gutting retargeting
+   * audiences and VC→Purchase optimisation.
+   *
+   * Deduplication is now scoped to the CURRENT PAGE VIEW: the event id combines
+   * the product with the page-view nonce, so a re-render or a Strict-Mode
+   * double effect sends once, while a genuine second visit sends again.
+   */
+  useEffect(() => {
+    const id = contentId(data);
+    if (!id) return;
+    const eventId = scopedEventId("ViewContent", id, pageViewNonce());
+    const price = toNumericValue(data.salePrice ?? data.regularPrice);
+    const fired = metaTrack(
+      "ViewContent",
+      {
+        content_ids:  [id],
+        content_name: data.title || "",
+        content_type: "product",
+        ...(price === null ? {} : { value: price }),
+        currency: STORE_CURRENCY,
+      },
+      { eventId },
+    );
+    // Server counterpart, sharing the SAME event_id so Meta deduplicates the
+    // pair. Only the product id travels — the server re-resolves title and
+    // price from the catalogue, so the payload cannot be forged.
+    if (fired) sendViewContentToCapi(id, eventId);
   }, [data._id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   useEffect(() => {
@@ -250,21 +275,27 @@ export default function Product({ data }) {
       await addToCart(data, quantity, { variants: variantsList });
     }
 
-    // Facebook Pixel — AddToCart
-    try {
-      if (typeof window.fbq === "function") {
-        const qty   = selectedBundle === "2+1" ? 3 : quantity;
-        const total = parseFloat((effectivePrice * (selectedBundle === "2+1" ? 2 : quantity)).toFixed(2));
-        window.fbq("track", "AddToCart", {
-          content_ids:  [String(data._id)],
+    // Meta AddToCart — fires on the real user action, never on a render.
+    // `qty` is what the customer receives (2+1 bundle = 3 units); `value` is
+    // what they pay (2 units), so the free unit is never billed as revenue.
+    {
+      const id      = contentId(data);
+      const qty     = selectedBundle === "2+1" ? 3 : quantity;
+      const paidQty = selectedBundle === "2+1" ? 2 : quantity;
+      const unit    = toNumericValue(effectivePrice);
+      const total   = unit === null ? null : Math.round(unit * paidQty * 100) / 100;
+      if (id) {
+        metaTrack("AddToCart", {
+          content_ids:  [id],
+          contents:     [{ id, quantity: qty, ...(unit === null ? {} : { item_price: unit }) }],
           content_name: data.title || "",
           content_type: "product",
-          value:        total,
-          currency:     "MAD",
+          ...(total === null ? {} : { value: total }),
+          currency:     STORE_CURRENCY,
           num_items:    qty,
         });
       }
-    } catch {}
+    }
   };
 
   const handleBuyNow = async () => {

@@ -15,6 +15,7 @@ import { useState, useRef, useEffect } from "react";
 import { Zap } from "lucide-react";
 import { resolveClickId } from "@/lib/tracking/clickId";
 import { buildCodOrderPayload, validateCodForm } from "@/lib/codOrder";
+import { trackPurchase } from "@/lib/meta/purchase";
 
 function imgSrc(v) {
   if (!v) return "";
@@ -82,6 +83,22 @@ export default function InlineCodForm({
         try {
           const created = await res.json();
           const orderId = created?._id || created?.id || null;
+
+          // Meta Purchase. This form never reaches /checkout/success, which is
+          // why inline-COD and landing/offer orders previously reported nothing
+          // at all. It goes through the SAME shared pipeline as the success
+          // page — never a copy — and only after the order really exists.
+          if (orderId) {
+            trackPurchase({
+              _id:           orderId,
+              status:        created?.status,
+              paymentStatus: created?.paymentStatus,
+              paymentMethod: payload?.paymentDetails?.paymentMethod,
+              total:         payload?.paymentDetails?.total,
+              items:         payload?.products?.items || [],
+            });
+          }
+
           if (affiliateRef || affiliateId) {
             fetch("/api/affiliate/record-order", {
               method: "POST",

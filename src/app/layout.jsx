@@ -8,6 +8,7 @@ import { Providers } from "./providers";
 import MainFooterWrapper from "@/components/template/FooterClientWrapper";
 import MainHeaderWrapper from "@/components/template/MainHeaderWrapper";
 import ScriptInjector from "@/components/ScriptInjector";
+import MetaPixel from "@/components/MetaPixel";
 import ClarityScript from "@/components/ClarityScript";
 import FloatingWhatsApp from "@/components/FloatingWhatsApp";
 import UtmTracker from "@/components/UtmTracker";
@@ -105,8 +106,8 @@ export default async function RootLayout({ children }) {
         {/* Block Chrome/Google Translate popup — site has its own AR/FR switcher */}
         <meta name="google" content="notranslate" />
         {/* Facebook Domain Verification — loaded dynamically from DB */}
-        {integrations?.metaPixel?.domainVerificationCode && (
-          <meta name="facebook-domain-verification" content={integrations.metaPixel.domainVerificationCode} />
+        {integrations?.metaDomainVerification && (
+          <meta name="facebook-domain-verification" content={integrations.metaDomainVerification} />
         )}
         <script
           dangerouslySetInnerHTML={{
@@ -129,6 +130,11 @@ export default async function RootLayout({ children }) {
             <TrackingCapture />
           </Suspense>
           <ScriptInjector integrations={integrations} />
+          {/* Meta Pixel: receives ONLY { enabled, pixelIds } — no secret can
+              travel in this prop. Suspense because it reads useSearchParams. */}
+          <Suspense fallback={null}>
+            <MetaPixel config={integrations?.metaPixel} />
+          </Suspense>
           <ClarityScript />
           <Suspense fallback={null}>
             <PreloaderWrapper config={preloaderConfig}>
